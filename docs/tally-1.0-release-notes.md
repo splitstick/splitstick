@@ -1,6 +1,6 @@
 # Tally 1.0 — draft release notes
 
-`v1.0.0` · Apache-2.0 · rev. 4
+`v1.0.0` · Apache-2.0 · rev. 5
 
 **Agent actions you can prove — including the ones that aren't there.**
 
@@ -279,6 +279,23 @@ half its design.
 | **0 bytes** | of content leaving your host |
 | **EUR 5,000** | per novel tamper class found against us |
 
+## Bounty terms
+
+A bounty with no boundaries is not a commitment, it is an open tab. These terms are published
+alongside the offer so that both sides know the shape of it before anyone starts work.
+
+| Term | |
+|---|---|
+| **One class, one payout** | The unit is a **tamper class**, not an instance. Twelve variations on truncation are one finding. We would rather pay well for a new idea than repeatedly for the same one. |
+| **Default configuration** | The attack must survive the shipped default: witnesses `[tally, rekor]`, `quorum: 1`, `anchor_interval: 10s`, `on_unavailable: mark_gap`. A tamper that only works once the operator has weakened their own policy is already a recorded chain event, by design. |
+| **The threat model is the scope** | The out-of-scope list published above is binding in both directions. A key exfiltrated before first use, collusion across the entire quorum, or a tool that lies about what it did are excluded — and we do not get to add exclusions after the fact. |
+| **Capped annually** | EUR 50,000 per calendar year. Beyond that we will still publish, credit and fix; we will not pretend to an unlimited balance sheet. |
+| **First reporter, 90 days** | First complete report wins. Coordinated disclosure after 90 days or on fix, whichever is sooner. We publish the finding either way, including when we have no mitigation. |
+| **An arbiter who is not us** | Whether a finding is novel is decided by an arbiter named in the repository, drawn from the transparency-log community and not employed by us. **We cannot be both the payer and the judge of a security claim and keep the credibility we are paying for.** Disputes go to them, not to our inbox. |
+
+That last term is the same decision as the open witness list, applied again: the places where we hold
+power over our own evidence are exactly the places to give it away.
+
 ## Getting started
 
 ```yaml
@@ -367,6 +384,7 @@ is published rather than discarded, on the same principle as everything else her
 | 3 | ADDED | Crypto-shredding for erasure compatibility, after the GDPR Art. 17 objection; adversarial bounty in place of the self-scored metric; hard anchor defaulted off. |
 | 4 | CHANGED | Default witness set is now `[tally, rekor]` rather than Tally alone, so the shipped configuration is independent of us on day one. |
 | 4 | ADDED | Self-hosted witness under internal audit as a named deployment pattern; witness list published as open data, with inclusion ungated. |
+| 5 | ADDED | Bounty terms, after it was pointed out that an uncapped offer judged by its own payer is neither a commitment nor credible. Novelty is now decided by an external arbiter. |
 
 ## Credit
 
