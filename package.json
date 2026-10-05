@@ -1,0 +1,17 @@
+{
+  "name": "agent-record-redteam",
+  "version": "0.1.0",
+  "description": "Reproducible tamper tests against AI agent run records.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "generate": "node src/generate.mjs",
+    "redteam": "node src/redteam.mjs",
+    "test": "npm run generate && npm run redteam"
+  },
+  "dependencies": {
+    "@open-multi-agent/core": "1.21.1",
+    "zod": "^3.23.0"
+  }
+}
