@@ -7,7 +7,7 @@
     },
     "AC-2": {
       "class": "Alter an event and repair the citing digest",
-      "redteam": "B, C",
+      "redteam": "C (B must not regress)",
       "kind": "local"
     },
     "AC-3": {
@@ -60,7 +60,9 @@
         "TRC-03",
         "SEC-01",
         "SEC-02",
-        "SEC-05"
+        "SEC-05",
+        "SEC-22",
+        "SEC-23"
       ]
     },
     {
@@ -94,7 +96,9 @@
         "PRIV-01",
         "PRIV-02",
         "INT-04",
-        "DOC-01"
+        "DOC-01",
+        "NFR-07",
+        "INT-07"
       ]
     },
     {
@@ -111,19 +115,20 @@
         "NFR-09",
         "SEC-08",
         "SEC-17",
-        "OPS-04"
+        "OPS-04",
+        "SEC-24"
       ]
     },
     {
-      "id": "M3",
-      "name": "External anchoring",
+      "id": "M3a",
+      "name": "Anchoring and sequencing",
       "goal": "The first second party. Close truncation and erasure, which no amount of local cryptography can reach.",
       "gate": [
         "AC-4",
         "AC-5"
       ],
       "weeks": "5-7",
-      "exit": "Red-team D, E and F all DETECTED. An agent run completes normally with every witness unreachable, and the batch arrives marked unwitnessed. Witness Practice Statement published and itself anchored. Hard anchor confirmed off by default.",
+      "exit": "Red-team D, E and F all DETECTED. A run with no configuration at all anchors to two independent witnesses. A rolled-back witness is detected. Hard anchor confirmed off by default. Egress capture re-run now that a witness exists, re-verifying PRIV-01 against real traffic.",
       "ids": [
         "FR-12",
         "FR-13",
@@ -132,17 +137,11 @@
         "FR-19",
         "FR-20",
         "FR-21",
-        "FR-30",
-        "FR-31",
-        "FR-38",
-        "FR-39",
         "FR-42",
         "FR-43",
         "FR-44",
         "FR-45",
         "NFR-03",
-        "NFR-12",
-        "NFR-13",
         "SEC-03",
         "SEC-04",
         "SEC-09",
@@ -150,6 +149,26 @@
         "SEC-15",
         "INT-01",
         "INT-02",
+        "SCOPE-15",
+        "FR-48",
+        "FR-50",
+        "SEC-25"
+      ]
+    },
+    {
+      "id": "M3b",
+      "name": "Practice statement and resilience",
+      "goal": "Say exactly what the countersignature means, and make sure losing a witness does not lose the evidence.",
+      "gate": [],
+      "weeks": "3-4",
+      "exit": "Witness Practice Statement published, versioned and itself anchored, naming its time discipline. An agent run completes normally with every witness unreachable. Restore drill meets the stated recovery point objective. Countersignatures from a retired witness key still verify.",
+      "ids": [
+        "FR-30",
+        "FR-31",
+        "FR-38",
+        "FR-39",
+        "NFR-12",
+        "NFR-13",
         "LEG-01",
         "LEG-02",
         "LEG-03",
@@ -160,7 +179,9 @@
         "LEG-08",
         "LEG-09",
         "OPS-02",
-        "SCOPE-15"
+        "FR-51",
+        "OPS-06",
+        "LEG-19"
       ]
     },
     {
@@ -202,7 +223,6 @@
         "NFR-04",
         "NFR-05",
         "NFR-06",
-        "NFR-07",
         "PRIV-03",
         "PRIV-04",
         "PRIV-05",
@@ -241,7 +261,9 @@
         "INT-06",
         "OPS-03",
         "OPS-05",
-        "LEG-13"
+        "LEG-13",
+        "LEG-12",
+        "FR-49"
       ]
     },
     {
@@ -265,7 +287,6 @@
         "DOC-06",
         "DOC-07",
         "DOC-08",
-        "LEG-12",
         "LEG-14",
         "LEG-15",
         "LEG-16",
@@ -285,8 +306,12 @@
         "SCOPE-13",
         "SCOPE-14",
         "TRC-04",
-        "TRC-05"
+        "TRC-05",
+        "SCOPE-16",
+        "GOV-17",
+        "GOV-18"
       ]
     }
-  ]
+  ],
+  "regressionRule": "Every milestone runs the complete red-team suite, not only its own classes. A gate closed earlier that reopens fails the build."
 }

@@ -1,6 +1,6 @@
 # Tally 1.0 — draft release notes
 
-`v1.0.0` · Apache-2.0 · rev. 5
+`v1.0.0` · Apache-2.0 · rev. 6
 
 **Agent actions you can prove — including the ones that aren't there.**
 
@@ -166,6 +166,36 @@ is built so the collision does not occur.
 - Retention and erasure are therefore **policy settings on your storage**, not properties of the
   cryptography. That separation is deliberate.
 
+### Provenance — a build digest you can check
+
+Coverage attestation rests on the collector reporting its own build digest. A digest nobody can
+trace is a number, not evidence — so the artifact has to be checkable back to its source.
+
+- Every released collector artifact carries a **provenance attestation** binding its digest to the
+  source commit and the build that produced it.
+- Releases are **signed**, with a published **SBOM** and pinned dependencies.
+- So when a heartbeat reports an unrecognised build, "unrecognised" is a verifiable claim rather
+  than our assertion. Without this, coverage attestation proves that *some* build ran.
+
+### Durability — losing a witness must not lose the evidence
+
+A witness that forgets its roots destroys the corroboration it exists to provide. This is the most
+consequential failure mode in the design, and it is addressed rather than assumed away.
+
+- The witness **publishes its own signed tree head**, so a rolled-back or equivocating witness is
+  detectable by the operator or any third party, not just suspected.
+- The witness store is **replicated and recoverable**, with a documented recovery point objective
+  and a restore drill that proves it.
+- **Witness keys rotate** while historical countersignatures stay verifiable, through a signed key
+  history. A rotation is not an amnesty for everything signed before it.
+- **Operator key compromise** is recoverable as a *declared, countersigned discontinuity* — never a
+  silent re-key. The record shows that the break happened and when.
+- The clock matters as much as the key. The witness derives its time from a **documented, traceable
+  source**, and the verifier surfaces that declared time discipline, because a countersignature is
+  only as good as the clock behind it.
+- Running two witnesses at `quorum: 2` is the operator's own answer to all of this, and the
+  configuration has always allowed it.
+
 ### Proof — offline verification
 
 - `tally verify` needs **no network, no credentials, no account** — only bytes and public keys. It
@@ -192,7 +222,8 @@ accept. Tally's witness ships with the equivalent, and it is deliberately narrow
 
 **A countersignature asserts**
 
-- This root was **received** by this witness at this time, per its clock.
+- This root was **received** by this witness at this time, per its clock, whose time source and
+  discipline are named in the statement.
 - It is the **immediate successor** of the previous root recorded for this enrolled operator.
 - The witness has **retained** it in its own append-only store.
 
@@ -385,6 +416,9 @@ is published rather than discarded, on the same principle as everything else her
 | 4 | CHANGED | Default witness set is now `[tally, rekor]` rather than Tally alone, so the shipped configuration is independent of us on day one. |
 | 4 | ADDED | Self-hosted witness under internal audit as a named deployment pattern; witness list published as open data, with inclusion ungated. |
 | 5 | ADDED | Bounty terms, after it was pointed out that an uncapped offer judged by its own payer is neither a commitment nor credible. Novelty is now decided by an external arbiter. |
+| 6 | ADDED | Build provenance, signed releases and an SBOM, after a coverage review found that an attested build digest means nothing if the build cannot be traced to its source. |
+| 6 | ADDED | Witness durability: published tree heads, a replicated store with a stated recovery objective, witness key rotation, and declared discontinuity on operator key compromise. A witness that loses its roots was previously unaddressed. |
+| 6 | ADDED | The witness time source is now named in the practice statement, since the countersignature asserts a time and nothing previously said where that time came from. |
 
 ## Credit
 

@@ -10,15 +10,17 @@ The rule: **no milestone is complete until its attack classes fail closed agains
 verifier.** Not a code review, not a demo — the red-team suite, with that class's expectation
 flipped from `undetected` to `detected`.
 
+Every milestone runs the complete red-team suite, not only its own classes. A gate closed earlier that reopens fails the build.
+
 ## Attack-class gates
 
 | Gate | Class | Closed by | Red-team |
 |---|---|---|---|
 | `AC-1` | Alter the recorded action — arguments, result, approval decision | M1 Local integrity | A (local) |
-| `AC-2` | Alter an event and repair the citing digest | M1 Local integrity | B, C (local) |
+| `AC-2` | Alter an event and repair the citing digest | M1 Local integrity | C (B must not regress) (local) |
 | `AC-3` | Re-sign rewritten history with the current key | M2 Key custody | ratchet suite (local + HSM) |
-| `AC-4` | Truncate the record's tail | M3 External anchoring | D (external) |
-| `AC-5` | Erase events and renumber into a clean stream | M3 External anchoring | E, F (external) |
+| `AC-4` | Truncate the record's tail | M3a Anchoring and sequencing | D (external) |
+| `AC-5` | Erase events and renumber into a clean stream | M3a Anchoring and sequencing | E, F (external) |
 | `AC-6` | Stop or patch the collector, then claim quiet | M4 Coverage attestation | G (new) (external) |
 | `AC-7` | Weaken the anchoring policy, then tamper | M4 Coverage attestation | H (new) (external) |
 
@@ -26,15 +28,16 @@ flipped from `undetected` to `detected`.
 
 | Milestone | Gate | Reqs | Weeks | Goal |
 |---|---|---:|---|---|
-| **M0** Foundations and long-lead | — | 16 | 1-2, parallel to M1 | Start everything whose clock runs outside engineering, and turn the red-team suite into the acceptance harness. |
-| **M1** Local integrity | AC-1, AC-2 | 21 | 3-4 | Close the two attack classes that need no third party, and measure the performance budget before the design hardens. |
-| **M2** Key custody | AC-3 | 5 | 2 | Make yesterday's record unforgeable with today's key, and state the precondition honestly. |
-| **M3** External anchoring | AC-4, AC-5 | 36 | 5-7 | The first second party. Close truncation and erasure, which no amount of local cryptography can reach. |
+| **M0** Foundations and long-lead | — | 18 | 1-2, parallel to M1 | Start everything whose clock runs outside engineering, and turn the red-team suite into the acceptance harness. |
+| **M1** Local integrity | AC-1, AC-2 | 23 | 3-4 | Close the two attack classes that need no third party, and measure the performance budget before the design hardens. |
+| **M2** Key custody | AC-3 | 6 | 2 | Make yesterday's record unforgeable with today's key, and state the precondition honestly. |
+| **M3a** Anchoring and sequencing | AC-4, AC-5 | 23 | 5-7 | The first second party. Close truncation and erasure, which no amount of local cryptography can reach. |
+| **M3b** Practice statement and resilience | — | 19 | 3-4 | Say exactly what the countersignature means, and make sure losing a witness does not lose the evidence. |
 | **M4** Coverage attestation | AC-6, AC-7 | 10 | 3-4 | The differentiated claim: prove the record is complete, not merely unaltered. |
-| **M5** Disclosure and erasure | — | 17 | 3-4 | No new attack class. This is the milestone that makes the product buyable by a regulated, multi-customer organisation. |
-| **M6** Reach and conformance | — | 21 | 4-6 | Stop depending on one upstream project, and make the format genuinely somebody else's to implement. |
-| **M7** Launch gate | — | 34 | 2 | Every promise that is a claim rather than a feature. This milestone is mostly about what we must not say. |
-| | | **160** | | |
+| **M5** Disclosure and erasure | — | 16 | 3-4 | No new attack class. This is the milestone that makes the product buyable by a regulated, multi-customer organisation. |
+| **M6** Reach and conformance | — | 23 | 4-6 | Stop depending on one upstream project, and make the format genuinely somebody else's to implement. |
+| **M7** Launch gate | — | 36 | 2 | Every promise that is a claim rather than a feature. This milestone is mostly about what we must not say. |
+| | | **174** | | |
 
 ## Milestones
 
@@ -43,7 +46,7 @@ flipped from `undetected` to `detected`.
 Start everything whose clock runs outside engineering, and turn the red-team suite into the acceptance harness.
 
 - **Gate:** none — unlocks adoption rather than closing an attack class
-- **Requirements:** 16 (GOV×6  LEG×3  TRC×3  SEC×3  DOC×1)
+- **Requirements:** 18 (GOV×6  SEC×5  LEG×3  TRC×3  DOC×1)
 - **Effort:** weeks 1-2, parallel to M1
 - **Exit criteria:** Trademark search returned. External arbiter named. Counsel engaged. Threat model published. CI runs the canary. Harness inverted so each attack class can assert DETECTED against our own verifier.
 
@@ -65,13 +68,15 @@ Start everything whose clock runs outside engineering, and turn the red-team sui
 | `SEC-01` | **Published threat model** — Publish a threat model naming the operator as the adversary. | Document exists and is referenced from the README |
 | `SEC-02` | **Detection, not prevention** — The stated security goal is detection and attribution, not prevention. | Claims review against documentation and marketing |
 | `SEC-05` | **Documented exclusions** — Publish what is out of scope: actions never attempted, a compromised model, a lying tool, full quorum collusion, a key exfiltrated before first use. | Document review |
+| `SEC-22` | **Build provenance attestation** — Publish a provenance attestation for every released collector artifact, binding the digest to its source commit and build, so the digest in a heartbeat can be independently traced. | Attestation verifies against the published artifact and source revision |
+| `SEC-23` | **Signed releases and SBOM** — Sign every release and publish an SBOM with pinned dependencies. | Signature and SBOM present and verified in CI for each release |
 
 ### M1 — Local integrity
 
 Close the two attack classes that need no third party, and measure the performance budget before the design hardens.
 
 - **Gate:** `AC-1` — Alter the recorded action — arguments, result, approval decision; `AC-2` — Alter an event and repair the citing digest
-- **Requirements:** 21 (FR×11  SEC×4  NFR×2  PRIV×2  INT×1  DOC×1)
+- **Requirements:** 23 (FR×11  SEC×4  NFR×3  PRIV×2  INT×2  DOC×1)
 - **Effort:** weeks 3-4
 - **Exit criteria:** Red-team A and C both DETECTED by tally verify; baseline still passes. p99 append overhead measured under 1 ms and run latency under 2% — measured, not assumed. Chain files contain no plaintext.
 
@@ -98,13 +103,15 @@ Close the two attack classes that need no third party, and measure the performan
 | `PRIV-02` | **No content in the chain** — The chain contains no plaintext content. | Automated scan of chain files for plaintext |
 | `INT-04` | **Additive OMA integration** — Integrate with OMA without a fork, patch or upstream pull request. | Install against unmodified upstream at the supported version |
 | `DOC-01` | **Public red-team suite** — Maintain a public tamper suite reproducible in two commands. | Clean-clone run succeeds |
+| `NFR-07` | **Long-term verifiability** — Evidence remains verifiable years later; algorithms and formats are versioned to allow it. | Format version negotiation test; documented algorithm migration path |
+| `INT-07` | **No agent code changes** — Both collectors integrate by dependency and configuration only; no change to the customer's agent code is required. | Byte-identical agent source before and after integration, for both collectors |
 
 ### M2 — Key custody
 
 Make yesterday's record unforgeable with today's key, and state the precondition honestly.
 
 - **Gate:** `AC-3` — Re-sign rewritten history with the current key
-- **Requirements:** 5 (SEC×2  FR×1  NFR×1  OPS×1)
+- **Requirements:** 6 (SEC×3  FR×1  NFR×1  OPS×1)
 - **Effort:** weeks 2
 - **Exit criteria:** An epoch-N key cannot produce a valid epoch-N-1 signature against a real HSM or KMS. The non-exportable custody precondition appears wherever the forward-secrecy claim does.
 
@@ -115,15 +122,16 @@ Make yesterday's record unforgeable with today's key, and state the precondition
 | `SEC-08` | **Resist re-signing history** — Re-signing rewritten history with the current key must be detectable under non-exportable custody. | Epoch ratchet test with HSM |
 | `SEC-17` | **State the forward-secrecy precondition** — Any forward-secrecy claim must state its non-exportable key custody precondition in the same place. | Documentation review |
 | `OPS-04` | **Separation-of-duties guidance** — Document the key-custody split between engineering and internal audit. | Guide published and reviewed |
+| `SEC-24` | **Key compromise recovery** — Document and support recovery from operator key compromise: a declared, countersigned discontinuity rather than a silent re-key. | Compromise drill: discontinuity is recorded, countersigned and visible to the verifier |
 
-### M3 — External anchoring
+### M3a — Anchoring and sequencing
 
 The first second party. Close truncation and erasure, which no amount of local cryptography can reach.
 
 - **Gate:** `AC-4` — Truncate the record's tail; `AC-5` — Erase events and renumber into a clean stream
-- **Requirements:** 36 (FR×15  LEG×9  SEC×5  NFR×3  INT×2  OPS×1  SCOPE×1)
+- **Requirements:** 23 (FR×13  SEC×6  INT×2  NFR×1  SCOPE×1)
 - **Effort:** weeks 5-7
-- **Exit criteria:** Red-team D, E and F all DETECTED. An agent run completes normally with every witness unreachable, and the batch arrives marked unwitnessed. Witness Practice Statement published and itself anchored. Hard anchor confirmed off by default.
+- **Exit criteria:** Red-team D, E and F all DETECTED. A run with no configuration at all anchors to two independent witnesses. A rolled-back witness is detected. Hard anchor confirmed off by default. Egress capture re-run now that a witness exists, re-verifying PRIV-01 against real traffic.
 
 | ID | Requirement | Verified by |
 |---|---|---|
@@ -134,17 +142,11 @@ The first second party. Close truncation and erasure, which no amount of local c
 | `FR-19` | **Configurable quorum** — Accept a K-of-N quorum setting governing how many countersignatures a batch requires. | Verifier rejects a batch below quorum |
 | `FR-20` | **Configurable anchor cadence** — Accept an anchor_interval setting that determines the mutability window. | Observed anchor spacing matches configuration |
 | `FR-21` | **Soft anchor tier** — Provide a fast anchor tier, default every 10 seconds. | Timing test |
-| `FR-30` | **Acceptance policy as input** — The verifier takes a caller-supplied acceptance policy naming trusted witness keys and quorum. | Same pack verifies under two different policies |
-| `FR-31` | **Evidence pack carries all countersignatures** — Packs include every countersignature collected, not only Tally's. | Pack inspection after multi-witness anchoring |
-| `FR-38` | **Fail-open with marked batch** — When no witness is reachable, chain and sign locally, mark the batch unwitnessed, and queue it. | Agent completes with all witnesses unreachable |
-| `FR-39` | **Late countersignature records real time** — A retroactive countersignature records the witness's actual receipt time, not the batch's claimed time. | Delta between operator and witness time is present in the record |
 | `FR-42` | **Operator enrolment** — Register an operator identity and public key with a witness so per-operator sequence state can be kept. | Enrolment then successive anchors tracked |
 | `FR-43` | **Witness enforces monotonic sequence** — The witness verifies that each submitted root is the immediate successor of the last recorded for that operator. | Truncation and erasure both detected |
 | `FR-44` | **Witness retains roots** — The witness keeps submitted roots in its own append-only store. | Root retrievable from the witness independently |
 | `FR-45` | **Witness stamps its own clock** — The countersignature carries the witness's own time, not the operator's. | Operator-supplied time cannot influence the countersignature |
 | `NFR-03` | **Default mutability window** — Default anchor interval of 10 seconds. | Default config inspection plus timing test |
-| `NFR-12` | **Never degrade availability** — The collector must never be able to stop or block an agent run. | Chaos test: witness outage, disk full, slow witness |
-| `NFR-13` | **Durable local queue** — Unwitnessed batches survive process restart and are re-submitted. | Kill -9 during outage, then recovery |
 | `SEC-03` | **No trust in operator or vendor** — Verification must not require trusting the operator, host, collector binary, or Tally. | Verification from bytes and public keys only |
 | `SEC-04` | **One honest witness assumption** — Security holds if at least one witness in the configured set is honest; the assumption is documented. | Documented; quorum semantics tested |
 | `SEC-09` | **Resist truncation** — Truncating the record's tail must be detectable. | Red-team class D |
@@ -152,6 +154,28 @@ The first second party. Close truncation and erasure, which no amount of local c
 | `SEC-15` | **Witness sees roots only** — Witnesses receive salted roots and nothing else. | Wire capture of all witness traffic |
 | `INT-01` | **C2SP conformance** — Conform to the C2SP tlog-witness checkpoint specification. | Conformance suite against the published spec |
 | `INT-02` | **Verify third-party countersignatures** — The verifier accepts countersignatures from witnesses we do not operate. | Verify a pack anchored only to Rekor and a third-party TSA |
+| `SCOPE-15` | **Hard anchor off by default** — The trust-minimised hard anchor MUST default to disabled. | Default config inspection |
+| `FR-48` | **Shipped default configuration** — Ship with witnesses [tally, rekor], quorum 1, anchor_interval 10s and on_unavailable mark_gap, so the out-of-box configuration is independent of the vendor on first run. | Default config asserted in test; a run with no config anchors to two independent witnesses |
+| `FR-50` | **Witness publishes signed tree heads** — The witness publishes its own signed tree head so an operator or third party can detect a rolled-back or equivocating witness. | Rollback simulation: a witness serving an earlier head is detected |
+| `SEC-25` | **Witness time source** — The witness clock derives from a documented, traceable time source, and the verifier surfaces the witness's declared time discipline. | Time source documented; drift monitored and alerted |
+
+### M3b — Practice statement and resilience
+
+Say exactly what the countersignature means, and make sure losing a witness does not lose the evidence.
+
+- **Gate:** none — unlocks adoption rather than closing an attack class
+- **Requirements:** 19 (LEG×10  FR×5  NFR×2  OPS×2)
+- **Effort:** weeks 3-4
+- **Exit criteria:** Witness Practice Statement published, versioned and itself anchored, naming its time discipline. An agent run completes normally with every witness unreachable. Restore drill meets the stated recovery point objective. Countersignatures from a retired witness key still verify.
+
+| ID | Requirement | Verified by |
+|---|---|---|
+| `FR-30` | **Acceptance policy as input** — The verifier takes a caller-supplied acceptance policy naming trusted witness keys and quorum. | Same pack verifies under two different policies |
+| `FR-31` | **Evidence pack carries all countersignatures** — Packs include every countersignature collected, not only Tally's. | Pack inspection after multi-witness anchoring |
+| `FR-38` | **Fail-open with marked batch** — When no witness is reachable, chain and sign locally, mark the batch unwitnessed, and queue it. | Agent completes with all witnesses unreachable |
+| `FR-39` | **Late countersignature records real time** — A retroactive countersignature records the witness's actual receipt time, not the batch's claimed time. | Delta between operator and witness time is present in the record |
+| `NFR-12` | **Never degrade availability** — The collector must never be able to stop or block an agent run. | Chaos test: witness outage, disk full, slow witness |
+| `NFR-13` | **Durable local queue** — Unwitnessed batches survive process restart and are re-submitted. | Kill -9 during outage, then recovery |
 | `LEG-01` | **Publish a Witness Practice Statement** — Publish a versioned practice statement defining exactly what a countersignature means. | Document published and linked from the witness endpoint |
 | `LEG-02` | **WPS asserts receipt time** — The countersignature asserts the root was received at the stated time per the witness clock. | Statement text review against implementation |
 | `LEG-03` | **WPS asserts successor ordering** — The countersignature asserts the root is the immediate successor of the previous one for that operator. | Statement matches FR-43 behaviour |
@@ -162,7 +186,9 @@ The first second party. Close truncation and erasure, which no amount of local c
 | `LEG-08` | **WPS disclaims lawfulness** — The statement disclaims any assertion that an action was lawful or authorised. | Text review |
 | `LEG-09` | **WPS versioned and anchored** — The practice statement is itself versioned and anchored like any other record. | Statement root present in the witness log |
 | `OPS-02` | **Queue drain and retry** — Drain and re-submit queued unwitnessed batches with backoff once a witness returns. | Outage and recovery test |
-| `SCOPE-15` | **Hard anchor off by default** — The trust-minimised hard anchor MUST default to disabled. | Default config inspection |
+| `FR-51` | **Witness key rotation** — Rotate witness keys while keeping historical countersignatures verifiable, by publishing a signed key history. | Countersignatures from a retired key still verify after rotation |
+| `OPS-06` | **Witness store durability** — The witness store is replicated and recoverable, with a documented recovery point objective, because a witness that loses its roots destroys the corroboration it exists to provide. | Restore drill from backup; RPO measured against the stated objective |
+| `LEG-19` | **WPS states the time discipline** — The practice statement names the witness's time source and the limits of the time assertion. | Statement text reviewed against SEC-25 implementation |
 
 ### M4 — Coverage attestation
 
@@ -191,7 +217,7 @@ The differentiated claim: prove the record is complete, not merely unaltered.
 No new attack class. This is the milestone that makes the product buyable by a regulated, multi-customer organisation.
 
 - **Gate:** none — unlocks adoption rather than closing an attack class
-- **Requirements:** 17 (PRIV×7  FR×5  NFR×4  INT×1)
+- **Requirements:** 16 (PRIV×7  FR×5  NFR×3  INT×1)
 - **Effort:** weeks 3-4
 - **Exit criteria:** Verification passes after content and key deletion. A single-event disclosure verifies in isolation against a countersigned root. A 100,000-event run verifies in under 2 seconds with no network and no credentials. Both metadata leaks documented.
 
@@ -205,7 +231,6 @@ No new attack class. This is the milestone that makes the product buyable by a r
 | `NFR-04` | **Verification throughput** — Verify a 100,000-event run in under 2 seconds, offline. | Benchmark on a documented reference machine |
 | `NFR-05` | **No network at verification** — Verification completes with networking disabled. | Test executed in a network-isolated sandbox |
 | `NFR-06` | **No credentials at verification** — Verification requires no account, token or credential. | Test with an empty environment |
-| `NFR-07` | **Long-term verifiability** — Evidence remains verifiable years later; algorithms and formats are versioned to allow it. | Format version negotiation test; documented algorithm migration path |
 | `PRIV-03` | **Erasure via crypto-shredding** — Support a documented erasure procedure satisfying a data-subject deletion request. | Procedure executed; content unrecoverable |
 | `PRIV-04` | **Chain survives erasure** — The chain still verifies after content deletion. | Verify passes post-deletion |
 | `PRIV-05` | **Minimal retained artefacts** — After erasure, only a salted hash and timestamp remain. | Residue inspection |
@@ -220,7 +245,7 @@ No new attack class. This is the milestone that makes the product buyable by a r
 Stop depending on one upstream project, and make the format genuinely somebody else's to implement.
 
 - **Gate:** none — unlocks adoption rather than closing an attack class
-- **Requirements:** 21 (FR×8  GOV×5  NFR×3  INT×2  OPS×2  LEG×1)
+- **Requirements:** 23 (FR×9  GOV×5  NFR×3  INT×2  OPS×2  LEG×2)
 - **Effort:** weeks 4-6
 - **Exit criteria:** End-to-end capture against two non-OMA runtimes over both MCP transports. A third-party witness passes the published conformance suite. A fully self-hosted deployment verified at zero egress, with no account and no enrolment with us.
 
@@ -247,13 +272,15 @@ Stop depending on one upstream project, and make the format genuinely somebody e
 | `OPS-03` | **Self-hosted witness deployment guide** — Document running the witness under internal audit with keys in their custody. | Guide published; followed end to end in a clean environment |
 | `OPS-05` | **Zero-egress mode** — Support and verify a deployment with no account, no enrolment with us, and no traffic leaving the perimeter. | Egress capture in a fully self-hosted deployment |
 | `LEG-13` | **Qualified TSA configurable** — A qualified TSA can be configured in the witness set by the operator. | Live anchor against a qualified TSA |
+| `LEG-12` | **eIDAS presumption only via qualified TSA** — Document that the Art. 41 presumption attaches only when anchored to a qualified TSA, and not via Tally's own witness. | Documentation review; no contrary claim anywhere |
+| `FR-49` | **Documented CLI contract** — Provide the entry points and flags printed in Getting started: collect-oma, mcp-proxy (--upstream, --out), verify (--policy), coverage (--from, --to) and disclose (--event, --out). | CLI contract test executes every documented invocation verbatim |
 
 ### M7 — Launch gate
 
 Every promise that is a claim rather than a feature. This milestone is mostly about what we must not say.
 
 - **Gate:** none — unlocks adoption rather than closing an attack class
-- **Requirements:** 34 (SCOPE×14  GOV×5  DOC×5  SEC×4  LEG×4  TRC×2)
+- **Requirements:** 36 (SCOPE×15  GOV×7  DOC×5  SEC×4  LEG×3  TRC×2)
 - **Effort:** weeks 2
 - **Exit criteria:** Claims audit clean across all 15 scope guards. Every published figure has a passing benchmark behind it. Bounty live with terms published and an arbiter who is not us. No surface anywhere claims conformity, certification, or tamper-proofing.
 
@@ -272,7 +299,6 @@ Every promise that is a claim rather than a feature. This milestone is mostly ab
 | `DOC-06` | **Upstream attribution** — Credit OMA, Sigstore, Rekor, Trillian, C2SP and Schneier–Kelsey. | Attribution present in README and NOTICE |
 | `DOC-07` | **Document the two-policy split** — Document that the witness list governs who is asked and the acceptance policy governs who is accepted. | Documentation review; worked example for both |
 | `DOC-08` | **Publish bounty terms** — Publish the full bounty terms alongside the offer. | Terms published before the offer goes live |
-| `LEG-12` | **eIDAS presumption only via qualified TSA** — Document that the Art. 41 presumption attaches only when anchored to a qualified TSA, and not via Tally's own witness. | Documentation review; no contrary claim anywhere |
 | `LEG-14` | **No conformity claims** — No product surface or marketing claims EU AI Act conformity. | Claims audit across docs, site and UI |
 | `LEG-15` | **No certification of the customer** — Never certify the customer's compliance. | Claims audit |
 | `LEG-16` | **Not-legal-advice disclaimer** — Carry a not-legal-advice disclaimer wherever statutes are cited. | Documentation review |
@@ -293,6 +319,9 @@ Every promise that is a claim rather than a feature. This milestone is mostly ab
 | `SCOPE-14` | **No self-scored defeat metric** — MUST NOT publish an N-of-N attacks-defeated score. | Marketing and documentation audit |
 | `TRC-04` | **Benchmark before claiming** — No performance figure is published as fact until its benchmark exists and passes. | Release gate blocks on missing benchmark |
 | `TRC-05` | **Claims audit per release** — Run a claims audit against the scope guards before each release. | Checklist completed and signed off per release |
+| `SCOPE-16` | **No fail-closed option** — MUST NOT provide any configuration, flag or build that makes the collector block an agent run. Fail-open is a design constraint, not a setting. | Config schema review; no enforcement path exists; rejected as a feature request by policy |
+| `GOV-17` | **Bounty amount per class** — Pay EUR 5,000 per novel tamper class surviving the default configuration. | Terms published with the figure; budget reconciled against the annual cap |
+| `GOV-18` | **Accept third-party attack classes** — Accept contributed attack classes into the public suite by pull request, with attribution. | Contribution path documented; at least one external class merged before launch |
 
 ## Deferred
 
@@ -318,4 +347,4 @@ Every promise that is a claim rather than a feature. This milestone is mostly ab
 
 ---
 
-*160 requirements in 1.0 across 8 milestones; 173 total in the backlog.*
+*174 requirements in 1.0 across 9 milestones; 187 total in the backlog.*

@@ -5,7 +5,7 @@ const base = JSON.parse(fs.readFileSync('requirements/backlog.json','utf8'));
 const plan = JSON.parse(fs.readFileSync('requirements/milestones.json','utf8'));
 const msOf = new Map();
 for (const m of plan.milestones) for (const id of m.ids) msOf.set(id, m.id);
-const extra = ['requirements/part2.json','requirements/part3.json']
+const extra = ['requirements/part2.json','requirements/part3.json','requirements/part4.json']
   .flatMap(f => JSON.parse(fs.readFileSync(f,'utf8')));
 const reqs = [...base.requirements, ...extra];
 

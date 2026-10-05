@@ -2,11 +2,11 @@
 import fs from 'node:fs';
 
 const base = JSON.parse(fs.readFileSync('requirements/backlog.json','utf8'));
-const extra = ['requirements/part2.json','requirements/part3.json']
+const extra = ['requirements/part2.json','requirements/part3.json','requirements/part4.json']
   .flatMap(f => JSON.parse(fs.readFileSync(f,'utf8')));
 const reqs = [...base.requirements, ...extra];
 const byId = new Map(reqs.map(r => [r.id, r]));
-const { gates, milestones } = JSON.parse(fs.readFileSync('requirements/milestones.json','utf8'));
+const { gates, milestones, regressionRule } = JSON.parse(fs.readFileSync('requirements/milestones.json','utf8'));
 
 // --- validate ---------------------------------------------------------------
 const errs = [], assigned = new Map();
@@ -40,6 +40,8 @@ Regenerate with \`npm run plan\`.
 The rule: **no milestone is complete until its attack classes fail closed against our own
 verifier.** Not a code review, not a demo — the red-team suite, with that class's expectation
 flipped from \`undetected\` to \`detected\`.
+
+${regressionRule}
 
 ## Attack-class gates
 
