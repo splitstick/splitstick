@@ -9,7 +9,9 @@
     "generate": "node src/generate.mjs",
     "redteam": "node src/redteam.mjs",
     "test": "npm run generate && npm run redteam",
-    "requirements": "node requirements/build.mjs"
+    "requirements": "node requirements/build.mjs",
+    "plan": "node requirements/plan.mjs",
+    "backlog": "npm run requirements && npm run plan"
   },
   "dependencies": {
     "@open-multi-agent/core": "1.21.1",

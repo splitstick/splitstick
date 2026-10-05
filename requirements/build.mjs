@@ -2,6 +2,9 @@
 import fs from 'node:fs';
 
 const base = JSON.parse(fs.readFileSync('requirements/backlog.json','utf8'));
+const plan = JSON.parse(fs.readFileSync('requirements/milestones.json','utf8'));
+const msOf = new Map();
+for (const m of plan.milestones) for (const id of m.ids) msOf.set(id, m.id);
 const extra = ['requirements/part2.json','requirements/part3.json']
   .flatMap(f => JSON.parse(fs.readFileSync(f,'utf8')));
 const reqs = [...base.requirements, ...extra];
@@ -63,9 +66,9 @@ for (const [t,label] of Object.entries(TYPE_LABEL)) {
   const rows = reqs.filter(r => r.type === t);
   if (!rows.length) continue;
   md += `\n### ${label} — ${rows.length}\n\n`;
-  md += `| ID | Requirement | Traces to | Verified by | Rel | Status |\n|---|---|---|---|---|---|\n`;
+  md += `| ID | Requirement | Traces to | Verified by | Rel | M | Status |\n|---|---|---|---|---|---|---|\n`;
   for (const r of rows) {
-    md += `| \`${r.id}\` | **${esc(r.title)}** — ${esc(r.statement)} | ${esc(r.source)} | ${esc(r.verify)} | ${r.release} | ☐ |\n`;
+    md += `| \`${r.id}\` | **${esc(r.title)}** — ${esc(r.statement)} | ${esc(r.source)} | ${esc(r.verify)} | ${r.release} | ${msOf.get(r.id) ?? '—'} | ☐ |\n`;
   }
 }
 md += `\n---\n\n*${reqs.length} requirements. Status column is maintained by hand as work lands.*\n`;

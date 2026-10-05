@@ -1,0 +1,292 @@
+{
+  "gates": {
+    "AC-1": {
+      "class": "Alter the recorded action — arguments, result, approval decision",
+      "redteam": "A",
+      "kind": "local"
+    },
+    "AC-2": {
+      "class": "Alter an event and repair the citing digest",
+      "redteam": "B, C",
+      "kind": "local"
+    },
+    "AC-3": {
+      "class": "Re-sign rewritten history with the current key",
+      "redteam": "ratchet suite",
+      "kind": "local + HSM"
+    },
+    "AC-4": {
+      "class": "Truncate the record's tail",
+      "redteam": "D",
+      "kind": "external"
+    },
+    "AC-5": {
+      "class": "Erase events and renumber into a clean stream",
+      "redteam": "E, F",
+      "kind": "external"
+    },
+    "AC-6": {
+      "class": "Stop or patch the collector, then claim quiet",
+      "redteam": "G (new)",
+      "kind": "external"
+    },
+    "AC-7": {
+      "class": "Weaken the anchoring policy, then tamper",
+      "redteam": "H (new)",
+      "kind": "external"
+    }
+  },
+  "milestones": [
+    {
+      "id": "M0",
+      "name": "Foundations and long-lead",
+      "goal": "Start everything whose clock runs outside engineering, and turn the red-team suite into the acceptance harness.",
+      "gate": [],
+      "weeks": "1-2, parallel to M1",
+      "exit": "Trademark search returned. External arbiter named. Counsel engaged. Threat model published. CI runs the canary. Harness inverted so each attack class can assert DETECTED against our own verifier.",
+      "ids": [
+        "GOV-01",
+        "GOV-02",
+        "GOV-03",
+        "GOV-04",
+        "GOV-16",
+        "GOV-15",
+        "LEG-10",
+        "LEG-11",
+        "LEG-18",
+        "DOC-02",
+        "TRC-01",
+        "TRC-02",
+        "TRC-03",
+        "SEC-01",
+        "SEC-02",
+        "SEC-05"
+      ]
+    },
+    {
+      "id": "M1",
+      "name": "Local integrity",
+      "goal": "Close the two attack classes that need no third party, and measure the performance budget before the design hardens.",
+      "gate": [
+        "AC-1",
+        "AC-2"
+      ],
+      "weeks": "3-4",
+      "exit": "Red-team A and C both DETECTED by tally verify; baseline still passes. p99 append overhead measured under 1 ms and run latency under 2% — measured, not assumed. Chain files contain no plaintext.",
+      "ids": [
+        "FR-01",
+        "FR-02",
+        "FR-05",
+        "FR-06",
+        "FR-07",
+        "FR-08",
+        "FR-09",
+        "FR-10",
+        "FR-29",
+        "FR-35",
+        "FR-41",
+        "NFR-01",
+        "NFR-02",
+        "SEC-06",
+        "SEC-07",
+        "SEC-13",
+        "SEC-14",
+        "PRIV-01",
+        "PRIV-02",
+        "INT-04",
+        "DOC-01"
+      ]
+    },
+    {
+      "id": "M2",
+      "name": "Key custody",
+      "goal": "Make yesterday's record unforgeable with today's key, and state the precondition honestly.",
+      "gate": [
+        "AC-3"
+      ],
+      "weeks": "2",
+      "exit": "An epoch-N key cannot produce a valid epoch-N-1 signature against a real HSM or KMS. The non-exportable custody precondition appears wherever the forward-secrecy claim does.",
+      "ids": [
+        "FR-11",
+        "NFR-09",
+        "SEC-08",
+        "SEC-17",
+        "OPS-04"
+      ]
+    },
+    {
+      "id": "M3",
+      "name": "External anchoring",
+      "goal": "The first second party. Close truncation and erasure, which no amount of local cryptography can reach.",
+      "gate": [
+        "AC-4",
+        "AC-5"
+      ],
+      "weeks": "5-7",
+      "exit": "Red-team D, E and F all DETECTED. An agent run completes normally with every witness unreachable, and the batch arrives marked unwitnessed. Witness Practice Statement published and itself anchored. Hard anchor confirmed off by default.",
+      "ids": [
+        "FR-12",
+        "FR-13",
+        "FR-14",
+        "FR-18",
+        "FR-19",
+        "FR-20",
+        "FR-21",
+        "FR-30",
+        "FR-31",
+        "FR-38",
+        "FR-39",
+        "FR-42",
+        "FR-43",
+        "FR-44",
+        "FR-45",
+        "NFR-03",
+        "NFR-12",
+        "NFR-13",
+        "SEC-03",
+        "SEC-04",
+        "SEC-09",
+        "SEC-10",
+        "SEC-15",
+        "INT-01",
+        "INT-02",
+        "LEG-01",
+        "LEG-02",
+        "LEG-03",
+        "LEG-04",
+        "LEG-05",
+        "LEG-06",
+        "LEG-07",
+        "LEG-08",
+        "LEG-09",
+        "OPS-02",
+        "SCOPE-15"
+      ]
+    },
+    {
+      "id": "M4",
+      "name": "Coverage attestation",
+      "goal": "The differentiated claim: prove the record is complete, not merely unaltered.",
+      "gate": [
+        "AC-6",
+        "AC-7"
+      ],
+      "weeks": "3-4",
+      "exit": "Killing the collector produces a detectable gap. Patching it reports an unrecognised build digest. Downgrading the witness policy appears as a countersigned chain event. A declared gap lets the sequence recover without a silent reset.",
+      "ids": [
+        "FR-23",
+        "FR-24",
+        "FR-25",
+        "FR-26",
+        "FR-27",
+        "FR-28",
+        "FR-40",
+        "SEC-11",
+        "SEC-12",
+        "DOC-05"
+      ]
+    },
+    {
+      "id": "M5",
+      "name": "Disclosure and erasure",
+      "goal": "No new attack class. This is the milestone that makes the product buyable by a regulated, multi-customer organisation.",
+      "gate": [],
+      "weeks": "3-4",
+      "exit": "Verification passes after content and key deletion. A single-event disclosure verifies in isolation against a countersigned root. A 100,000-event run verifies in under 2 seconds with no network and no credentials. Both metadata leaks documented.",
+      "ids": [
+        "FR-32",
+        "FR-33",
+        "FR-34",
+        "FR-36",
+        "FR-37",
+        "NFR-04",
+        "NFR-05",
+        "NFR-06",
+        "NFR-07",
+        "PRIV-03",
+        "PRIV-04",
+        "PRIV-05",
+        "PRIV-06",
+        "PRIV-07",
+        "PRIV-08",
+        "PRIV-09",
+        "INT-03"
+      ]
+    },
+    {
+      "id": "M6",
+      "name": "Reach and conformance",
+      "goal": "Stop depending on one upstream project, and make the format genuinely somebody else's to implement.",
+      "gate": [],
+      "weeks": "4-6",
+      "exit": "End-to-end capture against two non-OMA runtimes over both MCP transports. A third-party witness passes the published conformance suite. A fully self-hosted deployment verified at zero egress, with no account and no enrolment with us.",
+      "ids": [
+        "FR-03",
+        "FR-04",
+        "FR-15",
+        "FR-16",
+        "FR-17",
+        "FR-22",
+        "FR-46",
+        "FR-47",
+        "NFR-08",
+        "NFR-10",
+        "NFR-11",
+        "GOV-05",
+        "GOV-06",
+        "GOV-07",
+        "GOV-08",
+        "GOV-09",
+        "INT-05",
+        "INT-06",
+        "OPS-03",
+        "OPS-05",
+        "LEG-13"
+      ]
+    },
+    {
+      "id": "M7",
+      "name": "Launch gate",
+      "goal": "Every promise that is a claim rather than a feature. This milestone is mostly about what we must not say.",
+      "gate": [],
+      "weeks": "2",
+      "exit": "Claims audit clean across all 15 scope guards. Every published figure has a passing benchmark behind it. Bounty live with terms published and an arbiter who is not us. No surface anywhere claims conformity, certification, or tamper-proofing.",
+      "ids": [
+        "GOV-10",
+        "GOV-11",
+        "GOV-12",
+        "GOV-13",
+        "GOV-14",
+        "SEC-19",
+        "SEC-20",
+        "SEC-21",
+        "DOC-03",
+        "DOC-04",
+        "DOC-06",
+        "DOC-07",
+        "DOC-08",
+        "LEG-12",
+        "LEG-14",
+        "LEG-15",
+        "LEG-16",
+        "SEC-16",
+        "SCOPE-01",
+        "SCOPE-02",
+        "SCOPE-03",
+        "SCOPE-04",
+        "SCOPE-05",
+        "SCOPE-06",
+        "SCOPE-07",
+        "SCOPE-08",
+        "SCOPE-09",
+        "SCOPE-10",
+        "SCOPE-11",
+        "SCOPE-12",
+        "SCOPE-13",
+        "SCOPE-14",
+        "TRC-04",
+        "TRC-05"
+      ]
+    }
+  ]
+}
