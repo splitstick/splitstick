@@ -8,7 +8,8 @@
   "scripts": {
     "generate": "node src/generate.mjs",
     "redteam": "node src/redteam.mjs",
-    "test": "npm run generate && npm run redteam"
+    "test": "npm run generate && npm run redteam",
+    "requirements": "node requirements/build.mjs"
   },
   "dependencies": {
     "@open-multi-agent/core": "1.21.1",
