@@ -279,7 +279,7 @@ Regenerate with `npm run requirements`.
 |---|---|---|---|---|---|---|
 | `TRC-01` | **Every requirement traces to a promise** — Each requirement names the release-notes section that promises it; orphans are rejected. | Backlog construction rule | Validator fails on a missing source | 1.0 | M0 | ☐ |
 | `TRC-02` | **Every requirement has a verification method** — Each requirement names how it will be verified. | Backlog construction rule | Validator fails on a missing verify field | 1.0 | M0 | ☐ |
-| `TRC-03` | **Red-team canary in CI** — The tamper suite runs in CI and fails the build when an observation changes. | agent-record-redteam — regression canary | CI job present and failing on drift | 1.0 | M0 | ☐ |
+| `TRC-03` | **Red-team canary in CI** — The tamper suite runs in CI and fails the build when an observation changes. | redteam — regression canary | CI job present and failing on drift | 1.0 | M0 | ☐ |
 | `TRC-04` | **Benchmark before claiming** — No performance figure is published as fact until its benchmark exists and passes. | Numbers we are signing up to; footer | Release gate blocks on missing benchmark | 1.0 | M7 | ☐ |
 | `TRC-05` | **Claims audit per release** — Run a claims audit against the scope guards before each release. | Scope; Considered and rejected | Checklist completed and signed off per release | 1.0 | M7 | ☐ |
 

@@ -1,8 +1,7 @@
-agent-record-redteam
+Tally
 Copyright 2026 prathish-ks
 
-This product includes software developed as reproducible tamper tests
-against AI agent run records.
+An independently verifiable record of AI agent actions.
 
-Test fixtures are generated against @open-multi-agent/core (MIT),
-which is not redistributed by this project.
+Includes reproducible tamper tests against AI agent run records, generated
+against @open-multi-agent/core (MIT), which is not redistributed by this project.

@@ -1,13 +1,13 @@
 {
-  "name": "agent-record-redteam",
+  "name": "tally",
   "version": "0.1.0",
-  "description": "Reproducible tamper tests against AI agent run records.",
+  "description": "An independently verifiable record of AI agent actions.",
   "license": "Apache-2.0",
   "type": "module",
   "private": true,
   "scripts": {
-    "generate": "node src/generate.mjs",
-    "redteam": "node src/redteam.mjs",
+    "generate": "node redteam/generate.mjs",
+    "redteam": "node redteam/redteam.mjs",
     "test": "npm run generate && npm run redteam",
     "requirements": "node requirements/build.mjs",
     "plan": "node requirements/plan.mjs",

@@ -86,7 +86,7 @@
 
   {"id":"TRC-01","type":"traceability","release":"1.0","title":"Every requirement traces to a promise","statement":"Each requirement names the release-notes section that promises it; orphans are rejected.","source":"Backlog construction rule","verify":"Validator fails on a missing source"},
   {"id":"TRC-02","type":"traceability","release":"1.0","title":"Every requirement has a verification method","statement":"Each requirement names how it will be verified.","source":"Backlog construction rule","verify":"Validator fails on a missing verify field"},
-  {"id":"TRC-03","type":"traceability","release":"1.0","title":"Red-team canary in CI","statement":"The tamper suite runs in CI and fails the build when an observation changes.","source":"agent-record-redteam — regression canary","verify":"CI job present and failing on drift"},
+  {"id":"TRC-03","type":"traceability","release":"1.0","title":"Red-team canary in CI","statement":"The tamper suite runs in CI and fails the build when an observation changes.","source":"redteam — regression canary","verify":"CI job present and failing on drift"},
   {"id":"TRC-04","type":"traceability","release":"1.0","title":"Benchmark before claiming","statement":"No performance figure is published as fact until its benchmark exists and passes.","source":"Numbers we are signing up to; footer","verify":"Release gate blocks on missing benchmark"},
   {"id":"TRC-05","type":"traceability","release":"1.0","title":"Claims audit per release","statement":"Run a claims audit against the scope guards before each release.","source":"Scope; Considered and rejected","verify":"Checklist completed and signed off per release"}
 ]
