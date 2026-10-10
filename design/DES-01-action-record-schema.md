@@ -19,10 +19,11 @@ record while `DES-02` said every field contributes.
   "collector": "treasury-host-1",          // scopes the chain and the log origin  FR-56
   "run": "bf10bc73-2c1b-442c-b3b2-c044678e03b6",   // null on a heartbeat
   "record_seq": 4812,                      // position in the COLLECTOR's log, from 1
+  "source_seq": 4817,                      // observed consequential actions, incl. ones never written
   "ts": "2026-10-10T10:40:36.907Z",        // collector clock, RFC 3339, always UTC, ms precision
   "kind": "tool_call",                     // tool_call | approval | heartbeat | gap | policy
-  "agent": "treasury-agent",
-  "tool": "transfer_funds",
+  "tool": "transfer_funds",               // a function name, not a person — retained
+  "agent":  { "cid": "sha256:1a0d…" },     // a label that could identify — erasable
   "args":   { "cid": "sha256:9f2c…", "bytes": 61 },     // salted digest, FR-35
   "result": { "cid": "sha256:4b71…", "bytes": 54, "ok": true },
   "approval": null,                        // see below
@@ -33,11 +34,16 @@ record while `DES-02` said every field contributes.
 ```jsonc
 // ChainEntry — the storage wrapper. NEVER canonicalised, never hashed as a unit.
 { "record": { /* the ActionRecord above, verbatim */ },
-  "salt": "4ff729d8125d8ecf4b14a2931d5e28f0",
   "leaf": "507c3f35…",      // H(0x00 ‖ salt ‖ JCS(record))        DES-03
   "prev": "e818cb6b…",      // predecessor head
   "head": "fe3c7f5e…" }     // H(0x02 ‖ prev ‖ leaf)               DES-04
 ```
+
+**The leaf salt is not in the ChainEntry.** It lives in `salts/<collector>.json` keyed by
+`record_seq` (`DES-03`), because the chain is never deleted and a salt persisted inside it could
+never be crypto-shredded — an external review caught exactly that in an earlier draft. This is a
+*different* salt from the per-content `content_salt` used to derive each `cid` (`FR-35`); both are
+deletable, and both must be, for different reasons.
 
 **No payload is in either structure.** Arguments and results are salted content digests
 (`FR-35`); the plaintext lives encrypted in the deletable store (`DES-13`). This is what makes

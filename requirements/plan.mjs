@@ -32,6 +32,17 @@ for (const [id, deps] of Object.entries(depends)) {
     if (pos(dep) > pos(id)) errs.push(`${id} (${msOfId.get(id)}) depends on ${dep} (${msOfId.get(dep)}) — later milestone`);
   }
 }
+// dependency cycles: milestone ordering alone cannot catch a same-milestone cycle
+const seenCycles = new Set();
+const visit = (n, path) => {
+  if (path.includes(n)) {
+    const cyc = [...path.slice(path.indexOf(n)), n].join(' -> ');
+    if (!seenCycles.has(cyc)) { seenCycles.add(cyc); errs.push(`dependency cycle: ${cyc}`); }
+    return;
+  }
+  for (const m of depends[n] || []) visit(m, [...path, n]);
+};
+for (const n of Object.keys(depends)) visit(n, []);
 if (errs.length) { console.error('PLAN VALIDATION FAILED:\n' + errs.join('\n')); process.exit(1); }
 
 // --- emit -------------------------------------------------------------------

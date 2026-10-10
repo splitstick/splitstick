@@ -1,6 +1,6 @@
 # Splitstick 1.0 — draft release notes
 
-`v1.0.0` · Apache-2.0 · rev. 10
+`v1.0.0` · Apache-2.0 · rev. 11
 
 **Agent actions you can prove — including the ones that aren't there.**
 
@@ -123,8 +123,10 @@ more than one we award ourselves.
   ten-second cadence against a public good is not acceptable use. The out-of-box
   configuration has no vendor in it at all, which is the strongest version of the independence
   claim and happens to be the cheapest. A second witness, internal or qualified, is yours to add.
-- **Hard anchor**, optional and *off by default*: a slow, trust-minimised backstop that no company
-  can withdraw. Off by default because its confirmation latency cannot serve a ten-second window,
+- **Roll-up anchor**, *on by default and switchable off in one setting*: a slow, trust-minimised
+  backstop no company can withdraw. On because it is the only free public anchor with no
+  acceptable-use objection; never mandatory, because public-chain anchoring is forbidden outright
+  at some regulated buyers. Turning it off is itself recorded as a chain event. Off by default because its confirmation latency cannot serve a ten-second window,
   and because many regulated buyers hold blanket policies against it.
 - Set `quorum: 2` for records meant to be adverse to you. The active set and quorum are written into
   the chain, so weakening them is a timestamped event rather than a silent config edit.
@@ -327,7 +329,7 @@ half its design.
 | **Verifiable delay function** | Proposed as an offline lower bound on elapsed time. It bounds *sequential computation*, not wall-clock: an adversary with faster hardware shrinks the bound, and the parameters cannot be set safely across heterogeneous hosts. External anchoring is strictly stronger and already present. Cut. |
 | **Zero-knowledge compliance proofs** | Proposed as "prove every high-value action was approved, without disclosing the log." A ZK proof establishes correct computation over *claimed* inputs; it says nothing about whether the inputs are true. An operator generating a proof over their own unanchored data proves only that they can run a circuit. The only meaningful version operates over already-anchored roots, at which point the root is doing the work. Cut, and not placed on the roadmap. |
 | **Collector sealed in a TEE** | Proposed to make the collector unpatchable by its own operator. Enclave technologies have a sustained record of practical breaks, and presenting one as an assurance boundary adds attack surface while inviting justified scepticism. **Remote attestation of the collector build** remains interesting and stays experimental; the claim that a TEE makes suppression impossible does not ship. |
-| **A blockchain as the ledger** | Never seriously considered, stated for the avoidance of doubt. The requirement is an append-only log with inclusion proofs and independent witnessing, which transparency logs provide without consensus, tokens or throughput limits. A public chain appears in exactly one optional role — the slow hard anchor — and is off by default. |
+| **A blockchain as the ledger** | Never seriously considered, stated for the avoidance of doubt. The requirement is an append-only log with inclusion proofs and independent witnessing, which transparency logs provide without consensus, tokens or throughput limits. A public chain appears in exactly one role — the slow roll-up anchor — on by default and disableable in one setting. |
 
 ## Numbers we are signing up to
 
@@ -362,14 +364,16 @@ cheapest way to give away a judgement is to stop making one.
 
 ```yaml
 # splitstick.yaml — the witness surface. Defaults shown; every line is yours to change.
+anchor_interval: 10s             # the mutability window
+rollup_interval: 1h              # the slower, trust-minimised tier
+on_unavailable: mark_gap         # the only accepted value
 witnesses:
-  - { id: splitstick, url: "https://witness.splitstick.dev", key: "<shipped pubkey>" }
-  - { id: rekor, type: rekor }
-#  - { id: corp,  url: "https://tsa.audit.internal", key: "..." }   # your own
-#  - { id: qtsp,  type: rfc3161, url: "https://qts.provider.eu" }   # qualified
+  - { id: tsa, type: rfc3161, url: "https://<free-public-tsa>" }
+  - { id: ots, type: opentimestamps, tier: rollup }
+# - { id: audit, type: splitstick, url: "https://witness.audit.internal", key: "…" }  # yours
+# - { id: qtsp,  type: rfc3161,    url: "https://qts.provider.eu" }                   # qualified
+# - { id: rekor, type: rekor, tier: rollup }   # opt-in; see FR-47 on acceptable use
 quorum: 1
-on_unavailable: mark_gap
-anchor_interval: 10s
 ```
 
 ```bash
@@ -454,6 +458,7 @@ is published rather than discarded, on the same principle as everything else her
 | 6 | ADDED | The witness time source is now named in the practice statement, since the countersignature asserts a time and nothing previously said where that time came from. |
 | 7 | SCOPED | Re-scoped as an unfunded open-source release after a feasibility review found that 40% of requirements were non-engineering and most existed only because the notes were written as a commercial launch. Nothing technical was cut. |
 | 7 | CHANGED | Default witness set is now `[rekor]` alone — no vendor in the shipped configuration, which is both the strongest independence claim and free. |
+| 11 | CORRECTED | A third review round. The leaf salt was removed from the persisted chain entry, where it could never have been shredded. The gap model was fixed: record_seq counts writes, so a lost action leaves no hole, and a gap declaration now occupies one record position while describing the lost span in a separate source_seq — a single gap record cannot occupy six positions and contribute one leaf. A dependency cycle between FR-08 and FR-59 was broken and the validator now rejects cycles. Erasure now enumerates exactly what permanently remains instead of claiming it removes all personal information, with the agent label and any reviewer moved to erasable digests. The default configuration became one canonical file that documentation is checked against. |
 | 10 | CORRECTED | Two external review rounds. A TSA cannot sign a C2SP note, so heterogeneous proofs moved into a typed envelope (DES-20) and the operator now signs the note itself rather than a custom preimage no witness could have matched. The build-digest claim was narrowed: stopping the collector is detectable, patching it is not. A witness now verifies a Merkle consistency proof rather than requiring tree_size to increase by one, which contradicted ten-second checkpointing. Payloads became content-addressed and fully externalised, so substitution is impossible and erasure reaches everything. ActionRecord and ChainEntry were separated to remove a circular hash. Stale defaults and coverage wording in these notes corrected. |
 | 9 | SIMPLIFIED | Dropped the external arbiter. Once the award became recognition rather than cash, the stakes of adjudication collapsed — nobody disputes attribution the way they dispute money. Publishing every finding and crediting every reporter removes the judgement entirely, which is more credible than appointing a referee and needs no one to agree to serve. The arbiter returns if cash ever does. |
 | 8 | RENAMED | Tally became Splitstick. A knockout search found "Tally" registered to Tally Solutions for accounting software, the npm and GitHub namespaces taken, and the word descriptive of what an audit tool does. Splitstick is arbitrary in class 9, free everywhere that matters, and names the two-party property rather than the counting. Recorded in docs/name-search.md. |

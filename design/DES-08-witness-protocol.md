@@ -70,9 +70,14 @@ why independence cannot be self-served — enrolment is a relationship, however 
 
 **Gap declarations — FR-26, FR-27.** With consistency proofs the witness cannot deadlock, so a
 gap declaration is no longer a protocol escape. It remains necessary one layer down: `DES-04`
-requires `record_seq` to increment by exactly one, so records lost before they were written leave
-a hole the **chain** must account for. A signed gap declaration (FR-26) occupies that span, is
-chained like any record, and is submitted for countersignature (FR-27) so its time is
+requires `record_seq` to increment by exactly one. Note what that means: `record_seq` counts
+**writes**, so an action lost before it was written leaves *no hole* — the sequence simply
+continues. An earlier draft said otherwise and an external review was right to push on it.
+
+What is lost is the correspondence between what the collector **observed** and what it
+**recorded**, which is why `DES-01` carries a second counter. A gap declaration (FR-26) occupies
+exactly one record position — preserving `record_seq == tree_size` — and describes the lost span
+in `source_seq`. It is chained like any record and countersigned (FR-27) so its time is
 independently established.
 
 They sit in this element because they must be countersigned, which needs the witness. `DES-10`

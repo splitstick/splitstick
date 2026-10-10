@@ -51,11 +51,13 @@ that limit stated wherever coverage is described, including in the report output
 When a batch is genuinely lost — disk full, crash mid-write, a witness refusing a stale sequence:
 
 ```jsonc
-{ "kind":"gap", "from_seq":4790, "to_seq":4795,
+{ "kind":"gap", "from_source_seq":4790, "to_source_seq":4795,
   "reason":"queue_lost_on_disk_full", "declared_at":"…" }
 ```
 
-Signed, chained, and submitted for countersignature. A stateful witness accepts it at the
+One record, one leaf, one `record_seq` — the span lives in `source_seq`, so `record_seq` stays
+equal to `tree_size` no matter how many observations were lost. Signed, chained, and submitted
+for countersignature. A stateful witness accepts it at the
 expected sequence and advances its pointer (DES-08).
 
 **An undeclared absence and a declared one are different objects.** Not just in engineering: where

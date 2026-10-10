@@ -1,0 +1,18 @@
+# The canonical shipped default. Single source of truth: FR-48, NFR-03, SCOPE-15.
+# Documentation examples are checked against this file by `npm run review`.
+version: 1
+store: ./splitstick
+signer:
+  type: kms                      # kms | hsm | file (file = development only)   DES-06
+  key: projects/…/cryptoKeys/splitstick
+  epoch: 24h
+anchor_interval: 10s             # the mutability window                        NFR-03
+rollup_interval: 1h              # the slower, trust-minimised tier             FR-53
+on_unavailable: mark_gap         # the only accepted value                      SCOPE-16
+witnesses:
+  - { id: tsa, type: rfc3161, url: "https://<free-public-tsa>" }
+  - { id: ots, type: opentimestamps, tier: rollup }
+# - { id: audit, type: splitstick, url: "https://witness.audit.internal", key: "…" }  # yours
+# - { id: qtsp,  type: rfc3161,    url: "https://qts.provider.eu" }                   # qualified
+# - { id: rekor, type: rekor, tier: rollup }   # opt-in; see FR-47 on acceptable use
+quorum: 1

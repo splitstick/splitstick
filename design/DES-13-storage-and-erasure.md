@@ -53,9 +53,23 @@ chain**: the chain is never deleted, so a salt stored there could never be shred
 erasure claim would be unsatisfiable. An earlier draft of this document made exactly that
 mistake.
 
-Afterwards: the data subject's information is unrecoverable; the chain still verifies; the record
-retains a salted commitment to a plaintext nobody can produce. The commitment becomes
-**permanently unlinkable**.
+Afterwards: the enumerated set is unrecoverable; the chain still verifies; the record retains a
+salted commitment to a plaintext nobody can produce.
+
+**What permanently remains**, stated rather than waved at — an external review was right that a
+blanket claim was doing too much work:
+
+| Retained forever | Erasable |
+|---|---|
+| `v`, `collector`, `run`, `record_seq`, `source_seq`, `ts`, `kind`, `consequential` | every payload |
+| `tool` — a function name, not a person | the `agent` label |
+| salted content digests, leaf digests, chain heads | any `approval.reviewer` |
+| | content salts, leaf salts, the reference index |
+
+The `agent` label and any reviewer are stored as salted content digests precisely because either
+could name a person. `tool` is retained because `transfer_funds` identifies a function. Whether
+that residue is non-personal under a given regime is a question for the privacy assessment
+`PRIV-03` defers to a funded release, not something this document should settle by assertion.
 
 Verification of a shredded record yields `ok` for chain, tree, signature and countersignature,
 and `inconclusive` for content reproduction — correctly, since the content is gone by design

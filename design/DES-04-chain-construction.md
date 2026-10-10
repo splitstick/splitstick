@@ -40,10 +40,16 @@ them.
 2. There are exactly **two counters** in the system, and conflating them is the most likely
    source of an interop bug:
 
-   | Counter | Scope | Equals |
+   | Counter | Increments on | Equals |
    |---|---|---|
-   | `record_seq` | one per record | the log's `tree_size` after that record |
-   | `checkpoint_seq` | one per published checkpoint | nothing else; it is an ordinal |
+   | `record_seq` | every record **written** | the log's `tree_size` after that record, always |
+   | `source_seq` | every consequential action **observed**, written or not | nothing else |
+   | `checkpoint_seq` | every published checkpoint | nothing else; it is an ordinal |
+
+   `source_seq` advances past `record_seq` exactly when a write is lost, and the difference is
+   what a gap declaration records (`DES-10`). Keeping them separate is what lets
+   `record_seq == tree_size` hold unconditionally — a single gap record cannot occupy six
+   positions and contribute one leaf.
 
    The C2SP `tree_size` field (DES-07) is **the record count**, not a batch count. A witness
    compares `tree_size`, which is strictly increasing.

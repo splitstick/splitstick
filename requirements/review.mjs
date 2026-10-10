@@ -73,5 +73,25 @@ for (const f of PROSE) {
       flag('STALE ', `${f}:${i+1} ${why} -> "${l.trim().slice(0,70)}"`); });
 }
 
+
+// 8. the documented default must match the canonical config, not drift from it
+const CANON = 'design/default-config.yaml';
+if (fs.existsSync(CANON)) {
+  const canon = fs.readFileSync(CANON,'utf8');
+  // compare key:value pairs, ignoring inline comments and spacing
+  const pairs = l => l.replace(/#.*$/,'').trim().replace(/\s+/g,' ');
+  const keys = /^(anchor_interval|rollup_interval|on_unavailable|quorum):/;
+  const canonPairs = canon.split('\n').filter(l => keys.test(l)).map(pairs);
+  const notes = fs.readFileSync('docs/splitstick-1.0-release-notes.md','utf8');
+  // only the documented YAML example counts — a value mentioned in prose elsewhere
+  // must not mask a drifted config block
+  const block = (notes.match(/```yaml\n([\s\S]*?)```/) || [,''])[1];
+  const notePairs = new Set(block.split('\n').filter(l => keys.test(l.trim())).map(pairs));
+  for (const p of canonPairs)
+    if (!notePairs.has(p)) flag('CONFIG', `the documented default omits or contradicts "${p}" from ${CANON}`);
+  for (const w of ['type: rfc3161', 'type: opentimestamps'])
+    if (!notes.includes(w)) flag('CONFIG', `the documented default is missing a canonical witness (${w})`);
+}
+
 console.log(out.length ? out.map(l => '  ' + l).join('\n') : '  no structural issues');
 console.log(`\n  ${out.length} finding(s) across ${reqs.length} requirements and ${elements.length} design elements`);

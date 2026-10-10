@@ -334,9 +334,9 @@
     "type": "privacy",
     "release": "1.0",
     "title": "Erasure via crypto-shredding",
-    "statement": "Support a documented erasure procedure satisfying a data-subject deletion request.",
+    "statement": "Support a documented erasure procedure satisfying a data-subject deletion request, over payloads, content salts, leaf salts, the reference index, the agent label and any approval reviewer. The claim is scoped to that enumerated set, not to all personal information everywhere.",
     "source": "Erasure — GDPR-compatible",
-    "verify": "Procedure documented and exercised; independent privacy review deferred to a funded release"
+    "verify": "Procedure executed; the enumerated set is unrecoverable; an independent privacy assessment of the residue is deferred to a funded release and recorded as such"
   },
   {
     "id": "PRIV-04",
@@ -352,9 +352,9 @@
     "type": "privacy",
     "release": "1.0",
     "title": "Minimal retained artefacts",
-    "statement": "After erasure, only a salted hash and timestamp remain.",
+    "statement": "After erasure the chain retains only: format version, collector identity, run identifier, record_seq, source_seq, timestamp, kind, consequential flag, tool name, and salted content digests. Potentially identifying values — the agent label and any approval reviewer — are themselves stored as salted content digests and are erased with the payloads.",
     "source": "Erasure — what survives is a salted hash and a timestamp",
-    "verify": "Automated scan after crypto-shredding asserts only salted hashes and timestamps remain"
+    "verify": "Automated scan after crypto-shredding asserts the residue matches the enumerated permanent set exactly, and that no agent label or reviewer string survives"
   },
   {
     "id": "PRIV-06",
