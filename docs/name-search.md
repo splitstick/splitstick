@@ -57,6 +57,57 @@ drawn from the same world, each of which needs its own search before use:
 Selection criteria, in order: no conflicting mark in software classes; free on npm, GitHub and
 as a domain; not descriptive of logging or auditing; short and pronounceable.
 
+## "Splitstick" — searched 10 October 2026: clear
+
+Same method, same caveats. **Result: passes the knockout.**
+
+### No conflicting mark found in software
+
+No trademark registration found for `Splitstick` or `Split Stick` as a brand, in software or
+otherwise. The existing uses are all in unrelated classes and all descriptive within their own
+field, which makes them weak marks and unlikely to reach software:
+
+| Existing use | Field | Class |
+|---|---|---|
+| Wolverine Snow Products "Split Sticks" — collapsible splitboard poles | sporting goods | ~28 |
+| Rhino "Split" stick — a beeswax skin balm | cosmetics | ~3 |
+| Generic woodworking and logging usage | — | — |
+
+Nothing in class 9 (software) or class 42 (SaaS).
+
+### Namespaces are free
+
+| Namespace | Status |
+|---|---|
+| npm `splitstick`, `split-stick`, `@splitstick/*` | **free** — zero search hits |
+| PyPI `splitstick`, `split-stick` | **free** |
+| `github.com/splitstick`, `/split-stick`, `/splitstickhq` | **free** |
+| `splitstick.dev`, `splitstick.io` | no nameservers — likely unregistered |
+| `splitstick.org` | **registered** (parked at Namecheap) |
+| `splitstick.com` | **inconclusive** — the query timed out here; check at a registrar |
+
+One dormant repository exists at `benvoemel-a11y/SplitStick`: zero stars, no description, no
+bearing on an organisation name.
+
+### It is a stronger mark than "Tally" on the merits
+
+Descriptiveness is judged against the goods and services. "Tally" describes what an audit tool
+does. **"Splitstick" describes nothing about software** — it is arbitrary in class 9, which is
+the category of mark that registers most easily and enforces best. It only becomes descriptive
+if you start selling actual split sticks.
+
+It also carries the explanation: the tally stick was split so that neither half alone was the
+evidence. That is the architecture in one word.
+
+### Before relying on it
+
+1. Confirm `.com` and `.dev` availability at a registrar — the DNS check here was inconclusive.
+2. Claim the free things now: npm scope `@splitstick`, the GitHub organisation, one domain.
+3. File in classes 9 and 42 when there is budget. Deferred, not abandoned.
+
+**Verdict: adopt it.** No conflict found in the relevant classes, every namespace that matters
+is free, and it is a materially stronger mark than the name it replaces.
+
 ## Next step
 
 Choose a name, repeat this search against it, and record the result here before the first
