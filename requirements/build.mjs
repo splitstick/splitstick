@@ -68,7 +68,7 @@ for (const [t,label] of Object.entries(TYPE_LABEL)) {
   md += `\n### ${label} — ${rows.length}\n\n`;
   md += `| ID | Requirement | Traces to | Verified by | Rel | M | Status |\n|---|---|---|---|---|---|---|\n`;
   for (const r of rows) {
-    md += `| \`${r.id}\` | **${esc(r.title)}** — ${esc(r.statement)} | ${esc(r.source)} | ${esc(r.verify)} | ${r.release} | ${msOf.get(r.id) ?? '—'} | ☐ |\n`;
+    md += `| \`${r.id}\` | **${esc(r.title)}** — ${esc(r.statement)} | ${esc(r.source)} | ${esc(r.verify)} | ${r.release} | ${msOf.get(r.id) ?? '—'} | ${r.status==='done' ? '✅' : '☐'} |\n`;
   }
 }
 md += `\n---\n\n*${reqs.length} requirements. Status column is maintained by hand as work lands.*\n`;
@@ -76,7 +76,9 @@ md += `\n---\n\n*${reqs.length} requirements. Status column is maintained by han
 fs.writeFileSync('requirements/MATRIX.md', md);
 fs.writeFileSync('requirements/backlog.resolved.json', JSON.stringify({source:base.source, count:reqs.length, requirements:reqs}, null, 2));
 
-console.log(`validated ${reqs.length} requirements, 0 errors\n`);
+const done = reqs.filter(r=>r.status==='done').length;
+const open10 = reqs.filter(r=>r.release==='1.0' && r.status!=='done').length;
+console.log(`validated ${reqs.length} requirements, 0 errors  |  done ${done}  |  open in 1.0 ${open10}\n`);
 const w = Math.max(...Object.values(TYPE_LABEL).map(s=>s.length));
 for (const [t,c] of Object.entries(types).sort((a,b)=>b[1]-a[1]))
   console.log(`  ${(TYPE_LABEL[t]??t).padEnd(w)}  ${String(c).padStart(3)}`);

@@ -123,7 +123,9 @@
     "title": "Published threat model",
     "statement": "Publish a threat model naming the operator as the adversary.",
     "source": "Threat model",
-    "verify": "Document exists and is referenced from the README"
+    "verify": "Document exists and is referenced from the README",
+    "status": "done",
+    "evidence": "docs/threat-model.md, linked from README"
   },
   {
     "id": "SEC-02",
@@ -132,7 +134,9 @@
     "title": "Detection, not prevention",
     "statement": "The stated security goal is detection and attribution, not prevention.",
     "source": "Threat model — goal",
-    "verify": "Claims review against documentation and marketing"
+    "verify": "Claims review against documentation and marketing",
+    "status": "done",
+    "evidence": "stated as the design goal in the threat model"
   },
   {
     "id": "SEC-03",
@@ -159,7 +163,9 @@
     "title": "Documented exclusions",
     "statement": "Publish what is out of scope: actions never attempted, a compromised model, a lying tool, full quorum collusion, a key exfiltrated before first use.",
     "source": "Threat model — out of scope",
-    "verify": "Document review"
+    "verify": "Document review",
+    "status": "done",
+    "evidence": "out-of-scope list, binding in both directions"
   },
   {
     "id": "SEC-06",

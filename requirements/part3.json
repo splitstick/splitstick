@@ -159,7 +159,9 @@
     "title": "Trademark clearance",
     "statement": "Complete a free knockout search on the public registers and on npm, GitHub and domains before the name is relied on. Registration is deferred to a funded release.",
     "source": "Draft banner — placeholder pending a trademark search",
-    "verify": "Search record committed to the repository"
+    "verify": "Search record committed to the repository",
+    "status": "done",
+    "evidence": "docs/name-search.md; registration deferred to a funded release"
   },
   {
     "id": "GOV-01",
@@ -168,7 +170,9 @@
     "title": "Apache-2.0 with patent grant",
     "statement": "Licence all open components under Apache-2.0.",
     "source": "Licence and governance",
-    "verify": "LICENSE present; headers applied"
+    "verify": "LICENSE present; headers applied",
+    "status": "done",
+    "evidence": "LICENSE + source headers"
   },
   {
     "id": "GOV-02",
@@ -177,7 +181,9 @@
     "title": "DCO on contributions",
     "statement": "Require Signed-off-by on all contributions.",
     "source": "Licence and governance — contributions under DCO",
-    "verify": "CI check enforces the trailer"
+    "verify": "CI check enforces the trailer",
+    "status": "done",
+    "evidence": "CI dco job + CONTRIBUTING.md"
   },
   {
     "id": "GOV-03",
@@ -186,7 +192,9 @@
     "title": "Open component set",
     "statement": "Keep the spec, wire format, test vectors, practice statement and both collectors open.",
     "source": "Licence and governance",
-    "verify": "Repository inventory"
+    "verify": "Repository inventory",
+    "status": "done",
+    "evidence": "repository inventory matches the declared open set"
   },
   {
     "id": "GOV-04",
@@ -195,7 +203,9 @@
     "title": "Non-relicensing commitment",
     "statement": "Publish a commitment never to relicense the open components.",
     "source": "Licence and governance — we commit publicly",
-    "verify": "Commitment published in the repository"
+    "verify": "Commitment published in the repository",
+    "status": "done",
+    "evidence": "non-relicensing pledge in README and notes"
   },
   {
     "id": "GOV-05",
@@ -303,7 +313,9 @@
     "title": "Published review history",
     "statement": "Maintain a public record of what was added, cut and rewritten across revisions.",
     "source": "Review history",
-    "verify": "Section present and updated per revision"
+    "verify": "Section present and updated per revision",
+    "status": "done",
+    "evidence": "review history, rev. 1-8, in the notes"
   },
   {
     "id": "OPS-01",
@@ -546,7 +558,9 @@
     "title": "Public red-team suite",
     "statement": "Maintain a public tamper suite reproducible in two commands.",
     "source": "Why — the suite is public and runs in two commands",
-    "verify": "Clean-clone run succeeds"
+    "verify": "Clean-clone run succeeds",
+    "status": "done",
+    "evidence": "redteam/ runs from a clean clone in two commands"
   },
   {
     "id": "DOC-02",
@@ -555,7 +569,9 @@
     "title": "Threat model document",
     "statement": "Publish the threat model as a maintained document.",
     "source": "Threat model",
-    "verify": "Document present, versioned"
+    "verify": "Document present, versioned",
+    "status": "done",
+    "evidence": "docs/threat-model.md"
   },
   {
     "id": "DOC-03",
@@ -708,7 +724,9 @@
     "title": "Every requirement traces to a promise",
     "statement": "Each requirement names the release-notes section that promises it; orphans are rejected.",
     "source": "Backlog construction rule",
-    "verify": "Validator fails on a missing source"
+    "verify": "Validator fails on a missing source",
+    "status": "done",
+    "evidence": "validator fails on a missing source"
   },
   {
     "id": "TRC-02",
@@ -717,7 +735,9 @@
     "title": "Every requirement has a verification method",
     "statement": "Each requirement names how it will be verified.",
     "source": "Backlog construction rule",
-    "verify": "Validator fails on a missing verify field"
+    "verify": "Validator fails on a missing verify field",
+    "status": "done",
+    "evidence": "validator fails on a missing verify field"
   },
   {
     "id": "TRC-03",
@@ -726,7 +746,9 @@
     "title": "Red-team canary in CI",
     "statement": "The tamper suite runs in CI and fails the build when an observation changes.",
     "source": "redteam — regression canary",
-    "verify": "CI job present and failing on drift"
+    "verify": "CI job present and failing on drift",
+    "status": "done",
+    "evidence": "CI canary job, incl. generated-file drift check"
   },
   {
     "id": "TRC-04",

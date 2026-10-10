@@ -71,10 +71,10 @@ for (const m of milestones) {
   md += `- **Requirements:** ${m.ids.length} (${mix})\n`;
   md += `- **Effort:** weeks ${m.weeks}\n`;
   md += `- **Exit criteria:** ${m.exit}\n\n`;
-  md += `| ID | Requirement | Verified by |\n|---|---|---|\n`;
+  md += `| | ID | Requirement | Verified by |\n|---|---|---|---|\n`;
   for (const id of m.ids) {
     const r = byId.get(id);
-    md += `| \`${id}\` | **${esc(r.title)}** — ${esc(r.statement)} | ${esc(r.verify)} |\n`;
+    md += `| ${r.status==='done'?'✅':'☐'} \`${id}\` | **${esc(r.title)}** — ${esc(r.statement)} | ${esc(r.verify)} |\n`;
   }
 }
 
@@ -91,6 +91,7 @@ fs.writeFileSync('requirements/PLAN.md', md);
 console.log(`plan validated: ${r10.length} requirements, ${milestones.length} milestones, all 7 gates closed, 0 errors\n`);
 for (const m of milestones) {
   const g = m.gate.length ? m.gate.join(',') : '—';
-  console.log(`  ${m.id}  ${m.name.padEnd(26)} ${String(m.ids.length).padStart(3)} reqs   gate ${g.padEnd(11)} wk ${m.weeks}`);
+  const openN = m.ids.filter(id=>byId.get(id).status!=='done').length;
+  console.log(`  ${m.id.padEnd(4)} ${m.name.padEnd(32)} ${String(openN).padStart(3)} open / ${String(m.ids.length).padStart(3)}   gate ${g.padEnd(11)} wk ${m.weeks}`);
 }
 console.log(`\n  ${'TOTAL'.padEnd(30)} ${String(milestones.reduce((a,m)=>a+m.ids.length,0)).padStart(3)} reqs`);

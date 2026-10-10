@@ -132,6 +132,8 @@
     "title": "State the resourcing honestly",
     "statement": "Publish that the project is unfunded and what that means: no hosted witness, no accreditation, no certification mark, and recognition rather than cash. Stated plainly rather than implied by omission.",
     "source": "Resourcing",
-    "verify": "Section present in the release notes and the README"
+    "verify": "Section present in the release notes and the README",
+    "status": "done",
+    "evidence": "Resourcing section in README and notes"
   }
 ]

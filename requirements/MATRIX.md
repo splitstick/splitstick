@@ -114,11 +114,11 @@ Regenerate with `npm run requirements`.
 
 | ID | Requirement | Traces to | Verified by | Rel | M | Status |
 |---|---|---|---|---|---|---|
-| `SEC-01` | **Published threat model** — Publish a threat model naming the operator as the adversary. | Threat model | Document exists and is referenced from the README | 1.0 | M0 | ☐ |
-| `SEC-02` | **Detection, not prevention** — The stated security goal is detection and attribution, not prevention. | Threat model — goal | Claims review against documentation and marketing | 1.0 | M0 | ☐ |
+| `SEC-01` | **Published threat model** — Publish a threat model naming the operator as the adversary. | Threat model | Document exists and is referenced from the README | 1.0 | M0 | ✅ |
+| `SEC-02` | **Detection, not prevention** — The stated security goal is detection and attribution, not prevention. | Threat model — goal | Claims review against documentation and marketing | 1.0 | M0 | ✅ |
 | `SEC-03` | **No trust in operator or vendor** — Verification must not require trusting the operator, host, collector binary, or Splitstick. | Threat model — trust | Verification from bytes and public keys only | 1.0 | M3a | ☐ |
 | `SEC-04` | **One honest witness assumption** — Security holds if at least one witness in the configured set is honest; the assumption is documented. | Threat model — trust | Documented; quorum semantics tested | 1.0 | M3a | ☐ |
-| `SEC-05` | **Documented exclusions** — Publish what is out of scope: actions never attempted, a compromised model, a lying tool, full quorum collusion, a key exfiltrated before first use. | Threat model — out of scope | Document review | 1.0 | M0 | ☐ |
+| `SEC-05` | **Documented exclusions** — Publish what is out of scope: actions never attempted, a compromised model, a lying tool, full quorum collusion, a key exfiltrated before first use. | Threat model — out of scope | Document review | 1.0 | M0 | ✅ |
 | `SEC-06` | **Resist action alteration** — Altering recorded arguments, result or approval decision must be detectable. | Attack class table, row 1 | Red-team class A | 1.0 | M1 | ☐ |
 | `SEC-07` | **Resist consistent rewrite** — Altering an event and repairing its citing digest must be detectable. | Attack class table, row 2 | Red-team class C | 1.0 | M1 | ☐ |
 | `SEC-08` | **Resist re-signing history** — Re-signing rewritten history with the current key must be detectable under non-exportable custody. | Attack class table, row 3 | Epoch ratchet test with HSM | 1.0 | M2 | ☐ |
@@ -175,17 +175,17 @@ Regenerate with `npm run requirements`.
 | `LEG-15` | **No certification of the customer** — Never certify the customer's compliance. | Legal posture — Splitstick does not certify you | Claims audit | 1.0 | M7 | ☐ |
 | `LEG-16` | **Not-legal-advice disclaimer** — Carry a not-legal-advice disclaimer wherever statutes are cited. | Legal posture; footer | Documentation review | 1.0 | M7 | ☐ |
 | `LEG-17` | **Pursue qualified status** — Pursue accreditation for the hosted witness so the eIDAS presumption can attach. | What comes after 1.0 — qualified status | Accreditation process initiated and tracked | commercial | — | ☐ |
-| `LEG-18` | **Trademark clearance** — Complete a free knockout search on the public registers and on npm, GitHub and domains before the name is relied on. Registration is deferred to a funded release. | Draft banner — placeholder pending a trademark search | Search record committed to the repository | 1.0 | M0 | ☐ |
+| `LEG-18` | **Trademark clearance** — Complete a free knockout search on the public registers and on npm, GitHub and domains before the name is relied on. Registration is deferred to a funded release. | Draft banner — placeholder pending a trademark search | Search record committed to the repository | 1.0 | M0 | ✅ |
 | `LEG-19` | **WPS states the time discipline** — The practice statement names the witness's time source and the limits of the time assertion. | Witness Practice Statement — per its clock | Statement text reviewed against SEC-25 implementation | 1.0 | M3b | ☐ |
 
 ### Governance, licensing & community — 19
 
 | ID | Requirement | Traces to | Verified by | Rel | M | Status |
 |---|---|---|---|---|---|---|
-| `GOV-01` | **Apache-2.0 with patent grant** — Licence all open components under Apache-2.0. | Licence and governance | LICENSE present; headers applied | 1.0 | M0 | ☐ |
-| `GOV-02` | **DCO on contributions** — Require Signed-off-by on all contributions. | Licence and governance — contributions under DCO | CI check enforces the trailer | 1.0 | M0 | ☐ |
-| `GOV-03` | **Open component set** — Keep the spec, wire format, test vectors, practice statement and both collectors open. | Licence and governance | Repository inventory | 1.0 | M0 | ☐ |
-| `GOV-04` | **Non-relicensing commitment** — Publish a commitment never to relicense the open components. | Licence and governance — we commit publicly | Commitment published in the repository | 1.0 | M0 | ☐ |
+| `GOV-01` | **Apache-2.0 with patent grant** — Licence all open components under Apache-2.0. | Licence and governance | LICENSE present; headers applied | 1.0 | M0 | ✅ |
+| `GOV-02` | **DCO on contributions** — Require Signed-off-by on all contributions. | Licence and governance — contributions under DCO | CI check enforces the trailer | 1.0 | M0 | ✅ |
+| `GOV-03` | **Open component set** — Keep the spec, wire format, test vectors, practice statement and both collectors open. | Licence and governance | Repository inventory | 1.0 | M0 | ✅ |
+| `GOV-04` | **Non-relicensing commitment** — Publish a commitment never to relicense the open components. | Licence and governance — we commit publicly | Commitment published in the repository | 1.0 | M0 | ✅ |
 | `GOV-05` | **Third-party witnesses permitted** — Anyone, including competitors and hyperscalers, may run a conformant witness. | Licence and governance | No technical or licence barrier; third-party witness interoperates | 1.0 | M6 | ☐ |
 | `GOV-06` | **Open conformance suite** — Publish the conformance suite so implementations can self-check. | Licence and governance | Suite in the repository under the open licence | 1.0 | M6 | ☐ |
 | `GOV-07` | **Certification mark on passing** — Hold a certification mark and grant it on a passing conformance run. | Licence and governance — control the badge | Mark registered; grant procedure documented | commercial | — | ☐ |
@@ -197,10 +197,10 @@ Regenerate with `npm run requirements`.
 | `GOV-13` | **Bounty: recognition, not cash** — Recognise a novel tamper class with attribution, credit in the suite and a named finding. The project is unfunded; no cash is promised. | Bounty terms; Resourcing | Terms published stating plainly that recognition is non-cash while unfunded | 1.0 | M7 | ☐ |
 | `GOV-14` | **Bounty: first reporter wins** — Award the first complete report. | Bounty terms | Terms published; timestamps retained | 1.0 | M7 | ☐ |
 | `GOV-15` | **Bounty: external arbiter** — Novelty is decided by an arbiter named in the repository, drawn from the transparency-log community and not employed by the project. The role is informal and unpaid while the project is unfunded. | Bounty terms | Arbiter named in the repository, or the absence stated plainly | 1.0 | M0 | ☐ |
-| `GOV-16` | **Published review history** — Maintain a public record of what was added, cut and rewritten across revisions. | Review history | Section present and updated per revision | 1.0 | M0 | ☐ |
+| `GOV-16` | **Published review history** — Maintain a public record of what was added, cut and rewritten across revisions. | Review history | Section present and updated per revision | 1.0 | M0 | ✅ |
 | `GOV-17` | **Bounty: cash deferred until funded** — State publicly that a cash award opens only if the project is funded, rather than promising money that is not held. | Resourcing | Terms published with the condition stated; no figure advertised as available | 1.0 | M7 | ☐ |
 | `GOV-18` | **Accept third-party attack classes** — Accept contributed attack classes by pull request, with attribution. A goal, explicitly not a launch gate. | Attack class section — the suite is open, contributions are invited | Contribution path documented; not referenced in any release gate | 1.0 | M7 | ☐ |
-| `GOV-19` | **State the resourcing honestly** — Publish that the project is unfunded and what that means: no hosted witness, no accreditation, no certification mark, and recognition rather than cash. Stated plainly rather than implied by omission. | Resourcing | Section present in the release notes and the README | 1.0 | M0 | ☐ |
+| `GOV-19` | **State the resourcing honestly** — Publish that the project is unfunded and what that means: no hosted witness, no accreditation, no certification mark, and recognition rather than cash. Stated plainly rather than implied by omission. | Resourcing | Section present in the release notes and the README | 1.0 | M0 | ✅ |
 
 ### Operational — 6
 
@@ -250,8 +250,8 @@ Regenerate with `npm run requirements`.
 
 | ID | Requirement | Traces to | Verified by | Rel | M | Status |
 |---|---|---|---|---|---|---|
-| `DOC-01` | **Public red-team suite** — Maintain a public tamper suite reproducible in two commands. | Why — the suite is public and runs in two commands | Clean-clone run succeeds | 1.0 | M1 | ☐ |
-| `DOC-02` | **Threat model document** — Publish the threat model as a maintained document. | Threat model | Document present, versioned | 1.0 | M0 | ☐ |
+| `DOC-01` | **Public red-team suite** — Maintain a public tamper suite reproducible in two commands. | Why — the suite is public and runs in two commands | Clean-clone run succeeds | 1.0 | M1 | ✅ |
+| `DOC-02` | **Threat model document** — Publish the threat model as a maintained document. | Threat model | Document present, versioned | 1.0 | M0 | ✅ |
 | `DOC-03` | **Considered-and-rejected rationale** — Publish rejected designs with reasons. | Considered and rejected | Section present; updated as decisions are made | 1.0 | M7 | ☐ |
 | `DOC-04` | **Label targets as targets** — Any unverified figure is labelled a target, not a measurement, until benchmarked. | Draft banner; footer | Documentation review before each release | 1.0 | M7 | ☐ |
 | `DOC-05` | **Publish honest limits** — Publish the known information leaks and the attacks not covered. | Disclosure — the honest limit; Threat model — out of scope | Documentation review | 1.0 | M4 | ☐ |
@@ -278,9 +278,9 @@ Regenerate with `npm run requirements`.
 
 | ID | Requirement | Traces to | Verified by | Rel | M | Status |
 |---|---|---|---|---|---|---|
-| `TRC-01` | **Every requirement traces to a promise** — Each requirement names the release-notes section that promises it; orphans are rejected. | Backlog construction rule | Validator fails on a missing source | 1.0 | M0 | ☐ |
-| `TRC-02` | **Every requirement has a verification method** — Each requirement names how it will be verified. | Backlog construction rule | Validator fails on a missing verify field | 1.0 | M0 | ☐ |
-| `TRC-03` | **Red-team canary in CI** — The tamper suite runs in CI and fails the build when an observation changes. | redteam — regression canary | CI job present and failing on drift | 1.0 | M0 | ☐ |
+| `TRC-01` | **Every requirement traces to a promise** — Each requirement names the release-notes section that promises it; orphans are rejected. | Backlog construction rule | Validator fails on a missing source | 1.0 | M0 | ✅ |
+| `TRC-02` | **Every requirement has a verification method** — Each requirement names how it will be verified. | Backlog construction rule | Validator fails on a missing verify field | 1.0 | M0 | ✅ |
+| `TRC-03` | **Red-team canary in CI** — The tamper suite runs in CI and fails the build when an observation changes. | redteam — regression canary | CI job present and failing on drift | 1.0 | M0 | ✅ |
 | `TRC-04` | **Benchmark before claiming** — No performance figure is published as fact until its benchmark exists and passes. | Numbers we are signing up to; footer | Release gate blocks on missing benchmark | 1.0 | M7 | ☐ |
 | `TRC-05` | **Claims audit per release** — Run a claims audit against the scope guards before each release. | Scope; Considered and rejected | Checklist completed and signed off per release | 1.0 | M7 | ☐ |
 
