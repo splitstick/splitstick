@@ -41,8 +41,10 @@ leaving a reader to assume NTP.
 
 ## Rules
 
-1. The origin string is stable for the life of a log. Changing it forks the log, which a verifier
-   reports.
+1. The origin string is stable for the life of a log and is derived from the collector identity
+   (FR-56). Changing it forks the log, which a verifier reports as `ORIGIN_CHANGED` — and
+   cross-pack comparison (DES-19) keys on the operator key as well as the origin, so a fork
+   cannot be used to escape a previously disclosed height.
 2. Tree size is monotonic. A checkpoint with a smaller size than one already seen is a rollback
    (DES-08's tree-head check).
 3. The note is the only thing signed. Nothing about the records' content appears in it — which is

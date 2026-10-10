@@ -8,11 +8,11 @@
 `node:crypto`.
 
 ```
-preimage = 0x03 ‖ root ‖ u64be(seq) ‖ ts
+preimage = 0x03 ‖ root ‖ u64be(tree_size) ‖ ts
 sig      = Ed25519-Sign(K_epoch, preimage)
 ```
 
-The signature covers the root, the sequence number **and** the timestamp together. Signing the
+The signature covers the root, the log's `tree_size` **and** the timestamp together — the same `tree_size` the C2SP checkpoint asserts (DES-07), never a batch ordinal. Signing the
 root alone would let a batch be replayed at a different claimed position or time.
 
 ## Epoch ratchet — FR-11, M2

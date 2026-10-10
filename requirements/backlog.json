@@ -214,9 +214,9 @@
       "type": "functional",
       "release": "1.0",
       "title": "Signed heartbeats",
-      "statement": "Emit signed heartbeats into the chain at a configured interval.",
+      "statement": "Emit signed heartbeats into the collector-scoped chain at a configured interval, independently of whether any run is active, because the dangerous window is precisely when none is.",
       "source": "Coverage attestation — signed heartbeats",
-      "verify": "Stopping the collector produces a detectable gap"
+      "verify": "Stopping the collector produces a detectable gap, including during an interval with no agent run"
     },
     {
       "id": "FR-25",
@@ -279,7 +279,7 @@
       "title": "Evidence pack carries all countersignatures",
       "statement": "Packs include every countersignature collected, not only Splitstick's.",
       "source": "Proof — never only ours",
-      "verify": "Pack inspection after multi-witness anchoring"
+      "verify": "Automated pack assertion: after anchoring to three witnesses, the pack contains three signature lines and verification succeeds under a policy naming only the third"
     },
     {
       "id": "FR-32",
@@ -315,7 +315,7 @@
       "title": "Content externalised from the chain",
       "statement": "The chain stores salted commitments and pointers only; content lives in operator-controlled mutable storage.",
       "source": "Erasure — no content is ever in the chain",
-      "verify": "Chain inspection contains no plaintext"
+      "verify": "Automated scan of chain files for any content string from the fixture finds nothing (shares PRIV-02 harness)"
     },
     {
       "id": "FR-36",
@@ -351,7 +351,7 @@
       "title": "Late countersignature records real time",
       "statement": "A retroactive countersignature records the witness's actual receipt time, not the batch's claimed time.",
       "source": "Operations — the witness's real time",
-      "verify": "Delta between operator and witness time is present in the record"
+      "verify": "Test asserts the witness receipt time differs from the batch timestamp and both appear in the record"
     },
     {
       "id": "FR-40",
@@ -369,7 +369,7 @@
       "title": "Configuration file",
       "statement": "Support splitstick.yaml with witnesses, quorum, on_unavailable and anchor_interval keys.",
       "source": "Getting started — splitstick.yaml",
-      "verify": "Documented example loads and takes effect"
+      "verify": "The documented example config is loaded in test and each key asserted to take effect"
     },
     {
       "id": "FR-42",

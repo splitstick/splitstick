@@ -44,7 +44,8 @@
         "FR-08",
         "SEC-06",
         "SEC-09",
-        "SEC-10"
+        "SEC-10",
+        "FR-56"
       ],
       "spec": "design/DES-04-chain-construction.md"
     },

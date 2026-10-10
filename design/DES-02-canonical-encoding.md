@@ -27,10 +27,17 @@ JCS specifies exactly the things a hand-rolled version gets wrong:
 1. The canonical form of a record is JCS over the record object **with no fields removed**.
 2. Every field at every nesting depth contributes. There is no allowlist, no denylist, and no
    replacer.
-3. Floating-point values are **rejected at capture**, not canonicalised. Monetary and quantity
-   arguments must arrive as integers or strings. A float in `args` makes the record invalid and
-   is reported, because round-trip equality for floats is not a property worth betting evidence
-   on.
+3. Floating-point values are **coerced, never rejected**. A float is encoded as its canonical
+   decimal string and the record is flagged `"coerced": ["args.amount"]`, which is itself part of
+   the canonical form and therefore digested.
+
+   **A validation rule must never cause an action to go unrecorded.** Dropping or refusing a
+   record because its arguments displease the canonicaliser would manufacture exactly the omission
+   DES-10 names as its residual risk — self-inflicted, by an integrity feature. Capture always
+   wins; the flag tells an auditor the value was reshaped and how.
+
+   Tool authors are still advised to use integers or strings for monetary and quantity arguments,
+   because a coerced record is weaker evidence than a clean one. Advice, not a gate.
 4. The canonical form is a byte string. It is hashed by DES-03 and never stored separately.
 
 ## Test obligation — FR-52

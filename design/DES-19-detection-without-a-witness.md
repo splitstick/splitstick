@@ -44,6 +44,11 @@ accumulating constraints is to never prove anything to anyone, and proving thing
   comparison a single flag; it cannot make anyone run it.
 - A mild perverse incentive: an operator who understands this discloses less. Self-limiting
   rather than exploitable — an operator who stops producing evidence is its own signal.
+- **Origin substitution.** Comparison keys on log identity, so presenting a record under a *new*
+  origin would sidestep it. Closed by keying on the **operator key** as well: a new origin signed
+  by the same key is reported as `ORIGIN_CHANGED` and compared anyway, and a new key requires a
+  declared discontinuity (DES-06) which a verifier always surfaces. An operator can start a fresh
+  log; they cannot do it quietly.
 
 ## Mechanism 2 — counterparty reconciliation (FR-55, DOC-09)
 

@@ -10,9 +10,9 @@ Regenerate with `npm run backlog`.
 | | Count |
 |---|---:|
 | Design elements | 19 |
-| Release-1.0 requirements traced to a design element | 117 |
+| Release-1.0 requirements traced to a design element | 118 |
 | Classified non-design | 60 |
-| **Total 1.0** | **177** |
+| **Total 1.0** | **178** |
 
 ### Non-design classifications
 
@@ -61,7 +61,7 @@ Salt length and source, leaf = H(salt || canonical), and where salts are stored 
 
 ### [DES-04 — Chain construction](../design/DES-04-chain-construction.md)
 
-**Milestone:** M1 · **Requirements covered:** 4
+**Milestone:** M1 · **Requirements covered:** 5
 
 h_i = H(h_(i-1) || leaf_i), the genesis value, sequence semantics, and what a verifier may conclude from a break.
 
@@ -71,6 +71,7 @@ h_i = H(h_(i-1) || leaf_i), the genesis value, sequence semantics, and what a ve
 | `SEC-06` | Resist action alteration | ☐ |
 | `SEC-09` | Resist truncation | ☐ |
 | `SEC-10` | Resist erasure and renumbering | ☐ |
+| `FR-56` | Collector instance identity | ☐ |
 
 ### [DES-05 — Batching and Merkle tree](../design/DES-05-batching-and-merkle.md)
 

@@ -18,9 +18,19 @@ RFC 6962 gets right the two things hand-rolled trees get wrong: **odd leaf count
 duplicate the last leaf, which is the bug that enabled CVE-2012-2459 in Bitcoin) and **domain
 separation** between leaf and interior nodes.
 
-## Batch boundaries
+## The log is append-only and running
 
-A batch closes on whichever comes first:
+The Merkle tree is over **every leaf in the collector's log so far**, not over an isolated batch.
+A checkpoint says "this log now has `tree_size` entries and this is its root" — exactly the CT
+model, and the reason `tree_size` is monotonic and a rollback is detectable.
+
+A "batch" is therefore only a **publication cadence**: the set of records added since the last
+checkpoint. Both tiers below publish checkpoints of the same log at different frequencies to
+different witnesses, so there is one tree, not two.
+
+## Publication boundaries
+
+A checkpoint is published on whichever comes first:
 
 | Trigger | Default | Requirement |
 |---|---|---|
@@ -36,15 +46,15 @@ stated plainly in the notes rather than hidden.
 
 | Tier | Interval | Submitted to |
 |---|---|---|
-| **Batch root** | 10 s | per-batch witness (TSA) |
-| **Roll-up root** | 1 h | trust-minimised anchor, or a transparency log |
+| **Frequent checkpoint** | 10 s | per-batch witness (TSA) |
+| **Roll-up checkpoint** | 1 h | trust-minimised anchor, or a transparency log |
 
-The roll-up is a Merkle tree **over batch roots**, so one roll-up entry proves inclusion of every
-batch beneath it. This exists because a public good is not free infrastructure: at a 10-second
+The roll-up is a checkpoint of the same running log at a lower frequency, so one roll-up entry
+covers every record beneath it. This exists because a public good is not free infrastructure: at a 10-second
 cadence a single agent produces 8,640 entries a day, and the Rekor maintainers' guidance on
 exactly this workload was to anchor a summary instead. The roll-up is that summary.
 
-An inclusion proof for one record therefore has two legs: record → batch root → roll-up root.
+An inclusion proof for one record is a single audit path to a root; which checkpoint that root belongs to determines which witnesses countersigned it.
 
 ## Disclosure — FR-32, FR-33, PRIV-06
 

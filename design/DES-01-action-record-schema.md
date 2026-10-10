@@ -10,8 +10,9 @@ It is not a conversation turn, not a span, and not a log line.
 ```jsonc
 {
   "v": 1,                                  // DES-16 format version
-  "run": "bf10bc73-2c1b-442c-b3b2-c044678e03b6",
-  "seq": 4812,                             // monotonic within a run, from 1
+  "collector": "treasury-host-1",          // scopes the chain and the log origin  FR-56
+  "run": "bf10bc73-2c1b-442c-b3b2-c044678e03b6",   // null on a heartbeat
+  "record_seq": 4812,                      // position in the COLLECTOR's log, from 1
   "ts": "2026-10-10T10:40:36.907Z",        // collector clock, RFC 3339, always UTC, ms precision
   "kind": "tool_call",                     // tool_call | approval | heartbeat | gap | policy
   "agent": "treasury-agent",
@@ -28,7 +29,9 @@ It is not a conversation turn, not a span, and not a log line.
 | Field | Rule |
 |---|---|
 | `v` | Integer. Bumped only by DES-16's migration process. |
-| `run`, `seq` | Together uniquely identify a record. `seq` has no gaps except a `gap` record. |
+| `collector` | Stable per instance. The chain is scoped to it, not to a run. |
+| `run` | Which run this record belongs to, or `null` for a heartbeat. A field, not a partition. |
+| `record_seq` | Position in the collector's log, from 1, no gaps except a declared `gap`. Equals the log's `tree_size` at that point. |
 | `ts` | Collector clock. **Self-asserted and worth nothing on its own** — the trustworthy time comes from the witness in DES-07. Recorded anyway so drift is visible. |
 | `kind` | Closed enum. An unknown `kind` makes a record unverifiable, not ignorable. |
 | `args`, `result` | Arbitrary JSON, canonicalised by DES-02. Size-capped; over the cap, content moves to the store (DES-13) and the field holds a pointer. |

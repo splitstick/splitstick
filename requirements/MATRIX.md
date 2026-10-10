@@ -11,7 +11,7 @@ Regenerate with `npm run requirements`.
 
 | Category | Count |
 |---|---:|
-| Functional | 55 |
+| Functional | 56 |
 | Security | 26 |
 | Legal & regulatory | 19 |
 | Governance, licensing & community | 19 |
@@ -23,20 +23,20 @@ Regenerate with `npm run requirements`.
 | Interoperability & standards | 7 |
 | Operational | 6 |
 | Traceability & process | 5 |
-| **Total** | **194** |
+| **Total** | **195** |
 
 ### By release
 
 | Release | Count |
 |---|---:|
-| 1.0 | 177 |
+| 1.0 | 178 |
 | 2.0 | 5 |
 | commercial | 12 |
-| **Total** | **194** |
+| **Total** | **195** |
 
 ## Matrix
 
-### Functional — 55
+### Functional — 56
 
 | ID | Requirement | Traces to | Verified by | Rel | M | Status |
 |---|---|---|---|---|---|---|
@@ -63,24 +63,24 @@ Regenerate with `npm run requirements`.
 | `FR-21` | **Soft anchor tier** — Provide a fast anchor tier, default every 10 seconds. | Independence — soft anchor | Timing test | 1.0 | M3a | ☐ |
 | `FR-22` | **Hard anchor tier** — Provide an optional slow, trust-minimised anchor tier that no company can withdraw. | Independence — hard anchor | Anchor obtained; off unless explicitly enabled | 1.0 | M3a | ☐ |
 | `FR-23` | **Policy changes as chain events** — Record any change to the witness set or quorum as a timestamped event inside the chain. | Independence — written into the chain | Red-team: policy downgrade is visible in the record | 1.0 | M4 | ☐ |
-| `FR-24` | **Signed heartbeats** — Emit signed heartbeats into the chain at a configured interval. | Coverage attestation — signed heartbeats | Stopping the collector produces a detectable gap | 1.0 | M4 | ☐ |
+| `FR-24` | **Signed heartbeats** — Emit signed heartbeats into the collector-scoped chain at a configured interval, independently of whether any run is active, because the dangerous window is precisely when none is. | Coverage attestation — signed heartbeats | Stopping the collector produces a detectable gap, including during an interval with no agent run | 1.0 | M4 | ☐ |
 | `FR-25` | **Build digest in heartbeat** — Each heartbeat carries the collector's build digest. | Coverage attestation — build digest | Patched binary reports an unrecognised digest | 1.0 | M4 | ☐ |
 | `FR-26` | **Signed gap declarations** — Allow the operator to record an explicit, signed declaration of a genuinely lost batch so the sequence can recover. | Coverage attestation — signed gap declarations | Sequence resumes after a declared gap without a silent reset | 1.0 | M4 | ☐ |
 | `FR-27` | **Countersigned gap declarations** — Gap declarations are themselves submitted for countersignature. | Coverage attestation — signed, countersigned statement of absence | Declaration carries a witness signature | 1.0 | M4 | ☐ |
 | `FR-28` | **splitstick coverage** — Produce a coverage report over a date range stating the percentage of tool calls captured and proving collector liveness throughout. | Coverage attestation — splitstick coverage | Report output matches injected gaps exactly | 1.0 | M4 | ☐ |
 | `FR-29` | **splitstick verify** — Verify chain integrity, batch signatures and witness countersignatures from files alone. | Proof — offline verification | All red-team classes fail closed; baseline passes | 1.0 | M1 | ☐ |
 | `FR-30` | **Acceptance policy as input** — The verifier takes a caller-supplied acceptance policy naming trusted witness keys and quorum. | Proof — an input, not a hardcoded trust store | Same pack verifies under two different policies | 1.0 | M3a | ☐ |
-| `FR-31` | **Evidence pack carries all countersignatures** — Packs include every countersignature collected, not only Splitstick's. | Proof — never only ours | Pack inspection after multi-witness anchoring | 1.0 | M3a | ☐ |
+| `FR-31` | **Evidence pack carries all countersignatures** — Packs include every countersignature collected, not only Splitstick's. | Proof — never only ours | Automated pack assertion: after anchoring to three witnesses, the pack contains three signature lines and verification succeeds under a policy naming only the third | 1.0 | M3a | ☐ |
 | `FR-32` | **splitstick disclose** — Emit a Merkle inclusion proof for a single named event. | Disclosure — splitstick disclose | Recipient verifies one event without the rest | 1.0 | M5 | ☐ |
 | `FR-33` | **Inclusion proof binds to countersigned root** — Inclusion proofs verify against a countersigned root, not a bare local digest. | Disclosure — against a countersigned root | Proof rejected when root is unwitnessed | 1.0 | M5 | ☐ |
 | `FR-34` | **Optional batch padding** — Provide optional padding of batches to obscure activity volume. | Disclosure — optional batch padding | Anchor volume decoupled from event volume when enabled | 1.0 | M5 | ☐ |
-| `FR-35` | **Content externalised from the chain** — The chain stores salted commitments and pointers only; content lives in operator-controlled mutable storage. | Erasure — no content is ever in the chain | Chain inspection contains no plaintext | 1.0 | M1 | ☐ |
+| `FR-35` | **Content externalised from the chain** — The chain stores salted commitments and pointers only; content lives in operator-controlled mutable storage. | Erasure — no content is ever in the chain | Automated scan of chain files for any content string from the fixture finds nothing (shares PRIV-02 harness) | 1.0 | M1 | ☐ |
 | `FR-36` | **Crypto-shredding** — Deleting content and its key leaves the chain verifiable and the commitment permanently unlinkable. | Erasure — crypto-shredding | Verify passes after content+key deletion | 1.0 | M5 | ☐ |
 | `FR-37` | **Retention policy on storage** — Retention and erasure are configurable at the storage layer, independent of the cryptography. | Erasure — policy settings on your storage | Retention config honoured; chain unaffected | 1.0 | M5 | ☐ |
 | `FR-38` | **Fail-open with marked batch** — When no witness is reachable, chain and sign locally, mark the batch unwitnessed, and queue it. | Operations — fails open, loudly | Agent completes with all witnesses unreachable | 1.0 | M3b | ☐ |
-| `FR-39` | **Late countersignature records real time** — A retroactive countersignature records the witness's actual receipt time, not the batch's claimed time. | Operations — the witness's real time | Delta between operator and witness time is present in the record | 1.0 | M3b | ☐ |
+| `FR-39` | **Late countersignature records real time** — A retroactive countersignature records the witness's actual receipt time, not the batch's claimed time. | Operations — the witness's real time | Test asserts the witness receipt time differs from the batch timestamp and both appear in the record | 1.0 | M3b | ☐ |
 | `FR-40` | **Late anchors reported as gaps** — Windows anchored late are reported as coverage gaps. | Operations — reported as a coverage gap | Coverage report flags the widened window | 1.0 | M4 | ☐ |
-| `FR-41` | **Configuration file** — Support splitstick.yaml with witnesses, quorum, on_unavailable and anchor_interval keys. | Getting started — splitstick.yaml | Documented example loads and takes effect | 1.0 | M1 | ☐ |
+| `FR-41` | **Configuration file** — Support splitstick.yaml with witnesses, quorum, on_unavailable and anchor_interval keys. | Getting started — splitstick.yaml | The documented example config is loaded in test and each key asserted to take effect | 1.0 | M1 | ☐ |
 | `FR-42` | **Operator enrolment** — Register an operator identity and public key with a witness so per-operator sequence state can be kept. | Witness Practice Statement — this enrolled operator | Enrolment then successive anchors tracked | 1.0 | M3a | ☐ |
 | `FR-43` | **Witness enforces monotonic sequence** — The witness verifies that each submitted root is the immediate successor of the last recorded for that operator. | Witness Practice Statement — immediate successor | Truncation and erasure both detected | 1.0 | M3a | ☐ |
 | `FR-44` | **Witness retains roots** — The witness keeps submitted roots in its own append-only store. | Witness Practice Statement — has retained it | Root retrievable from the witness independently | 1.0 | M3a | ☐ |
@@ -95,6 +95,7 @@ Regenerate with `npm run requirements`.
 | `FR-53` | **Roll-up anchoring** — Anchor a periodic summary checkpoint covering many batches, separately from the per-batch soft anchor, so a public or rate-limited witness receives a handful of entries per day rather than thousands. | Independence — tiered anchoring | A day of 10-second batches produces one roll-up entry per configured interval, and the roll-up proves inclusion of every batch beneath it | 1.0 | M3a | ☐ |
 | `FR-54` | **Cross-pack consistency verification** — Given two or more evidence packs, detect a record inconsistent with a checkpoint already countersigned in an earlier pack — so a record truncated below a height previously disclosed is contradicted offline, with no live service. | Proof — offline verification; Durability | Disclose at seq 5000, truncate to 4799, compare the two packs: the earlier countersigned checkpoint contradicts the later record | 1.0 | M3a | ☐ |
 | `FR-55` | **Counterparty reference capture** — Extract externally issued identifiers from a tool result and index them for reconciliation. The index lives in the deletable content store, never in the chain, because a transaction reference can itself be identifying. | Capture — action record | A result containing an external reference is indexed and queryable; the index is removed by crypto-shredding | 1.0 | M1 | ☐ |
+| `FR-56` | **Collector instance identity** — Each collector instance has a stable identity that scopes its chain and its log origin. Records carry the run they belong to as a field; the chain itself is collector-scoped, so concurrent runs interleave in one log and heartbeats need no run at all. | Capture — action record; Coverage attestation | Two concurrent runs produce one contiguous chain with correct run tags; a heartbeat emitted with no run active is chained and anchored | 1.0 | M1 | ☐ |
 
 ### Non-functional — 13
 
@@ -129,9 +130,9 @@ Regenerate with `npm run requirements`.
 | `SEC-09` | **Resist truncation** — Truncating the record's tail must be detectable. | Attack class table, row 4 | Red-team class D | 1.0 | M3a | ☐ |
 | `SEC-10` | **Resist erasure and renumbering** — Erasing events and renumbering into a clean stream must be detectable. | Attack class table, row 5 | Red-team class F | 1.0 | M3a | ☐ |
 | `SEC-11` | **Resist collector suppression** — Stopping or patching the collector and claiming a quiet period must be detectable and attributable. | Attack class table, row 6 | Kill and patch tests against coverage report | 1.0 | M4 | ☐ |
-| `SEC-12` | **Resist policy downgrade** — Weakening the anchoring policy before tampering must be visible in the record. | Attack class table, row 7 | Policy-change event present and countersigned | 1.0 | M4 | ☐ |
+| `SEC-12` | **Resist policy downgrade** — Weakening the anchoring policy before tampering must be visible in the record. | Attack class table, row 7 | Test weakens the witness set, then asserts a countersigned policy event appears in the chain before the next batch | 1.0 | M4 | ☐ |
 | `SEC-13` | **Digest pre-image resistance in practice** — Salting must prevent brute-force recovery of low-entropy action records from their digests. | Integrity — otherwise simply brute-forced | Dictionary attack against salted digests fails | 1.0 | M1 | ☐ |
-| `SEC-14` | **Operator key never leaves operator** — Splitstick must never hold, receive, request or log the operator signing key. | Integrity — Splitstick never holds it, sees it, or asks for it | Code audit plus egress inspection | 1.0 | M1 | ☐ |
+| `SEC-14` | **Operator key never leaves operator** — Splitstick must never hold, receive, request or log the operator signing key. | Integrity — Splitstick never holds it, sees it, or asks for it | Automated egress capture during a representative run asserts no private key material leaves the host; plus a code check that no verifier or collector module imports a key-export API | 1.0 | M1 | ☐ |
 | `SEC-15` | **Witness sees roots only** — Witnesses receive salted roots and nothing else. | Independence — salted roots only | Wire capture of all witness traffic | 1.0 | M3a | ☐ |
 | `SEC-16` | **Bounded integrity claim** — Never claim tamper-proof; claim tamper-evident with attribution. | Scope — not tamper-proof | Claims review | 1.0 | M7 | ☐ |
 | `SEC-17` | **State the forward-secrecy precondition** — Any forward-secrecy claim must state its non-exportable key custody precondition in the same place. | Integrity — this holds only under non-exportable key custody | Documentation review | 1.0 | M2 | ☐ |
@@ -153,8 +154,8 @@ Regenerate with `npm run requirements`.
 | `PRIV-02` | **No content in the chain** — The chain contains no plaintext content. | Erasure — no content is ever in the chain | Automated scan of chain files for plaintext | 1.0 | M1 | ☐ |
 | `PRIV-03` | **Erasure via crypto-shredding** — Support a documented erasure procedure satisfying a data-subject deletion request. | Erasure — GDPR-compatible | Procedure documented and exercised; independent privacy review deferred to a funded release | 1.0 | M5 | ☐ |
 | `PRIV-04` | **Chain survives erasure** — The chain still verifies after content deletion. | Erasure — the chain still verifies | Verify passes post-deletion | 1.0 | M5 | ☐ |
-| `PRIV-05` | **Minimal retained artefacts** — After erasure, only a salted hash and timestamp remain. | Erasure — what survives is a salted hash and a timestamp | Residue inspection | 1.0 | M5 | ☐ |
-| `PRIV-06` | **Disclosure minimisation** — A disclosure reveals the named event and nothing else about other events' contents. | Disclosure — without seeing anything else | Pack inspection; sibling hashes carry no recoverable content | 1.0 | M5 | ☐ |
+| `PRIV-05` | **Minimal retained artefacts** — After erasure, only a salted hash and timestamp remain. | Erasure — what survives is a salted hash and a timestamp | Automated scan after crypto-shredding asserts only salted hashes and timestamps remain | 1.0 | M5 | ☐ |
+| `PRIV-06` | **Disclosure minimisation** — A disclosure reveals the named event and nothing else about other events' contents. | Disclosure — without seeing anything else | Test asserts a disclosure pack contains exactly one salt and that no sibling leaf is reproducible from the pack | 1.0 | M5 | ☐ |
 | `PRIV-07` | **Disclose the tree-size leak** — Document that an inclusion proof reveals the total count of recorded actions. | Disclosure — the honest limit | Documentation review | 1.0 | M5 | ☐ |
 | `PRIV-08` | **Disclose the cadence leak** — Document that anchor cadence leaks activity volume. | Disclosure — anchor cadence likewise leaks | Documentation review | 1.0 | M5 | ☐ |
 | `PRIV-09` | **Operator-controlled retention** — Retention is a setting on operator-controlled storage, not a vendor policy. | Erasure — policy settings on your storage | Configuration test | 1.0 | M5 | ☐ |
@@ -292,4 +293,4 @@ Regenerate with `npm run requirements`.
 
 ---
 
-*194 requirements. Status column is maintained by hand as work lands.*
+*195 requirements. Status column is maintained by hand as work lands.*

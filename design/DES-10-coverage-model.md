@@ -15,15 +15,19 @@ collector emits positive evidence that it was alive and which build it was.
 ### Heartbeat — FR-24, FR-25
 
 ```jsonc
-{ "v":1, "run":"…", "seq":4813, "ts":"…", "kind":"heartbeat",
+{ "v":1, "collector":"treasury-host-1", "run":null, "record_seq":4813, "ts":"…", "kind":"heartbeat",
   "build":"sha256:7f3a…",          // the collector's own artifact digest   FR-25
   "suite":"SS1",
   "policy":"sha256:b2c8…",         // digest of the effective policy        DES-09
   "counts": { "tool_call": 41, "approval": 3 } }
 ```
 
-Chained and anchored like any record, every 5 seconds by default. A window with no heartbeat is
-as loud as a broken hash.
+Chained and anchored like any record, every 5 seconds by default, **whether or not a run is
+active** (FR-24, FR-56). A window with no heartbeat is as loud as a broken hash.
+
+This is why the chain is collector-scoped (DES-04). A heartbeat stream living inside a run would
+prove nothing about the interval between runs — which is precisely when stopping the collector is
+invisible, and therefore precisely the window an operator would choose.
 
 **`build` is what makes suppression attributable.** A patched collector reports an unrecognised
 digest; a stopped one reports nothing. And the digest is only meaningful because DES-17 publishes

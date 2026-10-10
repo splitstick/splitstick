@@ -20,8 +20,9 @@ unsalted digest answers *"was the amount 2,000,000?"* in one guess. The salt tur
 Merkle nodes with `0x01`. Without distinct prefixes, a leaf and a node can be confused, which is
 the textbook second-preimage attack on Merkle trees that RFC 6962 exists to prevent.
 
-**Salts are stored beside the record, not in it.** The record is what gets canonicalised; the
-salt is metadata in the store (DES-13). This matters for DES-05's disclosure: revealing one
+**Salts live in `salts/<collector>.json`, not in the chain** (DES-13). The record is what gets
+canonicalised; the salt is deletable metadata. This placement is load-bearing: the chain is never
+deleted, so a salt stored there could never be crypto-shredded and FR-36 would be unsatisfiable. This matters for DES-05's disclosure: revealing one
 record means revealing one salt, and the sibling leaves stay opaque because their salts are
 never handed over.
 

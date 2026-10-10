@@ -17,7 +17,7 @@ document itself rather than left for a reader to discover.
 ```
 1  Scope and identity         which witness, which origin, which keys
 2  What a countersignature asserts          LEG-02, LEG-03, LEG-04
-3  What it does not assert                  LEG-05 … LEG-08
+3  What it does not assert                  LEG-05, LEG-06, LEG-07, LEG-08
 4  Time discipline                          LEG-19, SEC-25
 5  Key management and rotation              FR-51
 6  Retention and recovery objective         OPS-06

@@ -8,8 +8,9 @@
 
 ```
 splitstick/
-  chain/<run>.jsonl        append-only; records, leaves, heads, salts.  NEVER DELETED
-  batches/<seq>.json       roots, signatures, countersignatures
+  chain/<collector>.jsonl  append-only; records, leaves, heads.  NEVER DELETED
+  salts/<collector>.json   record_seq -> salt.  DELETABLE per record            [DES-03]
+  checkpoints/<n>.note     C2SP notes with every signature line                 [DES-07]
   content/<cid>.bin        large or sensitive payloads.  DELETABLE
   keys/<cid>.key           per-content encryption keys.  DELETABLE
   content/refs.idx         counterparty reference index.  DELETABLE          [DES-19]
@@ -31,7 +32,13 @@ To honour a deletion request:
 
 1. Delete `content/<cid>.bin`.
 2. Delete `keys/<cid>.key`.
-3. Leave the chain untouched.
+3. Delete the record's entry from `salts/`.
+4. Leave the chain untouched.
+
+Step 3 is what makes the commitment unlinkable, and it is why **salts must not live in the
+chain**: the chain is never deleted, so a salt stored there could never be shredded and the
+erasure claim would be unsatisfiable. An earlier draft of this document made exactly that
+mistake.
 
 Afterwards: the data subject's information is unrecoverable; the chain still verifies; the record
 retains a salted commitment to a plaintext nobody can produce. The commitment becomes
@@ -61,7 +68,8 @@ different stores.
 
 ## Rules
 
-1. `chain/` is append-only and never deleted. It is small — a few hundred bytes per action.
+1. `chain/` is append-only and never deleted, and contains **no salts and no content**. It is
+   small — a few hundred bytes per action.
 2. `content/` is operator-controlled, deletable, and may live anywhere, including object storage.
 3. PRIV-02 is enforced by test: a scan of `chain/` for any string from the fixture's content must
    find nothing.

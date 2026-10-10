@@ -228,7 +228,7 @@
     "title": "Resist policy downgrade",
     "statement": "Weakening the anchoring policy before tampering must be visible in the record.",
     "source": "Attack class table, row 7",
-    "verify": "Policy-change event present and countersigned"
+    "verify": "Test weakens the witness set, then asserts a countersigned policy event appears in the chain before the next batch"
   },
   {
     "id": "SEC-13",
@@ -246,7 +246,7 @@
     "title": "Operator key never leaves operator",
     "statement": "Splitstick must never hold, receive, request or log the operator signing key.",
     "source": "Integrity — Splitstick never holds it, sees it, or asks for it",
-    "verify": "Code audit plus egress inspection"
+    "verify": "Automated egress capture during a representative run asserts no private key material leaves the host; plus a code check that no verifier or collector module imports a key-export API"
   },
   {
     "id": "SEC-15",
@@ -354,7 +354,7 @@
     "title": "Minimal retained artefacts",
     "statement": "After erasure, only a salted hash and timestamp remain.",
     "source": "Erasure — what survives is a salted hash and a timestamp",
-    "verify": "Residue inspection"
+    "verify": "Automated scan after crypto-shredding asserts only salted hashes and timestamps remain"
   },
   {
     "id": "PRIV-06",
@@ -363,7 +363,7 @@
     "title": "Disclosure minimisation",
     "statement": "A disclosure reveals the named event and nothing else about other events' contents.",
     "source": "Disclosure — without seeing anything else",
-    "verify": "Pack inspection; sibling hashes carry no recoverable content"
+    "verify": "Test asserts a disclosure pack contains exactly one salt and that no sibling leaf is reproducible from the pack"
   },
   {
     "id": "PRIV-07",

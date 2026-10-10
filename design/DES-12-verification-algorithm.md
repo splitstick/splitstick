@@ -27,6 +27,8 @@ content.
 2. SEQUENCE      seq starts at 1, increments by 1; gaps only where a `gap` record declares one
 3. CHAIN         h_i = H(0x02 ‖ h_(i-1) ‖ leaf_i) from genesis               [DES-04]
 4. LEAF          leaf_i = H(0x00 ‖ salt_i ‖ JCS(record_i))                   [DES-02, DES-03]
+                 a salt deleted by crypto-shredding yields INCONCLUSIVE for
+                 that record, never fail — lawful erasure is not a tamper
 5. TREE          each leaf's audit path reproduces its batch root            [DES-05]
 6. OP-SIG        batch signature valid under the epoch key; succession chain
                  walks to the pinned root                                    [DES-06]

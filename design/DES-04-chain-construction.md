@@ -7,6 +7,10 @@
 ```
 h_0 = 0x00 * 32                                  // genesis
 h_i = SHA-256( 0x02 ‖ h_(i-1) ‖ leaf_i )          // 0x02 = chain domain
+
+**One chain per collector instance, not per run** (FR-56). Concurrent runs interleave; each
+record carries its `run` as a field. Heartbeats carry none. This is what lets coverage
+attestation prove the collector was alive *between* runs, which is the window that matters.
 ```
 
 Each record stores `prev` (the predecessor digest) and `head` (its own). A verifier recomputes
@@ -31,10 +35,18 @@ them.
 
 ## Rules
 
-1. `seq` starts at 1 per run and increments by exactly 1. The only legitimate discontinuity is a
-   `gap` record (DES-10), which is itself chained.
-2. A chain is per run. Cross-run ordering comes from the batch sequence at the witness, not from
-   the chain.
+1. `record_seq` starts at 1 per collector and increments by exactly 1. The only legitimate
+   discontinuity is a `gap` record (DES-10), which is itself chained.
+2. There are exactly **two counters** in the system, and conflating them is the most likely
+   source of an interop bug:
+
+   | Counter | Scope | Equals |
+   |---|---|---|
+   | `record_seq` | one per record | the log's `tree_size` after that record |
+   | `checkpoint_seq` | one per published checkpoint | nothing else; it is an ordinal |
+
+   The C2SP `tree_size` field (DES-07) is **the record count**, not a batch count. A witness
+   compares `tree_size`, which is strictly increasing.
 3. The genesis value is fixed and not configurable. A configurable genesis is a way to fork a
    chain quietly.
 4. The chain is append-only in use, but the **file** is not immutable — nothing here assumes
