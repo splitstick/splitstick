@@ -62,8 +62,20 @@ blanket claim was doing too much work:
 |---|---|
 | `v`, `collector`, `run`, `record_seq`, `source_seq`, `ts`, `kind`, `consequential` | every payload |
 | `tool` — a function name, not a person | the `agent` label |
-| salted content digests, leaf digests, chain heads | any `approval.reviewer` |
-| | content salts, leaf salts, the reference index |
+| `approval.decision` — approve or deny identifies nobody | `approval.reviewer` |
+| `result.ok` — a boolean outcome | `approval.request` |
+| `args.bytes`, `result.bytes` — payload lengths | content salts, leaf salts |
+| salted content digests, leaf digests, chain heads | the reference index |
+| gap spans and unknown-loss intervals | |
+
+This table is the whole inventory, not a sample. An external review found an earlier version
+omitting `approval.decision`, `approval.request_hash`, `result.ok` and the byte lengths — and a
+partial inventory is worse than none, because it reads as exhaustive.
+
+**The byte lengths are a deliberate, documented leak.** `args.bytes` and `result.bytes` survive
+erasure and reveal payload size, which narrows a guess about content. They are retained because a
+verifier needs them to detect a truncated content store, and the trade is stated here rather than
+discovered later. An operator for whom size is sensitive can pad (`FR-34`).
 
 The `agent` label and any reviewer are stored as salted content digests precisely because either
 could name a person. `tool` is retained because `transfer_funds` identifies a function. Whether

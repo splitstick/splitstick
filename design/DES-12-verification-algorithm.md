@@ -58,6 +58,7 @@ Each carries what a reader may conclude, because "verification failed" is useles
 `SUCCESSION_BROKEN` | Epoch key not endorsed by its predecessor. |
 `DISCONTINUITY` | A declared key-compromise break was crossed (DES-06). Not a failure; always surfaced. |
 `COVERAGE_GAP` | A window with no heartbeat and no declaration. |
+`COVERAGE_UNKNOWN` | A `gap_unknown` record is present. **Inconclusive, never `ok`** — the chain may be perfectly intact while the collector cannot say what was observed during the interval. An otherwise flawless run containing one of these is not proof of complete capture, and the coverage report says so. |
 `TRUNCATED_BELOW_DISCLOSED` | A pack already disclosed holds a countersigned checkpoint above where this record ends. **Truncation, caught without a stateful witness.** |
 
 ## The capability statement — FR-57

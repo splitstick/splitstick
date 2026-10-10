@@ -21,7 +21,7 @@ record while `DES-02` said every field contributes.
   "record_seq": 4812,                      // position in the COLLECTOR's log, from 1
   "source_seq": 4817,                      // observed actions; null on heartbeat, policy, gap
   "ts": "2026-10-10T10:40:36.907Z",        // collector clock, RFC 3339, always UTC, ms precision
-  "kind": "tool_call",                     // tool_call | approval | heartbeat | gap | policy
+  "kind": "tool_call",                     // tool_call | approval | heartbeat | gap | gap_unknown | policy
   "tool": "transfer_funds",               // a function name, not a person — retained
   "agent":  { "cid": "sha256:1a0d…" },     // a label that could identify — erasable
   "args":   { "cid": "sha256:9f2c…", "bytes": 61 },     // salted digest, FR-35
@@ -60,9 +60,11 @@ into a chain that is never deleted.
 | `run` | Which run this record belongs to, or `null` for a heartbeat. A field, not a partition. |
 | `record_seq` | Position in the collector's log, from 1, no gaps except a declared `gap`. Equals the log's `tree_size` at that point. |
 | `ts` | Collector clock. **Self-asserted and worth nothing on its own** — the trustworthy time comes from the witness in DES-07. Recorded anyway so drift is visible. |
-| `kind` | Closed enum. An unknown `kind` makes a record unverifiable, not ignorable. |
+| `kind` | Closed enum. An unknown `kind` makes a record unverifiable, not ignorable, so a new kind is a format version bump (`DES-16`). |
+| `gap` fields | `from_source_seq`, `to_source_seq` — an exact span, written when the observation counter survived (FR-26). |
+| `gap_unknown` fields | `from_ts`, `to_ts`, `last_checkpoint_source_seq` — a bounded interval and **no span**, written when the counter did not survive (FR-60, FR-61). Never carries a span, because inventing one would assert what was lost with the counter. |
 | `args`, `result` | Arbitrary JSON, canonicalised by DES-02. Size-capped; over the cap, content moves to the store (DES-13) and the field holds a pointer. |
-| `approval` | `null`, or `{ "decision": "approve"\|"deny", "reviewer": { "cid": "sha256:…" }, "request_hash": "<hex>" }`. The reviewer is a salted content commitment, not plaintext — it can name a person, so `DES-13` requires it erasable alongside the `agent` label. |
+| `approval` | `null`, or `{ "decision": "approve"\|"deny", "reviewer": { "cid": "sha256:…" }, "request": { "cid": "sha256:…" } }`. Both the reviewer and the reviewed request are **salted content commitments** using the same mechanism as every payload (`FR-35`), so both are erasable. An earlier draft wrote `request_hash` without defining it; a bare hash of an approval request is brute-forceable, because the request states the action — the amount, the counterparty — in a handful of guessable fields. `decision` is retained in the clear: approve or deny identifies nobody. |
 | `consequential` | Taken from the tool's own declaration. Never inferred from names or arguments. |
 
 ### What is deliberately absent

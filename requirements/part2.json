@@ -352,9 +352,9 @@
     "type": "privacy",
     "release": "1.0",
     "title": "Minimal retained artefacts",
-    "statement": "After erasure the chain retains only: format version, collector identity, run identifier, record_seq, source_seq, timestamp, kind, consequential flag, tool name, and salted content digests. Potentially identifying values — the agent label and any approval reviewer — are themselves stored as salted content digests and are erased with the payloads.",
+    "statement": "After erasure the chain retains only: format version, collector identity, run identifier, record_seq, source_seq, timestamp, kind, consequential flag, tool name, approval decision, result ok flag, payload byte lengths, gap spans and unknown-loss intervals, and salted digests. Every other field — payloads, the agent label, the approval reviewer, the reviewed request, content salts, leaf salts and the reference index — is erasable. The byte lengths are a documented residual leak.",
     "source": "Erasure — what survives is a salted hash and a timestamp",
-    "verify": "Automated scan after crypto-shredding asserts the residue matches the enumerated permanent set exactly, and that no agent label or reviewer string survives"
+    "verify": "Automated scan after crypto-shredding asserts the residue matches the enumerated permanent set exactly, field for field, and fails on any field not in the list"
   },
   {
     "id": "PRIV-06",
