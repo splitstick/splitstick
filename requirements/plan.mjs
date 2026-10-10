@@ -11,6 +11,10 @@ const { order, depends } = JSON.parse(fs.readFileSync('requirements/depends.json
 
 // --- validate ---------------------------------------------------------------
 const errs = [], assigned = new Map();
+for (const m of milestones) {
+  const dup = m.ids.filter((id, i) => m.ids.indexOf(id) !== i);
+  if (dup.length) errs.push(`${m.id}: duplicate ids in list: ${[...new Set(dup)].join(' ')}`);
+}
 for (const m of milestones) for (const id of m.ids) {
   if (!byId.has(id)) errs.push(`${m.id}: unknown id ${id}`);
   if (assigned.has(id)) errs.push(`${id}: assigned to both ${assigned.get(id)} and ${m.id}`);
