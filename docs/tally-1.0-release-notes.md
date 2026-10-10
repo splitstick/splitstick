@@ -1,6 +1,6 @@
 # Tally 1.0 — draft release notes
 
-`v1.0.0` · Apache-2.0 · rev. 6
+`v1.0.0` · Apache-2.0 · rev. 7
 
 **Agent actions you can prove — including the ones that aren't there.**
 
@@ -11,6 +11,27 @@
 > matters here because the mark is the control point, not the licence.
 
 ---
+
+## Resourcing — read this first
+
+**This is an unfunded open-source project.** One person's time, no budget, no company behind it.
+That is stated here rather than left to be inferred, because several things people reasonably
+expect of a product in this category are consequences of it:
+
+- **No hosted witness.** The witness ships as software you run. The project does not operate one.
+- **No accreditation.** The eIDAS Art. 41 presumption attaches to qualified providers; we are not
+  one. If you need it, configure a qualified timestamp authority in your own witness set — the
+  architecture is pluggable precisely so you can, and you get the presumption without us.
+- **No certification mark.** The conformance suite is open and implementations report their own
+  passing runs. There is no badge to grant and no mechanism to enforce one.
+- **Recognition, not cash.** A novel tamper class earns attribution, credit in the suite and a
+  named finding. A cash award opens only if the project is ever funded. Promising money we do not
+  hold would be worth less than saying so.
+
+None of this changes what the software does. Everything described below as shipping is buildable
+at zero cost, anchored to a public transparency log nobody here operates. The commercial layer —
+a hosted witness, an operated control plane, accreditation — is deliberately out of scope rather
+than quietly assumed.
 
 ## Why
 
@@ -93,11 +114,11 @@ more than one we award ourselves.
 - **C2SP `tlog-witness` conformant** checkpoints. We did not invent a protocol; we adopted the one
   Sigstore and the Go checksum database already depend on.
 - **Soft anchor**, default every 10 seconds, to a witness *set* — Rekor,
-  `transparency-dev/witness`, an RFC 3161 TSA, your own internal authority, or Tally's. Cadence is
-  the mutability window and it is yours to set.
-- **The shipped default is `[tally, rekor]`, not Tally alone.** Rekor is free, public and not ours,
-  so the out-of-box configuration demonstrates independence rather than asserting it — and if this
-  company ceases to exist, every record still verifies.
+  `transparency-dev/witness`, an RFC 3161 TSA, or your own internal authority. Cadence is the
+  mutability window and it is yours to set.
+- **The shipped default is `[rekor]` — a log this project does not operate.** The out-of-box
+  configuration has no vendor in it at all, which is the strongest version of the independence
+  claim and happens to be the cheapest. A second witness, internal or qualified, is yours to add.
 - **Hard anchor**, optional and *off by default*: a slow, trust-minimised backstop that no company
   can withdraw. Off by default because its confirmation latency cannot serve a ten-second window,
   and because many regulated buyers hold blanket policies against it.
@@ -308,7 +329,7 @@ half its design.
 | **10 s** | default mutability window |
 | **<2 s** | to verify a 100,000-event run, offline |
 | **0 bytes** | of content leaving your host |
-| **EUR 5,000** | per novel tamper class found against us |
+| **Recognition** | per novel tamper class found against us, while unfunded |
 
 ## Bounty terms
 
@@ -320,7 +341,7 @@ alongside the offer so that both sides know the shape of it before anyone starts
 | **One class, one payout** | The unit is a **tamper class**, not an instance. Twelve variations on truncation are one finding. We would rather pay well for a new idea than repeatedly for the same one. |
 | **Default configuration** | The attack must survive the shipped default: witnesses `[tally, rekor]`, `quorum: 1`, `anchor_interval: 10s`, `on_unavailable: mark_gap`. A tamper that only works once the operator has weakened their own policy is already a recorded chain event, by design. |
 | **The threat model is the scope** | The out-of-scope list published above is binding in both directions. A key exfiltrated before first use, collusion across the entire quorum, or a tool that lies about what it did are excluded — and we do not get to add exclusions after the fact. |
-| **Capped annually** | EUR 50,000 per calendar year. Beyond that we will still publish, credit and fix; we will not pretend to an unlimited balance sheet. |
+| **Recognition, not cash** | While the project is unfunded, a novel class earns attribution, credit in the suite and a named finding. A cash award opens only if the project is funded. We would rather say that than advertise money we do not hold. |
 | **First reporter, 90 days** | First complete report wins. Coordinated disclosure after 90 days or on fix, whichever is sooner. We publish the finding either way, including when we have no mitigation. |
 | **An arbiter who is not us** | Whether a finding is novel is decided by an arbiter named in the repository, drawn from the transparency-log community and not employed by us. **We cannot be both the payer and the judge of a security claim and keep the credibility we are paying for.** Disputes go to them, not to our inbox. |
 
@@ -372,7 +393,8 @@ relicensing them** — a business built on trust cannot afford a licence people 
 
 Anyone may run a witness against this format, including our competitors and the hyperscalers. The
 conformance suite is open so implementations can self-check; the certification mark is held and
-granted on passing. Give the code away, control the badge.
+run against itself. There is no certification mark: implementations report their own passing
+runs, and a mark to grant is deferred to a funded release rather than claimed now.
 
 **The witness list is open data, not a gate.** Known conformant witnesses live in a plain file in the
 repository and arrive by pull request. We do not vet, rank, or charge for inclusion. Deciding who is
@@ -393,9 +415,10 @@ word at all.
 **More collectors**, ranked by where agents actually take consequential actions: HTTP egress, shell,
 and database writes.
 
-**Qualified status.** Pursuing accreditation for the hosted witness, because the eIDAS presumption
-attaches to qualified providers and to nobody else. This is a moat you buy rather than build, and a
-weekend competitor cannot clear it.
+**If this is ever funded**, in rough order of value: a hosted witness with an independent
+non-hyperscaler countersignature, accreditation so the eIDAS presumption attaches to it, a
+certification mark with a published grant procedure, and a cash bounty. Each is a moat you buy
+rather than build, which is exactly why none of them is promised here.
 
 Separately, the operated plane — reviewer surface, SSO, RBAC, multi-tenancy, retention, evidence
 export, and an independent non-hyperscaler countersignature with an SLA — is a commercial product and
@@ -419,6 +442,9 @@ is published rather than discarded, on the same principle as everything else her
 | 6 | ADDED | Build provenance, signed releases and an SBOM, after a coverage review found that an attested build digest means nothing if the build cannot be traced to its source. |
 | 6 | ADDED | Witness durability: published tree heads, a replicated store with a stated recovery objective, witness key rotation, and declared discontinuity on operator key compromise. A witness that loses its roots was previously unaddressed. |
 | 6 | ADDED | The witness time source is now named in the practice statement, since the countersignature asserts a time and nothing previously said where that time came from. |
+| 7 | SCOPED | Re-scoped as an unfunded open-source release after a feasibility review found that 40% of requirements were non-engineering and most existed only because the notes were written as a commercial launch. Nothing technical was cut. |
+| 7 | CHANGED | Default witness set is now `[rekor]` alone — no vendor in the shipped configuration, which is both the strongest independence claim and free. |
+| 7 | REMOVED | The hosted witness, the certification mark, accreditation and the cash bounty. All four are now stated as funded-release items rather than implied capabilities. |
 
 ## Credit
 

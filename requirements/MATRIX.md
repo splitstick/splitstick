@@ -14,7 +14,7 @@ Regenerate with `npm run requirements`.
 | Functional | 51 |
 | Security | 25 |
 | Legal & regulatory | 19 |
-| Governance, licensing & community | 18 |
+| Governance, licensing & community | 19 |
 | Scope guards (negative) | 16 |
 | Non-functional | 13 |
 | Roadmap (post-1.0) | 10 |
@@ -23,16 +23,16 @@ Regenerate with `npm run requirements`.
 | Interoperability & standards | 7 |
 | Operational | 6 |
 | Traceability & process | 5 |
-| **Total** | **187** |
+| **Total** | **188** |
 
 ### By release
 
 | Release | Count |
 |---|---:|
-| 1.0 | 174 |
+| 1.0 | 171 |
 | 2.0 | 5 |
-| commercial | 8 |
-| **Total** | **187** |
+| commercial | 12 |
+| **Total** | **188** |
 
 ## Matrix
 
@@ -57,7 +57,7 @@ Regenerate with `npm run requirements`.
 | `FR-15` | **transparency-dev/witness adapter** — Support transparency-dev/witness as a witness type. | Independence — transparency-dev/witness | Anchor against a local instance | 1.0 | M6 | ☐ |
 | `FR-16` | **RFC 3161 TSA adapter** — Support an RFC 3161 timestamp authority as a witness type. | Independence — an RFC 3161 TSA | Timestamp token obtained and verified | 1.0 | M6 | ☐ |
 | `FR-17` | **Operator-hosted witness adapter** — Support an operator's own internal witness endpoint. | Independence — your own internal authority | Self-hosted witness round trip | 1.0 | M6 | ☐ |
-| `FR-18` | **Tally hosted witness adapter** — Support the Tally hosted witness. | Independence — or Tally's | Hosted witness round trip | 1.0 | M3a | ☐ |
+| `FR-18` | **Tally hosted witness adapter** — Support the Tally hosted witness. | Independence — or Tally's | Hosted witness round trip | commercial | — | ☐ |
 | `FR-19` | **Configurable quorum** — Accept a K-of-N quorum setting governing how many countersignatures a batch requires. | Independence — set quorum: 2 | Verifier rejects a batch below quorum | 1.0 | M3a | ☐ |
 | `FR-20` | **Configurable anchor cadence** — Accept an anchor_interval setting that determines the mutability window. | Independence — cadence is yours to set | Observed anchor spacing matches configuration | 1.0 | M3a | ☐ |
 | `FR-21` | **Soft anchor tier** — Provide a fast anchor tier, default every 10 seconds. | Independence — soft anchor | Timing test | 1.0 | M3a | ☐ |
@@ -87,7 +87,7 @@ Regenerate with `npm run requirements`.
 | `FR-45` | **Witness stamps its own clock** — The countersignature carries the witness's own time, not the operator's. | Witness Practice Statement — at this time, per its clock | Operator-supplied time cannot influence the countersignature | 1.0 | M3a | ☐ |
 | `FR-46` | **Conformance test suite** — Publish an executable conformance suite any witness implementation can run against itself. | Licence and governance — conformance suite is open | Suite runs green against the reference witness | 1.0 | M6 | ☐ |
 | `FR-47` | **Witness list as data** — Maintain the list of known conformant witnesses as a machine-readable file in the repository. | Licence and governance — a plain file in the repository | File parses; collector can consume it | 1.0 | M6 | ☐ |
-| `FR-48` | **Shipped default configuration** — Ship with witnesses [tally, rekor], quorum 1, anchor_interval 10s and on_unavailable mark_gap, so the out-of-box configuration is independent of the vendor on first run. | Independence — the shipped default is [tally, rekor], not Tally alone | Default config asserted in test; a run with no config anchors to two independent witnesses | 1.0 | M3a | ☐ |
+| `FR-48` | **Shipped default configuration** — Ship with witnesses [rekor], quorum 1, anchor_interval 10s and on_unavailable mark_gap, so the out-of-box configuration anchors only to a public log the project does not operate. A second witness is the operator’s to add. | Independence — the shipped default anchors to a log we do not run | Default config asserted in test; a run with no config anchors to a log outside the project’s control | 1.0 | M3a | ☐ |
 | `FR-49` | **Documented CLI contract** — Provide the entry points and flags printed in Getting started: collect-oma, mcp-proxy (--upstream, --out), verify (--policy), coverage (--from, --to) and disclose (--event, --out). | Getting started — the published commands | CLI contract test executes every documented invocation verbatim | 1.0 | M6 | ☐ |
 | `FR-50` | **Witness publishes signed tree heads** — The witness publishes its own signed tree head so an operator or third party can detect a rolled-back or equivocating witness. | Durability — losing a witness must not lose the evidence | Rollback simulation: a witness serving an earlier head is detected | 1.0 | M3a | ☐ |
 | `FR-51` | **Witness key rotation** — Rotate witness keys while keeping historical countersignatures verifiable, by publishing a signed key history. | Durability — key rotation | Countersignatures from a retired key still verify after rotation | 1.0 | M3b | ☐ |
@@ -146,7 +146,7 @@ Regenerate with `npm run requirements`.
 |---|---|---|---|---|---|---|
 | `PRIV-01` | **Zero content egress** — No content bytes leave the operator's host under any configuration. | Numbers — 0 bytes of content leaving your host | Full egress capture during a representative run | 1.0 | M1 | ☐ |
 | `PRIV-02` | **No content in the chain** — The chain contains no plaintext content. | Erasure — no content is ever in the chain | Automated scan of chain files for plaintext | 1.0 | M1 | ☐ |
-| `PRIV-03` | **Erasure via crypto-shredding** — Support a documented erasure procedure satisfying a data-subject deletion request. | Erasure — GDPR-compatible | Procedure executed; content unrecoverable | 1.0 | M5 | ☐ |
+| `PRIV-03` | **Erasure via crypto-shredding** — Support a documented erasure procedure satisfying a data-subject deletion request. | Erasure — GDPR-compatible | Procedure documented and exercised; independent privacy review deferred to a funded release | 1.0 | M5 | ☐ |
 | `PRIV-04` | **Chain survives erasure** — The chain still verifies after content deletion. | Erasure — the chain still verifies | Verify passes post-deletion | 1.0 | M5 | ☐ |
 | `PRIV-05` | **Minimal retained artefacts** — After erasure, only a salted hash and timestamp remain. | Erasure — what survives is a salted hash and a timestamp | Residue inspection | 1.0 | M5 | ☐ |
 | `PRIV-06` | **Disclosure minimisation** — A disclosure reveals the named event and nothing else about other events' contents. | Disclosure — without seeing anything else | Pack inspection; sibling hashes carry no recoverable content | 1.0 | M5 | ☐ |
@@ -158,7 +158,7 @@ Regenerate with `npm run requirements`.
 
 | ID | Requirement | Traces to | Verified by | Rel | M | Status |
 |---|---|---|---|---|---|---|
-| `LEG-01` | **Publish a Witness Practice Statement** — Publish a versioned practice statement defining exactly what a countersignature means. | Witness Practice Statement | Document published and linked from the witness endpoint | 1.0 | M3b | ☐ |
+| `LEG-01` | **Publish a Witness Practice Statement** — Publish a versioned practice statement defining exactly what a countersignature means. | Witness Practice Statement | Self-authored practice statement published in the repository and versioned | 1.0 | M3b | ☐ |
 | `LEG-02` | **WPS asserts receipt time** — The countersignature asserts the root was received at the stated time per the witness clock. | WPS — a countersignature asserts | Statement text review against implementation | 1.0 | M3b | ☐ |
 | `LEG-03` | **WPS asserts successor ordering** — The countersignature asserts the root is the immediate successor of the previous one for that operator. | WPS — a countersignature asserts | Statement matches FR-43 behaviour | 1.0 | M3b | ☐ |
 | `LEG-04` | **WPS asserts retention** — The countersignature asserts the witness retained the root in its own append-only store. | WPS — a countersignature asserts | Statement matches FR-44 behaviour | 1.0 | M3b | ☐ |
@@ -166,19 +166,19 @@ Regenerate with `npm run requirements`.
 | `LEG-06` | **WPS disclaims truthfulness** — The statement disclaims any assertion that recorded content is true. | WPS — asserts nothing about | Text review | 1.0 | M3b | ☐ |
 | `LEG-07` | **WPS disclaims completeness** — The statement disclaims completeness and points to coverage attestation instead. | WPS — asserts nothing about | Text review | 1.0 | M3b | ☐ |
 | `LEG-08` | **WPS disclaims lawfulness** — The statement disclaims any assertion that an action was lawful or authorised. | WPS — asserts nothing about | Text review | 1.0 | M3b | ☐ |
-| `LEG-09` | **WPS versioned and anchored** — The practice statement is itself versioned and anchored like any other record. | WPS — versioned and anchored like everything else | Statement root present in the witness log | 1.0 | M3b | ☐ |
-| `LEG-10` | **Limitation of warranty** — Publish an explicit limitation of warranty for the witness service. | WPS — warranties are limited accordingly | Terms published and reviewed by counsel | 1.0 | M0 | ☐ |
-| `LEG-11` | **FRE 902(13)/(14) technical shape** — Produce records whose integrity and generation process can be certified by a qualified person, matching the shape those rules contemplate. | Legal posture | Counsel review; certification template produced | 1.0 | M0 | ☐ |
+| `LEG-09` | **WPS versioned and anchored** — The practice statement is itself versioned and anchored like any other record. | WPS — versioned and anchored like everything else | Statement root present in the witness log; counsel review deferred to a funded release | 1.0 | M3b | ☐ |
+| `LEG-10` | **Limitation of warranty** — Publish an explicit limitation of warranty for the witness service. | WPS — warranties are limited accordingly | Terms published and reviewed by counsel | commercial | — | ☐ |
+| `LEG-11` | **FRE 902(13)/(14) technical shape** — Produce records whose integrity and generation process can be certified by a qualified person, matching the shape those rules contemplate. | Legal posture | Counsel review; certification template produced | commercial | — | ☐ |
 | `LEG-12` | **eIDAS presumption only via qualified TSA** — Document that the Art. 41 presumption attaches only when anchored to a qualified TSA, and not via Tally's own witness. | Legal posture | Documentation review; no contrary claim anywhere | 1.0 | M6 | ☐ |
 | `LEG-13` | **Qualified TSA configurable** — A qualified TSA can be configured in the witness set by the operator. | Legal posture — the architecture is pluggable precisely so you can | Live anchor against a qualified TSA | 1.0 | M6 | ☐ |
 | `LEG-14` | **No conformity claims** — No product surface or marketing claims EU AI Act conformity. | Legal posture — nothing claims conformity | Claims audit across docs, site and UI | 1.0 | M7 | ☐ |
 | `LEG-15` | **No certification of the customer** — Never certify the customer's compliance. | Legal posture — Tally does not certify you | Claims audit | 1.0 | M7 | ☐ |
 | `LEG-16` | **Not-legal-advice disclaimer** — Carry a not-legal-advice disclaimer wherever statutes are cited. | Legal posture; footer | Documentation review | 1.0 | M7 | ☐ |
 | `LEG-17` | **Pursue qualified status** — Pursue accreditation for the hosted witness so the eIDAS presumption can attach. | What comes after 1.0 — qualified status | Accreditation process initiated and tracked | commercial | — | ☐ |
-| `LEG-18` | **Trademark clearance** — Complete a trademark search and clearance before the product name is fixed. | Draft banner — placeholder pending a trademark search | Search report on file; mark filed | 1.0 | M0 | ☐ |
+| `LEG-18` | **Trademark clearance** — Complete a free knockout search on the public registers and on npm, GitHub and domains before the name is relied on. Registration is deferred to a funded release. | Draft banner — placeholder pending a trademark search | Search record committed to the repository | 1.0 | M0 | ☐ |
 | `LEG-19` | **WPS states the time discipline** — The practice statement names the witness's time source and the limits of the time assertion. | Witness Practice Statement — per its clock | Statement text reviewed against SEC-25 implementation | 1.0 | M3b | ☐ |
 
-### Governance, licensing & community — 18
+### Governance, licensing & community — 19
 
 | ID | Requirement | Traces to | Verified by | Rel | M | Status |
 |---|---|---|---|---|---|---|
@@ -188,18 +188,19 @@ Regenerate with `npm run requirements`.
 | `GOV-04` | **Non-relicensing commitment** — Publish a commitment never to relicense the open components. | Licence and governance — we commit publicly | Commitment published in the repository | 1.0 | M0 | ☐ |
 | `GOV-05` | **Third-party witnesses permitted** — Anyone, including competitors and hyperscalers, may run a conformant witness. | Licence and governance | No technical or licence barrier; third-party witness interoperates | 1.0 | M6 | ☐ |
 | `GOV-06` | **Open conformance suite** — Publish the conformance suite so implementations can self-check. | Licence and governance | Suite in the repository under the open licence | 1.0 | M6 | ☐ |
-| `GOV-07` | **Certification mark on passing** — Hold a certification mark and grant it on a passing conformance run. | Licence and governance — control the badge | Mark registered; grant procedure documented | 1.0 | M6 | ☐ |
+| `GOV-07` | **Certification mark on passing** — Hold a certification mark and grant it on a passing conformance run. | Licence and governance — control the badge | Mark registered; grant procedure documented | commercial | — | ☐ |
 | `GOV-08` | **Witness list by pull request** — Accept witness-list entries by pull request. | Licence and governance — arrive by pull request | Contribution path documented and exercised | 1.0 | M6 | ☐ |
 | `GOV-09` | **No gatekeeping of the witness list** — Do not vet, rank, or charge for inclusion in the witness list. | Licence and governance — open data, not a gate | Policy published; list contains entries not controlled by us | 1.0 | M6 | ☐ |
 | `GOV-10` | **Bounty: one class, one payout** — Pay once per tamper class, not per instance. | Bounty terms | Terms published; applied in triage | 1.0 | M7 | ☐ |
 | `GOV-11` | **Bounty: default configuration only** — Findings must survive the shipped default configuration. | Bounty terms | Terms published; default config documented and pinned | 1.0 | M7 | ☐ |
 | `GOV-12` | **Bounty: scope binding both ways** — The published threat model binds the programme; exclusions cannot be added after a report. | Bounty terms | Terms published; change log on the threat model | 1.0 | M7 | ☐ |
-| `GOV-13` | **Bounty: annual cap** — Cap payouts at EUR 50,000 per calendar year, continuing to publish and credit beyond it. | Bounty terms | Terms published; budget tracked | 1.0 | M7 | ☐ |
+| `GOV-13` | **Bounty: recognition, not cash** — Recognise a novel tamper class with attribution, credit in the suite and a named finding. The project is unfunded; no cash is promised. | Bounty terms; Resourcing | Terms published stating plainly that recognition is non-cash while unfunded | 1.0 | M7 | ☐ |
 | `GOV-14` | **Bounty: first reporter wins** — Award the first complete report. | Bounty terms | Terms published; timestamps retained | 1.0 | M7 | ☐ |
-| `GOV-15` | **Bounty: external arbiter** — Novelty is decided by a named arbiter from the transparency-log community who is not employed by us. | Bounty terms | Arbiter named in the repository; dispute path documented | 1.0 | M0 | ☐ |
+| `GOV-15` | **Bounty: external arbiter** — Novelty is decided by an arbiter named in the repository, drawn from the transparency-log community and not employed by the project. The role is informal and unpaid while the project is unfunded. | Bounty terms | Arbiter named in the repository, or the absence stated plainly | 1.0 | M0 | ☐ |
 | `GOV-16` | **Published review history** — Maintain a public record of what was added, cut and rewritten across revisions. | Review history | Section present and updated per revision | 1.0 | M0 | ☐ |
-| `GOV-17` | **Bounty amount per class** — Pay EUR 5,000 per novel tamper class surviving the default configuration. | Numbers we are signing up to — EUR 5,000 | Terms published with the figure; budget reconciled against the annual cap | 1.0 | M7 | ☐ |
-| `GOV-18` | **Accept third-party attack classes** — Accept contributed attack classes into the public suite by pull request, with attribution. | Attack class section — the suite is open, contributions are invited | Contribution path documented; at least one external class merged before launch | 1.0 | M7 | ☐ |
+| `GOV-17` | **Bounty: cash deferred until funded** — State publicly that a cash award opens only if the project is funded, rather than promising money that is not held. | Resourcing | Terms published with the condition stated; no figure advertised as available | 1.0 | M7 | ☐ |
+| `GOV-18` | **Accept third-party attack classes** — Accept contributed attack classes by pull request, with attribution. A goal, explicitly not a launch gate. | Attack class section — the suite is open, contributions are invited | Contribution path documented; not referenced in any release gate | 1.0 | M7 | ☐ |
+| `GOV-19` | **State the resourcing honestly** — Publish that the project is unfunded and what that means: no hosted witness, no accreditation, no certification mark, and recognition rather than cash. Stated plainly rather than implied by omission. | Resourcing | Section present in the release notes and the README | 1.0 | M0 | ☐ |
 
 ### Operational — 6
 
@@ -285,4 +286,4 @@ Regenerate with `npm run requirements`.
 
 ---
 
-*187 requirements. Status column is maintained by hand as work lands.*
+*188 requirements. Status column is maintained by hand as work lands.*

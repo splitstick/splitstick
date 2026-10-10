@@ -1,47 +1,389 @@
 [
-  {"id":"NFR-01","type":"non-functional","release":"1.0","title":"Append overhead","statement":"p99 append overhead below 1 ms per event.","source":"Numbers we are signing up to","verify":"Benchmark harness, p99 over 1e6 events"},
-  {"id":"NFR-02","type":"non-functional","release":"1.0","title":"Run latency budget","statement":"Added end-to-end agent run latency below 2%.","source":"Numbers we are signing up to","verify":"A/B benchmark with and without the collector"},
-  {"id":"NFR-03","type":"non-functional","release":"1.0","title":"Default mutability window","statement":"Default anchor interval of 10 seconds.","source":"Numbers we are signing up to","verify":"Default config inspection plus timing test"},
-  {"id":"NFR-04","type":"non-functional","release":"1.0","title":"Verification throughput","statement":"Verify a 100,000-event run in under 2 seconds, offline.","source":"Numbers we are signing up to","verify":"Benchmark on a documented reference machine"},
-  {"id":"NFR-05","type":"non-functional","release":"1.0","title":"No network at verification","statement":"Verification completes with networking disabled.","source":"Proof — no network","verify":"Test executed in a network-isolated sandbox"},
-  {"id":"NFR-06","type":"non-functional","release":"1.0","title":"No credentials at verification","statement":"Verification requires no account, token or credential.","source":"Proof — no credentials, no account","verify":"Test with an empty environment"},
-  {"id":"NFR-07","type":"non-functional","release":"1.0","title":"Long-term verifiability","statement":"Evidence remains verifiable years later; algorithms and formats are versioned to allow it.","source":"Proof — will still work in 2031","verify":"Format version negotiation test; documented algorithm migration path"},
-  {"id":"NFR-08","type":"non-functional","release":"1.0","title":"Node.js 20+","statement":"Run on Node.js 20 and later.","source":"Getting started — requires Node.js 20+","verify":"CI matrix across supported majors"},
-  {"id":"NFR-09","type":"non-functional","release":"1.0","title":"HSM/KMS support","statement":"Operate with a KMS or HSM offering non-exportable keys.","source":"Getting started — a KMS or HSM","verify":"Integration test against at least one KMS and one HSM"},
-  {"id":"NFR-10","type":"non-functional","release":"1.0","title":"OMA version compatibility","statement":"Support @open-multi-agent/core 1.21.x.","source":"Getting started — tested against 1.21.x","verify":"CI pinned against the supported range"},
-  {"id":"NFR-11","type":"non-functional","release":"1.0","title":"MCP transport coverage","statement":"Support MCP over stdio and HTTP.","source":"Getting started — stdio and HTTP","verify":"E2E per transport"},
-  {"id":"NFR-12","type":"non-functional","release":"1.0","title":"Never degrade availability","statement":"The collector must never be able to stop or block an agent run.","source":"Operations — no audit layer that can take down production","verify":"Chaos test: witness outage, disk full, slow witness"},
-  {"id":"NFR-13","type":"non-functional","release":"1.0","title":"Durable local queue","statement":"Unwitnessed batches survive process restart and are re-submitted.","source":"Operations — marked unwitnessed, and queued","verify":"Kill -9 during outage, then recovery"},
-
-  {"id":"SEC-01","type":"security","release":"1.0","title":"Published threat model","statement":"Publish a threat model naming the operator as the adversary.","source":"Threat model","verify":"Document exists and is referenced from the README"},
-  {"id":"SEC-02","type":"security","release":"1.0","title":"Detection, not prevention","statement":"The stated security goal is detection and attribution, not prevention.","source":"Threat model — goal","verify":"Claims review against documentation and marketing"},
-  {"id":"SEC-03","type":"security","release":"1.0","title":"No trust in operator or vendor","statement":"Verification must not require trusting the operator, host, collector binary, or Tally.","source":"Threat model — trust","verify":"Verification from bytes and public keys only"},
-  {"id":"SEC-04","type":"security","release":"1.0","title":"One honest witness assumption","statement":"Security holds if at least one witness in the configured set is honest; the assumption is documented.","source":"Threat model — trust","verify":"Documented; quorum semantics tested"},
-  {"id":"SEC-05","type":"security","release":"1.0","title":"Documented exclusions","statement":"Publish what is out of scope: actions never attempted, a compromised model, a lying tool, full quorum collusion, a key exfiltrated before first use.","source":"Threat model — out of scope","verify":"Document review"},
-  {"id":"SEC-06","type":"security","release":"1.0","title":"Resist action alteration","statement":"Altering recorded arguments, result or approval decision must be detectable.","source":"Attack class table, row 1","verify":"Red-team class A"},
-  {"id":"SEC-07","type":"security","release":"1.0","title":"Resist consistent rewrite","statement":"Altering an event and repairing its citing digest must be detectable.","source":"Attack class table, row 2","verify":"Red-team class C"},
-  {"id":"SEC-08","type":"security","release":"1.0","title":"Resist re-signing history","statement":"Re-signing rewritten history with the current key must be detectable under non-exportable custody.","source":"Attack class table, row 3","verify":"Epoch ratchet test with HSM"},
-  {"id":"SEC-09","type":"security","release":"1.0","title":"Resist truncation","statement":"Truncating the record's tail must be detectable.","source":"Attack class table, row 4","verify":"Red-team class D"},
-  {"id":"SEC-10","type":"security","release":"1.0","title":"Resist erasure and renumbering","statement":"Erasing events and renumbering into a clean stream must be detectable.","source":"Attack class table, row 5","verify":"Red-team class F"},
-  {"id":"SEC-11","type":"security","release":"1.0","title":"Resist collector suppression","statement":"Stopping or patching the collector and claiming a quiet period must be detectable and attributable.","source":"Attack class table, row 6","verify":"Kill and patch tests against coverage report"},
-  {"id":"SEC-12","type":"security","release":"1.0","title":"Resist policy downgrade","statement":"Weakening the anchoring policy before tampering must be visible in the record.","source":"Attack class table, row 7","verify":"Policy-change event present and countersigned"},
-  {"id":"SEC-13","type":"security","release":"1.0","title":"Digest pre-image resistance in practice","statement":"Salting must prevent brute-force recovery of low-entropy action records from their digests.","source":"Integrity — otherwise simply brute-forced","verify":"Dictionary attack against salted digests fails"},
-  {"id":"SEC-14","type":"security","release":"1.0","title":"Operator key never leaves operator","statement":"Tally must never hold, receive, request or log the operator signing key.","source":"Integrity — Tally never holds it, sees it, or asks for it","verify":"Code audit plus egress inspection"},
-  {"id":"SEC-15","type":"security","release":"1.0","title":"Witness sees roots only","statement":"Witnesses receive salted roots and nothing else.","source":"Independence — salted roots only","verify":"Wire capture of all witness traffic"},
-  {"id":"SEC-16","type":"security","release":"1.0","title":"Bounded integrity claim","statement":"Never claim tamper-proof; claim tamper-evident with attribution.","source":"Scope — not tamper-proof","verify":"Claims review"},
-  {"id":"SEC-17","type":"security","release":"1.0","title":"State the forward-secrecy precondition","statement":"Any forward-secrecy claim must state its non-exportable key custody precondition in the same place.","source":"Integrity — this holds only under non-exportable key custody","verify":"Documentation review"},
-  {"id":"SEC-18","type":"security","release":"2.0","title":"Remote build attestation (experimental)","statement":"Remote attestation of the collector build may ship as experimental; it must not be presented as preventing suppression.","source":"Considered and rejected — stays experimental","verify":"Feature flagged experimental; claims review"},
-  {"id":"SEC-19","type":"security","release":"1.0","title":"Bounty intake and triage","statement":"Operate an intake, triage and payment process for the tamper bounty.","source":"Bounty terms","verify":"Process documented and exercised once before launch"},
-  {"id":"SEC-20","type":"security","release":"1.0","title":"Coordinated disclosure window","statement":"Disclose within 90 days or on fix, whichever is sooner.","source":"Bounty terms — first reporter, 90 days","verify":"Policy published; tracked per report"},
-  {"id":"SEC-21","type":"security","release":"1.0","title":"Publish unmitigated findings","statement":"Publish findings even when no mitigation exists.","source":"Bounty terms — including when we have no mitigation","verify":"Policy published; audited at each disclosure"},
-
-  {"id":"PRIV-01","type":"privacy","release":"1.0","title":"Zero content egress","statement":"No content bytes leave the operator's host under any configuration.","source":"Numbers — 0 bytes of content leaving your host","verify":"Full egress capture during a representative run"},
-  {"id":"PRIV-02","type":"privacy","release":"1.0","title":"No content in the chain","statement":"The chain contains no plaintext content.","source":"Erasure — no content is ever in the chain","verify":"Automated scan of chain files for plaintext"},
-  {"id":"PRIV-03","type":"privacy","release":"1.0","title":"Erasure via crypto-shredding","statement":"Support a documented erasure procedure satisfying a data-subject deletion request.","source":"Erasure — GDPR-compatible","verify":"Procedure executed; content unrecoverable"},
-  {"id":"PRIV-04","type":"privacy","release":"1.0","title":"Chain survives erasure","statement":"The chain still verifies after content deletion.","source":"Erasure — the chain still verifies","verify":"Verify passes post-deletion"},
-  {"id":"PRIV-05","type":"privacy","release":"1.0","title":"Minimal retained artefacts","statement":"After erasure, only a salted hash and timestamp remain.","source":"Erasure — what survives is a salted hash and a timestamp","verify":"Residue inspection"},
-  {"id":"PRIV-06","type":"privacy","release":"1.0","title":"Disclosure minimisation","statement":"A disclosure reveals the named event and nothing else about other events' contents.","source":"Disclosure — without seeing anything else","verify":"Pack inspection; sibling hashes carry no recoverable content"},
-  {"id":"PRIV-07","type":"privacy","release":"1.0","title":"Disclose the tree-size leak","statement":"Document that an inclusion proof reveals the total count of recorded actions.","source":"Disclosure — the honest limit","verify":"Documentation review"},
-  {"id":"PRIV-08","type":"privacy","release":"1.0","title":"Disclose the cadence leak","statement":"Document that anchor cadence leaks activity volume.","source":"Disclosure — anchor cadence likewise leaks","verify":"Documentation review"},
-  {"id":"PRIV-09","type":"privacy","release":"1.0","title":"Operator-controlled retention","statement":"Retention is a setting on operator-controlled storage, not a vendor policy.","source":"Erasure — policy settings on your storage","verify":"Configuration test"}
+  {
+    "id": "NFR-01",
+    "type": "non-functional",
+    "release": "1.0",
+    "title": "Append overhead",
+    "statement": "p99 append overhead below 1 ms per event.",
+    "source": "Numbers we are signing up to",
+    "verify": "Benchmark harness, p99 over 1e6 events"
+  },
+  {
+    "id": "NFR-02",
+    "type": "non-functional",
+    "release": "1.0",
+    "title": "Run latency budget",
+    "statement": "Added end-to-end agent run latency below 2%.",
+    "source": "Numbers we are signing up to",
+    "verify": "A/B benchmark with and without the collector"
+  },
+  {
+    "id": "NFR-03",
+    "type": "non-functional",
+    "release": "1.0",
+    "title": "Default mutability window",
+    "statement": "Default anchor interval of 10 seconds.",
+    "source": "Numbers we are signing up to",
+    "verify": "Default config inspection plus timing test"
+  },
+  {
+    "id": "NFR-04",
+    "type": "non-functional",
+    "release": "1.0",
+    "title": "Verification throughput",
+    "statement": "Verify a 100,000-event run in under 2 seconds, offline.",
+    "source": "Numbers we are signing up to",
+    "verify": "Benchmark on a documented reference machine"
+  },
+  {
+    "id": "NFR-05",
+    "type": "non-functional",
+    "release": "1.0",
+    "title": "No network at verification",
+    "statement": "Verification completes with networking disabled.",
+    "source": "Proof — no network",
+    "verify": "Test executed in a network-isolated sandbox"
+  },
+  {
+    "id": "NFR-06",
+    "type": "non-functional",
+    "release": "1.0",
+    "title": "No credentials at verification",
+    "statement": "Verification requires no account, token or credential.",
+    "source": "Proof — no credentials, no account",
+    "verify": "Test with an empty environment"
+  },
+  {
+    "id": "NFR-07",
+    "type": "non-functional",
+    "release": "1.0",
+    "title": "Long-term verifiability",
+    "statement": "Evidence remains verifiable years later; algorithms and formats are versioned to allow it.",
+    "source": "Proof — will still work in 2031",
+    "verify": "Format version negotiation test; documented algorithm migration path"
+  },
+  {
+    "id": "NFR-08",
+    "type": "non-functional",
+    "release": "1.0",
+    "title": "Node.js 20+",
+    "statement": "Run on Node.js 20 and later.",
+    "source": "Getting started — requires Node.js 20+",
+    "verify": "CI matrix across supported majors"
+  },
+  {
+    "id": "NFR-09",
+    "type": "non-functional",
+    "release": "1.0",
+    "title": "HSM/KMS support",
+    "statement": "Operate with a KMS or HSM offering non-exportable keys.",
+    "source": "Getting started — a KMS or HSM",
+    "verify": "Integration test against at least one KMS and one HSM"
+  },
+  {
+    "id": "NFR-10",
+    "type": "non-functional",
+    "release": "1.0",
+    "title": "OMA version compatibility",
+    "statement": "Support @open-multi-agent/core 1.21.x.",
+    "source": "Getting started — tested against 1.21.x",
+    "verify": "CI pinned against the supported range"
+  },
+  {
+    "id": "NFR-11",
+    "type": "non-functional",
+    "release": "1.0",
+    "title": "MCP transport coverage",
+    "statement": "Support MCP over stdio and HTTP.",
+    "source": "Getting started — stdio and HTTP",
+    "verify": "E2E per transport"
+  },
+  {
+    "id": "NFR-12",
+    "type": "non-functional",
+    "release": "1.0",
+    "title": "Never degrade availability",
+    "statement": "The collector must never be able to stop or block an agent run.",
+    "source": "Operations — no audit layer that can take down production",
+    "verify": "Chaos test: witness outage, disk full, slow witness"
+  },
+  {
+    "id": "NFR-13",
+    "type": "non-functional",
+    "release": "1.0",
+    "title": "Durable local queue",
+    "statement": "Unwitnessed batches survive process restart and are re-submitted.",
+    "source": "Operations — marked unwitnessed, and queued",
+    "verify": "Kill -9 during outage, then recovery"
+  },
+  {
+    "id": "SEC-01",
+    "type": "security",
+    "release": "1.0",
+    "title": "Published threat model",
+    "statement": "Publish a threat model naming the operator as the adversary.",
+    "source": "Threat model",
+    "verify": "Document exists and is referenced from the README"
+  },
+  {
+    "id": "SEC-02",
+    "type": "security",
+    "release": "1.0",
+    "title": "Detection, not prevention",
+    "statement": "The stated security goal is detection and attribution, not prevention.",
+    "source": "Threat model — goal",
+    "verify": "Claims review against documentation and marketing"
+  },
+  {
+    "id": "SEC-03",
+    "type": "security",
+    "release": "1.0",
+    "title": "No trust in operator or vendor",
+    "statement": "Verification must not require trusting the operator, host, collector binary, or Tally.",
+    "source": "Threat model — trust",
+    "verify": "Verification from bytes and public keys only"
+  },
+  {
+    "id": "SEC-04",
+    "type": "security",
+    "release": "1.0",
+    "title": "One honest witness assumption",
+    "statement": "Security holds if at least one witness in the configured set is honest; the assumption is documented.",
+    "source": "Threat model — trust",
+    "verify": "Documented; quorum semantics tested"
+  },
+  {
+    "id": "SEC-05",
+    "type": "security",
+    "release": "1.0",
+    "title": "Documented exclusions",
+    "statement": "Publish what is out of scope: actions never attempted, a compromised model, a lying tool, full quorum collusion, a key exfiltrated before first use.",
+    "source": "Threat model — out of scope",
+    "verify": "Document review"
+  },
+  {
+    "id": "SEC-06",
+    "type": "security",
+    "release": "1.0",
+    "title": "Resist action alteration",
+    "statement": "Altering recorded arguments, result or approval decision must be detectable.",
+    "source": "Attack class table, row 1",
+    "verify": "Red-team class A"
+  },
+  {
+    "id": "SEC-07",
+    "type": "security",
+    "release": "1.0",
+    "title": "Resist consistent rewrite",
+    "statement": "Altering an event and repairing its citing digest must be detectable.",
+    "source": "Attack class table, row 2",
+    "verify": "Red-team class C"
+  },
+  {
+    "id": "SEC-08",
+    "type": "security",
+    "release": "1.0",
+    "title": "Resist re-signing history",
+    "statement": "Re-signing rewritten history with the current key must be detectable under non-exportable custody.",
+    "source": "Attack class table, row 3",
+    "verify": "Epoch ratchet test with HSM"
+  },
+  {
+    "id": "SEC-09",
+    "type": "security",
+    "release": "1.0",
+    "title": "Resist truncation",
+    "statement": "Truncating the record's tail must be detectable.",
+    "source": "Attack class table, row 4",
+    "verify": "Red-team class D"
+  },
+  {
+    "id": "SEC-10",
+    "type": "security",
+    "release": "1.0",
+    "title": "Resist erasure and renumbering",
+    "statement": "Erasing events and renumbering into a clean stream must be detectable.",
+    "source": "Attack class table, row 5",
+    "verify": "Red-team class F"
+  },
+  {
+    "id": "SEC-11",
+    "type": "security",
+    "release": "1.0",
+    "title": "Resist collector suppression",
+    "statement": "Stopping or patching the collector and claiming a quiet period must be detectable and attributable.",
+    "source": "Attack class table, row 6",
+    "verify": "Kill and patch tests against coverage report"
+  },
+  {
+    "id": "SEC-12",
+    "type": "security",
+    "release": "1.0",
+    "title": "Resist policy downgrade",
+    "statement": "Weakening the anchoring policy before tampering must be visible in the record.",
+    "source": "Attack class table, row 7",
+    "verify": "Policy-change event present and countersigned"
+  },
+  {
+    "id": "SEC-13",
+    "type": "security",
+    "release": "1.0",
+    "title": "Digest pre-image resistance in practice",
+    "statement": "Salting must prevent brute-force recovery of low-entropy action records from their digests.",
+    "source": "Integrity — otherwise simply brute-forced",
+    "verify": "Dictionary attack against salted digests fails"
+  },
+  {
+    "id": "SEC-14",
+    "type": "security",
+    "release": "1.0",
+    "title": "Operator key never leaves operator",
+    "statement": "Tally must never hold, receive, request or log the operator signing key.",
+    "source": "Integrity — Tally never holds it, sees it, or asks for it",
+    "verify": "Code audit plus egress inspection"
+  },
+  {
+    "id": "SEC-15",
+    "type": "security",
+    "release": "1.0",
+    "title": "Witness sees roots only",
+    "statement": "Witnesses receive salted roots and nothing else.",
+    "source": "Independence — salted roots only",
+    "verify": "Wire capture of all witness traffic"
+  },
+  {
+    "id": "SEC-16",
+    "type": "security",
+    "release": "1.0",
+    "title": "Bounded integrity claim",
+    "statement": "Never claim tamper-proof; claim tamper-evident with attribution.",
+    "source": "Scope — not tamper-proof",
+    "verify": "Claims review"
+  },
+  {
+    "id": "SEC-17",
+    "type": "security",
+    "release": "1.0",
+    "title": "State the forward-secrecy precondition",
+    "statement": "Any forward-secrecy claim must state its non-exportable key custody precondition in the same place.",
+    "source": "Integrity — this holds only under non-exportable key custody",
+    "verify": "Documentation review"
+  },
+  {
+    "id": "SEC-18",
+    "type": "security",
+    "release": "2.0",
+    "title": "Remote build attestation (experimental)",
+    "statement": "Remote attestation of the collector build may ship as experimental; it must not be presented as preventing suppression.",
+    "source": "Considered and rejected — stays experimental",
+    "verify": "Feature flagged experimental; claims review"
+  },
+  {
+    "id": "SEC-19",
+    "type": "security",
+    "release": "1.0",
+    "title": "Bounty intake and triage",
+    "statement": "Operate an intake, triage and payment process for the tamper bounty.",
+    "source": "Bounty terms",
+    "verify": "Process documented and exercised once before launch"
+  },
+  {
+    "id": "SEC-20",
+    "type": "security",
+    "release": "1.0",
+    "title": "Coordinated disclosure window",
+    "statement": "Disclose within 90 days or on fix, whichever is sooner.",
+    "source": "Bounty terms — first reporter, 90 days",
+    "verify": "Policy published; tracked per report"
+  },
+  {
+    "id": "SEC-21",
+    "type": "security",
+    "release": "1.0",
+    "title": "Publish unmitigated findings",
+    "statement": "Publish findings even when no mitigation exists.",
+    "source": "Bounty terms — including when we have no mitigation",
+    "verify": "Policy published; audited at each disclosure"
+  },
+  {
+    "id": "PRIV-01",
+    "type": "privacy",
+    "release": "1.0",
+    "title": "Zero content egress",
+    "statement": "No content bytes leave the operator's host under any configuration.",
+    "source": "Numbers — 0 bytes of content leaving your host",
+    "verify": "Full egress capture during a representative run"
+  },
+  {
+    "id": "PRIV-02",
+    "type": "privacy",
+    "release": "1.0",
+    "title": "No content in the chain",
+    "statement": "The chain contains no plaintext content.",
+    "source": "Erasure — no content is ever in the chain",
+    "verify": "Automated scan of chain files for plaintext"
+  },
+  {
+    "id": "PRIV-03",
+    "type": "privacy",
+    "release": "1.0",
+    "title": "Erasure via crypto-shredding",
+    "statement": "Support a documented erasure procedure satisfying a data-subject deletion request.",
+    "source": "Erasure — GDPR-compatible",
+    "verify": "Procedure documented and exercised; independent privacy review deferred to a funded release"
+  },
+  {
+    "id": "PRIV-04",
+    "type": "privacy",
+    "release": "1.0",
+    "title": "Chain survives erasure",
+    "statement": "The chain still verifies after content deletion.",
+    "source": "Erasure — the chain still verifies",
+    "verify": "Verify passes post-deletion"
+  },
+  {
+    "id": "PRIV-05",
+    "type": "privacy",
+    "release": "1.0",
+    "title": "Minimal retained artefacts",
+    "statement": "After erasure, only a salted hash and timestamp remain.",
+    "source": "Erasure — what survives is a salted hash and a timestamp",
+    "verify": "Residue inspection"
+  },
+  {
+    "id": "PRIV-06",
+    "type": "privacy",
+    "release": "1.0",
+    "title": "Disclosure minimisation",
+    "statement": "A disclosure reveals the named event and nothing else about other events' contents.",
+    "source": "Disclosure — without seeing anything else",
+    "verify": "Pack inspection; sibling hashes carry no recoverable content"
+  },
+  {
+    "id": "PRIV-07",
+    "type": "privacy",
+    "release": "1.0",
+    "title": "Disclose the tree-size leak",
+    "statement": "Document that an inclusion proof reveals the total count of recorded actions.",
+    "source": "Disclosure — the honest limit",
+    "verify": "Documentation review"
+  },
+  {
+    "id": "PRIV-08",
+    "type": "privacy",
+    "release": "1.0",
+    "title": "Disclose the cadence leak",
+    "statement": "Document that anchor cadence leaks activity volume.",
+    "source": "Disclosure — anchor cadence likewise leaks",
+    "verify": "Documentation review"
+  },
+  {
+    "id": "PRIV-09",
+    "type": "privacy",
+    "release": "1.0",
+    "title": "Operator-controlled retention",
+    "statement": "Retention is a setting on operator-controlled storage, not a vendor policy.",
+    "source": "Erasure — policy settings on your storage",
+    "verify": "Configuration test"
+  }
 ]

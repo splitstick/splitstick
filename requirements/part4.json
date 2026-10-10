@@ -1,22 +1,137 @@
 [
-  {"id":"FR-48","type":"functional","release":"1.0","title":"Shipped default configuration","statement":"Ship with witnesses [tally, rekor], quorum 1, anchor_interval 10s and on_unavailable mark_gap, so the out-of-box configuration is independent of the vendor on first run.","source":"Independence — the shipped default is [tally, rekor], not Tally alone","verify":"Default config asserted in test; a run with no config anchors to two independent witnesses"},
-  {"id":"FR-49","type":"functional","release":"1.0","title":"Documented CLI contract","statement":"Provide the entry points and flags printed in Getting started: collect-oma, mcp-proxy (--upstream, --out), verify (--policy), coverage (--from, --to) and disclose (--event, --out).","source":"Getting started — the published commands","verify":"CLI contract test executes every documented invocation verbatim"},
-  {"id":"FR-50","type":"functional","release":"1.0","title":"Witness publishes signed tree heads","statement":"The witness publishes its own signed tree head so an operator or third party can detect a rolled-back or equivocating witness.","source":"Durability — losing a witness must not lose the evidence","verify":"Rollback simulation: a witness serving an earlier head is detected"},
-  {"id":"FR-51","type":"functional","release":"1.0","title":"Witness key rotation","statement":"Rotate witness keys while keeping historical countersignatures verifiable, by publishing a signed key history.","source":"Durability — key rotation","verify":"Countersignatures from a retired key still verify after rotation"},
-
-  {"id":"SEC-22","type":"security","release":"1.0","title":"Build provenance attestation","statement":"Publish a provenance attestation for every released collector artifact, binding the digest to its source commit and build, so the digest in a heartbeat can be independently traced.","source":"Provenance — a build digest you can check","verify":"Attestation verifies against the published artifact and source revision"},
-  {"id":"SEC-23","type":"security","release":"1.0","title":"Signed releases and SBOM","statement":"Sign every release and publish an SBOM with pinned dependencies.","source":"Provenance — signed releases and an SBOM","verify":"Signature and SBOM present and verified in CI for each release"},
-  {"id":"SEC-24","type":"security","release":"1.0","title":"Key compromise recovery","statement":"Document and support recovery from operator key compromise: a declared, countersigned discontinuity rather than a silent re-key.","source":"Durability — key compromise","verify":"Compromise drill: discontinuity is recorded, countersigned and visible to the verifier"},
-  {"id":"SEC-25","type":"security","release":"1.0","title":"Witness time source","statement":"The witness clock derives from a documented, traceable time source, and the verifier surfaces the witness's declared time discipline.","source":"Durability — the clock the witness stamps with","verify":"Time source documented; drift monitored and alerted"},
-
-  {"id":"OPS-06","type":"operational","release":"1.0","title":"Witness store durability","statement":"The witness store is replicated and recoverable, with a documented recovery point objective, because a witness that loses its roots destroys the corroboration it exists to provide.","source":"Durability — losing a witness must not lose the evidence","verify":"Restore drill from backup; RPO measured against the stated objective"},
-
-  {"id":"INT-07","type":"interoperability","release":"1.0","title":"No agent code changes","statement":"Both collectors integrate by dependency and configuration only; no change to the customer's agent code is required.","source":"Why — without asking you to change your agent code","verify":"Byte-identical agent source before and after integration, for both collectors"},
-
-  {"id":"LEG-19","type":"legal","release":"1.0","title":"WPS states the time discipline","statement":"The practice statement names the witness's time source and the limits of the time assertion.","source":"Witness Practice Statement — per its clock","verify":"Statement text reviewed against SEC-25 implementation"},
-
-  {"id":"GOV-17","type":"governance","release":"1.0","title":"Bounty amount per class","statement":"Pay EUR 5,000 per novel tamper class surviving the default configuration.","source":"Numbers we are signing up to — EUR 5,000","verify":"Terms published with the figure; budget reconciled against the annual cap"},
-  {"id":"GOV-18","type":"governance","release":"1.0","title":"Accept third-party attack classes","statement":"Accept contributed attack classes into the public suite by pull request, with attribution.","source":"Attack class section — the suite is open, contributions are invited","verify":"Contribution path documented; at least one external class merged before launch"},
-
-  {"id":"SCOPE-16","type":"scope-guard","release":"1.0","title":"No fail-closed option","statement":"MUST NOT provide any configuration, flag or build that makes the collector block an agent run. Fail-open is a design constraint, not a setting.","source":"Operations — a design constraint, not a setting","verify":"Config schema review; no enforcement path exists; rejected as a feature request by policy"}
+  {
+    "id": "FR-48",
+    "type": "functional",
+    "release": "1.0",
+    "title": "Shipped default configuration",
+    "statement": "Ship with witnesses [rekor], quorum 1, anchor_interval 10s and on_unavailable mark_gap, so the out-of-box configuration anchors only to a public log the project does not operate. A second witness is the operator’s to add.",
+    "source": "Independence — the shipped default anchors to a log we do not run",
+    "verify": "Default config asserted in test; a run with no config anchors to a log outside the project’s control"
+  },
+  {
+    "id": "FR-49",
+    "type": "functional",
+    "release": "1.0",
+    "title": "Documented CLI contract",
+    "statement": "Provide the entry points and flags printed in Getting started: collect-oma, mcp-proxy (--upstream, --out), verify (--policy), coverage (--from, --to) and disclose (--event, --out).",
+    "source": "Getting started — the published commands",
+    "verify": "CLI contract test executes every documented invocation verbatim"
+  },
+  {
+    "id": "FR-50",
+    "type": "functional",
+    "release": "1.0",
+    "title": "Witness publishes signed tree heads",
+    "statement": "The witness publishes its own signed tree head so an operator or third party can detect a rolled-back or equivocating witness.",
+    "source": "Durability — losing a witness must not lose the evidence",
+    "verify": "Rollback simulation: a witness serving an earlier head is detected"
+  },
+  {
+    "id": "FR-51",
+    "type": "functional",
+    "release": "1.0",
+    "title": "Witness key rotation",
+    "statement": "Rotate witness keys while keeping historical countersignatures verifiable, by publishing a signed key history.",
+    "source": "Durability — key rotation",
+    "verify": "Countersignatures from a retired key still verify after rotation"
+  },
+  {
+    "id": "SEC-22",
+    "type": "security",
+    "release": "1.0",
+    "title": "Build provenance attestation",
+    "statement": "Publish a provenance attestation for every released collector artifact, binding the digest to its source commit and build, so the digest in a heartbeat can be independently traced.",
+    "source": "Provenance — a build digest you can check",
+    "verify": "Attestation verifies against the published artifact and source revision"
+  },
+  {
+    "id": "SEC-23",
+    "type": "security",
+    "release": "1.0",
+    "title": "Signed releases and SBOM",
+    "statement": "Sign every release and publish an SBOM with pinned dependencies.",
+    "source": "Provenance — signed releases and an SBOM",
+    "verify": "Signature and SBOM present and verified in CI for each release"
+  },
+  {
+    "id": "SEC-24",
+    "type": "security",
+    "release": "1.0",
+    "title": "Key compromise recovery",
+    "statement": "Document and support recovery from operator key compromise: a declared, countersigned discontinuity rather than a silent re-key.",
+    "source": "Durability — key compromise",
+    "verify": "Compromise drill: discontinuity is recorded, countersigned and visible to the verifier"
+  },
+  {
+    "id": "SEC-25",
+    "type": "security",
+    "release": "1.0",
+    "title": "Witness time source",
+    "statement": "The witness clock derives from a documented, traceable time source, and the verifier surfaces the witness's declared time discipline.",
+    "source": "Durability — the clock the witness stamps with",
+    "verify": "Time source documented; drift monitored and alerted"
+  },
+  {
+    "id": "OPS-06",
+    "type": "operational",
+    "release": "1.0",
+    "title": "Witness store durability",
+    "statement": "The witness store is replicated and recoverable, with a documented recovery point objective, because a witness that loses its roots destroys the corroboration it exists to provide.",
+    "source": "Durability — losing a witness must not lose the evidence",
+    "verify": "Restore drill from backup; RPO measured against the stated objective"
+  },
+  {
+    "id": "INT-07",
+    "type": "interoperability",
+    "release": "1.0",
+    "title": "No agent code changes",
+    "statement": "Both collectors integrate by dependency and configuration only; no change to the customer's agent code is required.",
+    "source": "Why — without asking you to change your agent code",
+    "verify": "Byte-identical agent source before and after integration, for both collectors"
+  },
+  {
+    "id": "LEG-19",
+    "type": "legal",
+    "release": "1.0",
+    "title": "WPS states the time discipline",
+    "statement": "The practice statement names the witness's time source and the limits of the time assertion.",
+    "source": "Witness Practice Statement — per its clock",
+    "verify": "Statement text reviewed against SEC-25 implementation"
+  },
+  {
+    "id": "GOV-17",
+    "type": "governance",
+    "release": "1.0",
+    "title": "Bounty: cash deferred until funded",
+    "statement": "State publicly that a cash award opens only if the project is funded, rather than promising money that is not held.",
+    "source": "Resourcing",
+    "verify": "Terms published with the condition stated; no figure advertised as available"
+  },
+  {
+    "id": "GOV-18",
+    "type": "governance",
+    "release": "1.0",
+    "title": "Accept third-party attack classes",
+    "statement": "Accept contributed attack classes by pull request, with attribution. A goal, explicitly not a launch gate.",
+    "source": "Attack class section — the suite is open, contributions are invited",
+    "verify": "Contribution path documented; not referenced in any release gate"
+  },
+  {
+    "id": "SCOPE-16",
+    "type": "scope-guard",
+    "release": "1.0",
+    "title": "No fail-closed option",
+    "statement": "MUST NOT provide any configuration, flag or build that makes the collector block an agent run. Fail-open is a design constraint, not a setting.",
+    "source": "Operations — a design constraint, not a setting",
+    "verify": "Config schema review; no enforcement path exists; rejected as a feature request by policy"
+  },
+  {
+    "id": "GOV-19",
+    "type": "governance",
+    "release": "1.0",
+    "title": "State the resourcing honestly",
+    "statement": "Publish that the project is unfunded and what that means: no hosted witness, no accreditation, no certification mark, and recognition rather than cash. Stated plainly rather than implied by omission.",
+    "source": "Resourcing",
+    "verify": "Section present in the release notes and the README"
+  }
 ]
