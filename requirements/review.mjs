@@ -59,6 +59,11 @@ const STALE = [
   [/\b\d{2,3} (?:requirements|design elements)\b/, 'a hardcoded count in prose; counts belong in the generated matrices'],
   [/EUR 5,000|EUR 50,000/, 'a cash bounty figure retracted when the award became recognition'],
   [/\bexternal arbiter\b/, 'the arbiter requirement was removed when adjudication was removed'],
+  [/shipped default is .\[rekor\]/, 'the default became a TSA plus a roll-up anchor; a transparency log is opt-in'],
+  [/100% of tool calls captured/, 'coverage reports what the collector reported, not what occurred'],
+  [/Either way it is attributable/, 'patching a collector is not detectable; only stopping it is'],
+  [/time lower bound/, 'OpenTimestamps establishes existed-no-later-than, not a lower bound'],
+  [/immediate successor of the previous/, 'a witness verifies a consistency proof, not an increment of one'],
 ];
 for (const f of PROSE) {
   if (!fs.existsSync(f)) continue;

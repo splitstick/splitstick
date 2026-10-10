@@ -11,26 +11,39 @@ splitstick/
   chain/<collector>.jsonl  append-only; records, leaves, heads.  NEVER DELETED
   salts/<collector>.json   record_seq -> salt.  DELETABLE per record            [DES-03]
   checkpoints/<n>.note     C2SP notes with every signature line                 [DES-07]
-  content/<cid>.bin        large or sensitive payloads.  DELETABLE
+  content/<cid>.bin        every payload, encrypted.  DELETABLE
+  content/<cid>.salt       per-content salt.  DELETABLE
   keys/<cid>.key           per-content encryption keys.  DELETABLE
+  content/refs.idx         counterparty reference index.  DELETABLE          [DES-19]
   content/refs.idx         counterparty reference index.  DELETABLE          [DES-19]
   queue/                   unwitnessed batches awaiting a witness (DES-15)
 ```
 
-A record field over the inline cap holds a pointer instead:
+**Every** payload is externalised, not just oversized ones, and the pointer is a commitment to
+the bytes:
 
-```jsonc
-"result": { "ref": "cid:9f2c…", "bytes": 48213, "enc": "aes-256-gcm" }
+```
+cid = SHA-256( 0x05 ‖ content_salt ‖ plaintext )
 ```
 
-The pointer — and therefore the digest — covers the content *identity*, not its bytes. The
-chain commits to what the content was without containing it.
+```jsonc
+"result": { "cid": "sha256:9f2c…", "bytes": 48213, "ok": true }
+```
+
+An external review found the earlier wording — "the digest covers the content *identity*, not its
+bytes" — to be a real hole: an identity not derived from the content lets an operator substitute
+the payload while the pointer and the chain stay valid. The `cid` is now a salted hash **of the
+plaintext**, so substitution changes it and the leaf no longer reproduces.
+
+The salt is why this does not reintroduce a privacy problem. A bare `SHA-256` of a short payload
+is brute-forceable; a salted one is not, and deleting `content_salt` with the ciphertext and key
+is what makes the surviving commitment unlinkable.
 
 ## Erasure is crypto-shredding — FR-36, PRIV-03
 
 To honour a deletion request:
 
-1. Delete `content/<cid>.bin`.
+1. Delete `content/<cid>.bin` and `content/<cid>.salt`.
 2. Delete `keys/<cid>.key`.
 3. Delete the record's entry from `salts/`.
 4. Leave the chain untouched.

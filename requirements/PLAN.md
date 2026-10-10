@@ -29,7 +29,7 @@ Every milestone runs the complete red-team suite, not only its own classes. A ga
 | Milestone | Gate | Reqs | Weeks | Goal |
 |---|---|---:|---|---|
 | **M0** Foundations and long-lead | — | 15 | 1-2, parallel to M1 | Start everything whose clock runs outside engineering, and turn the red-team suite into the acceptance harness. |
-| **M1** Local integrity | AC-1, AC-2 | 27 | 3-4 | Close the two attack classes that need no third party, and measure the performance budget before the design hardens. |
+| **M1** Local integrity | AC-1, AC-2 | 28 | 3-4 | Close the two attack classes that need no third party, and measure the performance budget before the design hardens. |
 | **M2** Key custody | AC-3 | 5 | 2 | Make yesterday's record unforgeable with today's key, and state the precondition honestly. |
 | **M3a** Anchoring and sequencing | AC-4, AC-5 | 35 | 5-7 | The first second party. Close truncation and erasure, which no amount of local cryptography can reach. |
 | **M3b** Practice statement and resilience | — | 19 | 3-4 | Say exactly what the countersignature means, and make sure losing a witness does not lose the evidence. |
@@ -37,7 +37,7 @@ Every milestone runs the complete red-team suite, not only its own classes. A ga
 | **M5** Disclosure and erasure | — | 16 | 3-4 | No new attack class. This is the milestone that makes the product buyable by a regulated, multi-customer organisation. |
 | **M6** Reach and conformance | — | 19 | 4-6 | Stop depending on one upstream project, and make the format genuinely somebody else's to implement. |
 | **M7** Launch gate | — | 36 | 2 | Every promise that is a claim rather than a feature. This milestone is mostly about what we must not say. |
-| | | **181** | | |
+| | | **182** | | |
 
 ## Milestones
 
@@ -73,7 +73,7 @@ Start everything whose clock runs outside engineering, and turn the red-team sui
 Close the two attack classes that need no third party, and measure the performance budget before the design hardens.
 
 - **Gate:** `AC-1` — Alter the recorded action — arguments, result, approval decision; `AC-2` — Alter an event and repair the citing digest
-- **Requirements:** 27 (FR×14  SEC×6  NFR×3  INT×2  PRIV×1  DOC×1)
+- **Requirements:** 28 (FR×15  SEC×6  NFR×3  INT×2  PRIV×1  DOC×1)
 - **Effort:** weeks 3-4
 - **Exit criteria:** Red-team A and C both DETECTED by splitstick verify; baseline still passes. p99 append overhead measured under 1 ms and run latency under 2% — measured, not assumed. Chain files contain no plaintext. First package published with a provenance attestation and an SBOM, so the build digest M4 relies on can be traced to its source.
 
@@ -88,7 +88,7 @@ Close the two attack classes that need no third party, and measure the performan
 | ☐ `FR-09` | **Per-leaf salting** — Every leaf is salted with a per-leaf random nonce before hashing. | Unit test: identical content yields distinct digests |
 | ☐ `FR-10` | **Batch signing with operator key** — Sign each batch root with the operator-supplied key. | Signature verifies under operator public key |
 | ☐ `FR-29` | **splitstick verify** — Verify chain integrity, batch signatures and witness countersignatures from files alone. | All red-team classes fail closed; baseline passes |
-| ☐ `FR-35` | **Content externalised from the chain** — The chain stores salted commitments and pointers only; content lives in operator-controlled mutable storage. | Automated scan of chain files for any content string from the fixture finds nothing (shares PRIV-02 harness) |
+| ☐ `FR-35` | **Payloads are content-addressed and externalised** — No payload enters the chain. Every argument and result is replaced by a salted content digest, cid = H(0x05 \|\| content_salt \|\| plaintext), and the plaintext is stored encrypted in the deletable store. Substituting a payload while preserving its pointer is therefore impossible, and deleting the salt, key and ciphertext leaves an unlinkable commitment. | Payload-substitution test: replacing stored content without changing the cid fails verification. Automated scan asserts no payload bytes appear anywhere in the chain |
 | ☐ `FR-41` | **Configuration file** — Support splitstick.yaml with witnesses, quorum, on_unavailable and anchor_interval keys. | The documented example config is loaded in test and each key asserted to take effect |
 | ☐ `NFR-01` | **Append overhead** — p99 append overhead below 1 ms per event. | Benchmark harness, p99 over 1e6 events |
 | ☐ `NFR-02` | **Run latency budget** — Added end-to-end agent run latency below 2%. | A/B benchmark with and without the collector |
@@ -96,7 +96,7 @@ Close the two attack classes that need no third party, and measure the performan
 | ☐ `SEC-07` | **Resist consistent rewrite** — Altering an event and repairing its citing digest must be detectable. | Red-team class C |
 | ☐ `SEC-13` | **Digest pre-image resistance in practice** — Salting must prevent brute-force recovery of low-entropy action records from their digests. | Dictionary attack against salted digests fails |
 | ☐ `SEC-14` | **Operator key never leaves operator** — Splitstick must never hold, receive, request or log the operator signing key. | Automated egress capture during a representative run asserts no private key material leaves the host; plus a code check that no verifier or collector module imports a key-export API |
-| ☐ `PRIV-02` | **No content in the chain** — The chain contains no plaintext content. | Automated scan of chain files for plaintext |
+| ☐ `PRIV-02` | **No content in the chain** — The chain contains no payload bytes at all — not merely no oversized ones. Records in the chain carry metadata and salted content digests; every argument and result lives in the deletable store, so there is nothing in the chain that erasure cannot reach. | Automated scan of chain files for any payload string from the fixture finds nothing, including short inline-sized arguments |
 | ☐ `INT-04` | **Additive OMA integration** — Integrate with OMA without a fork, patch or upstream pull request. | Install against unmodified upstream at the supported version |
 | ✅ `DOC-01` | **Public red-team suite** — Maintain a public tamper suite reproducible in two commands. | Clean-clone run succeeds |
 | ☐ `NFR-07` | **Long-term verifiability** — Evidence remains verifiable years later; algorithms and formats are versioned to allow it. | Format version negotiation test; documented algorithm migration path |
@@ -106,6 +106,7 @@ Close the two attack classes that need no third party, and measure the performan
 | ☐ `FR-52` | **Canonicalisation completeness** — The canonical encoding must cover every field of the action record at every nesting depth. A test must prove that mutating any single field, at any depth, changes the leaf digest. | Property test mutating each field in turn, including nested argument keys; every mutation must change the digest |
 | ☐ `FR-55` | **Counterparty reference capture** — Extract externally issued identifiers from a tool result and index them for reconciliation. The index lives in the deletable content store, never in the chain, because a transaction reference can itself be identifying. | A result containing an external reference is indexed and queryable; the index is removed by crypto-shredding |
 | ☐ `FR-56` | **Collector instance identity** — Each collector instance has a stable identity that scopes its chain and its log origin. Records carry the run they belong to as a field; the chain itself is collector-scoped, so concurrent runs interleave in one log and heartbeats need no run at all. | Two concurrent runs produce one contiguous chain with correct run tags; a heartbeat emitted with no run active is chained and anchored |
+| ☐ `FR-59` | **Action record and chain entry are separate structures** — The canonicalised, hashed ActionRecord is immutable and contains no chain metadata. prev, leaf and head live in a ChainEntry wrapper that is never canonicalised, so the digest of a record can never depend on a value derived from it. Conformance vectors publish the exact bytes hashed. | Conformance vectors: given a fixed ActionRecord, the canonical bytes, leaf and head are byte-exact. A test asserts no chain field appears inside the canonicalised subject |
 
 ### M2 — Key custody
 
@@ -142,7 +143,7 @@ The first second party. Close truncation and erasure, which no amount of local c
 | ☐ `FR-20` | **Configurable anchor cadence** — Accept an anchor_interval setting that determines the mutability window. | Observed anchor spacing matches configuration |
 | ☐ `FR-21` | **Soft anchor tier** — Provide a fast anchor tier, default every 10 seconds. | Timing test |
 | ☐ `FR-42` | **Operator enrolment** — Register an operator identity and public key with a witness so per-operator sequence state can be kept. | Enrolment then successive anchors tracked |
-| ☐ `FR-43` | **Witness enforces monotonic sequence** — The witness verifies that each submitted root is the immediate successor of the last recorded for that operator. | Truncation and erasure both detected |
+| ☐ `FR-43` | **Witness verifies consistency, not increments** — The witness accepts a checkpoint whose tree_size is greater than or equal to the last it recorded for that operator AND whose Merkle consistency proof from the previous size verifies. It does not require tree_size to increase by one: a checkpoint published every 10 seconds or 1,024 records legitimately jumps. Witness state is updated atomically with the signature. | 100 records then a checkpoint, then 40 more then a checkpoint at 140: accepted. A truncated or forked tree at any size: rejected, because consistency fails |
 | ☐ `FR-44` | **Witness retains roots** — The witness keeps submitted roots in its own append-only store. | Root retrievable from the witness independently |
 | ☐ `FR-45` | **Witness stamps its own clock** — The countersignature carries the witness's own time, not the operator's. | Operator-supplied time cannot influence the countersignature |
 | ☐ `NFR-03` | **Default mutability window** — Default anchor interval of 10 seconds. | Default config inspection plus timing test |
@@ -358,4 +359,4 @@ Every promise that is a claim rather than a feature. This milestone is mostly ab
 
 ---
 
-*181 requirements in 1.0 across 9 milestones; 198 total in the backlog.*
+*182 requirements in 1.0 across 9 milestones; 199 total in the backlog.*

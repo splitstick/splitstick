@@ -1,6 +1,6 @@
 # Splitstick 1.0 — draft release notes
 
-`v1.0.0` · Apache-2.0 · rev. 9
+`v1.0.0` · Apache-2.0 · rev. 10
 
 **Agent actions you can prove — including the ones that aren't there.**
 
@@ -117,7 +117,10 @@ more than one we award ourselves.
 - **Soft anchor**, default every 10 seconds, to a witness *set* — Rekor,
   `transparency-dev/witness`, an RFC 3161 TSA, or your own internal authority. Cadence is the
   mutability window and it is yours to set.
-- **The shipped default is `[rekor]` — a log this project does not operate.** The out-of-box
+- **The shipped default is a free RFC 3161 timestamp authority for the per-batch countersignature
+  and clock, plus a trust-minimised roll-up anchor.** A transparency log is opt-in, for operators
+  self-hosting one or whose volume suits a public instance — never the default, because a
+  ten-second cadence against a public good is not acceptable use. The out-of-box
   configuration has no vendor in it at all, which is the strongest version of the independence
   claim and happens to be the cheapest. A second witness, internal or qualified, is yours to add.
 - **Hard anchor**, optional and *off by default*: a slow, trust-minimised backstop that no company
@@ -149,13 +152,16 @@ that **everything was logged** — and silence is indistinguishable from "nothin
 - Collectors emit **signed heartbeats** into the same chain, so a window without one is as loud as a
   broken hash.
 - Each heartbeat carries the collector's **build digest**. A patched collector reports an
-  unrecognised build; a stopped one reports nothing. Either way it is attributable.
+  unrecognised build **only if it reports honestly**. A patched collector controls what it reports
+  and can emit the original digest, so **stopping is detectable and patching is not**. A
+  self-reported digest is not remote attestation, and this release provides none.
 - **Signed gap declarations.** When a batch is genuinely lost, the operator records an explicit,
   signed, countersigned statement of absence. Strict sequence contiguity without this is a
   denial-of-service on yourself: one lost batch and the stream never recovers.
 - An unexplained absence and a declared one are different objects — in engineering and, where
   adverse-inference doctrines apply, in litigation. Splitstick converts the first into the second.
-- `splitstick coverage` produces the claim that answers an auditor: *"100% of tool calls captured between
+- `splitstick coverage` produces the claim that answers an auditor: *"100% of tool calls **the
+  collector reported** were captured, chained and anchored between
   T1 and T2, with proof the collector was alive for every second of it."*
 
 ### Disclosure — prove one action, reveal one action
@@ -196,8 +202,10 @@ trace is a number, not evidence — so the artifact has to be checkable back to 
 - Every released collector artifact carries a **provenance attestation** binding its digest to the
   source commit and the build that produced it.
 - Releases are **signed**, with a published **SBOM** and pinned dependencies.
-- So when a heartbeat reports an unrecognised build, "unrecognised" is a verifiable claim rather
-  than our assertion. Without this, coverage attestation proves that *some* build ran.
+- So an honestly reported digest resolves to a published provenance attestation rather than to our
+  word. Without this, the field would prove only that *some* build ran. It still does not prove
+  that the process emitting the digest was the artifact the digest names — only remote attestation
+  would, and this release has none.
 
 ### Durability — losing a witness must not lose the evidence
 
@@ -340,7 +348,7 @@ alongside the offer so that both sides know the shape of it before anyone starts
 | Term | |
 |---|---|
 | **One class, one payout** | The unit is a **tamper class**, not an instance. Twelve variations on truncation are one finding. We would rather pay well for a new idea than repeatedly for the same one. |
-| **Default configuration** | The attack must survive the shipped default: witnesses `[splitstick, rekor]`, `quorum: 1`, `anchor_interval: 10s`, `on_unavailable: mark_gap`. A tamper that only works once the operator has weakened their own policy is already a recorded chain event, by design. |
+| **Default configuration** | The attack must survive the shipped default: witnesses as shipped (a public TSA plus the roll-up anchor), `quorum: 1`, `anchor_interval: 10s`, `on_unavailable: mark_gap`. A tamper that only works once the operator has weakened their own policy is already a recorded chain event, by design. |
 | **The threat model is the scope** | The out-of-scope list published above is binding in both directions. A key exfiltrated before first use, collusion across the entire quorum, or a tool that lies about what it did are excluded — and we do not get to add exclusions after the fact. |
 | **Recognition, not cash** | While the project is unfunded, a novel class earns attribution, credit in the suite and a named finding. A cash award opens only if the project is funded. We would rather say that than advertise money we do not hold. |
 | **First reporter, 90 days** | First complete report wins. Coordinated disclosure after 90 days or on fix, whichever is sooner. We publish the finding either way, including when we have no mitigation. |
@@ -446,6 +454,7 @@ is published rather than discarded, on the same principle as everything else her
 | 6 | ADDED | The witness time source is now named in the practice statement, since the countersignature asserts a time and nothing previously said where that time came from. |
 | 7 | SCOPED | Re-scoped as an unfunded open-source release after a feasibility review found that 40% of requirements were non-engineering and most existed only because the notes were written as a commercial launch. Nothing technical was cut. |
 | 7 | CHANGED | Default witness set is now `[rekor]` alone — no vendor in the shipped configuration, which is both the strongest independence claim and free. |
+| 10 | CORRECTED | Two external review rounds. A TSA cannot sign a C2SP note, so heterogeneous proofs moved into a typed envelope (DES-20) and the operator now signs the note itself rather than a custom preimage no witness could have matched. The build-digest claim was narrowed: stopping the collector is detectable, patching it is not. A witness now verifies a Merkle consistency proof rather than requiring tree_size to increase by one, which contradicted ten-second checkpointing. Payloads became content-addressed and fully externalised, so substitution is impossible and erasure reaches everything. ActionRecord and ChainEntry were separated to remove a circular hash. Stale defaults and coverage wording in these notes corrected. |
 | 9 | SIMPLIFIED | Dropped the external arbiter. Once the award became recognition rather than cash, the stakes of adjudication collapsed — nobody disputes attribution the way they dispute money. Publishing every finding and crediting every reporter removes the judgement entirely, which is more credible than appointing a referee and needs no one to agree to serve. The arbiter returns if cash ever does. |
 | 8 | RENAMED | Tally became Splitstick. A knockout search found "Tally" registered to Tally Solutions for accounting software, the npm and GitHub namespaces taken, and the word descriptive of what an audit tool does. Splitstick is arbitrary in class 9, free everywhere that matters, and names the two-party property rather than the counting. Recorded in docs/name-search.md. |
 | 7 | REMOVED | The hosted witness, the certification mark, accreditation and the cash bounty. All four are now stated as funded-release items rather than implied capabilities. |

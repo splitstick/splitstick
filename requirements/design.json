@@ -9,7 +9,8 @@
       "covers": [
         "FR-05",
         "FR-06",
-        "FR-07"
+        "FR-07",
+        "FR-59"
       ],
       "spec": "design/DES-01-action-record-schema.md"
     },

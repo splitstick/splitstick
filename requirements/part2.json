@@ -325,9 +325,9 @@
     "type": "privacy",
     "release": "1.0",
     "title": "No content in the chain",
-    "statement": "The chain contains no plaintext content.",
+    "statement": "The chain contains no payload bytes at all — not merely no oversized ones. Records in the chain carry metadata and salted content digests; every argument and result lives in the deletable store, so there is nothing in the chain that erasure cannot reach.",
     "source": "Erasure — no content is ever in the chain",
-    "verify": "Automated scan of chain files for plaintext"
+    "verify": "Automated scan of chain files for any payload string from the fixture finds nothing, including short inline-sized arguments"
   },
   {
     "id": "PRIV-03",

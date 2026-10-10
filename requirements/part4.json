@@ -225,5 +225,14 @@
     "statement": "Pre-allocate storage sufficient to write a gap declaration, so the declaration can be written even when the store is otherwise exhausted. If even that fails, the condition is surfaced out of band and the next successful write declares the lost window.",
     "source": "Operations — fails open, loudly",
     "verify": "Disk-exhaustion test: the agent completes, a gap declaration is written from the reserve, and the lost window appears in the coverage report"
+  },
+  {
+    "id": "FR-59",
+    "type": "functional",
+    "release": "1.0",
+    "title": "Action record and chain entry are separate structures",
+    "statement": "The canonicalised, hashed ActionRecord is immutable and contains no chain metadata. prev, leaf and head live in a ChainEntry wrapper that is never canonicalised, so the digest of a record can never depend on a value derived from it. Conformance vectors publish the exact bytes hashed.",
+    "source": "Integrity — chained, salted, ratcheted; Capture — action record",
+    "verify": "Conformance vectors: given a fixed ActionRecord, the canonical bytes, leaf and head are byte-exact. A test asserts no chain field appears inside the canonicalised subject"
   }
 ]

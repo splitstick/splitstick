@@ -13,7 +13,7 @@ Four adapters, three of them requiring nothing of us.
 | Adapter | Req | Provides | Does not provide |
 |---|---|---|---|
 **RFC 3161 TSA** | FR-16 | signature + independent clock, per batch | retention, enumeration, sequence memory |
-**OpenTimestamps** | FR-22 | trust-minimised anchor, no party can withdraw it | low latency, enumeration |
+**OpenTimestamps** | FR-22 | existed-no-later-than, no party can withdraw it | low latency, enumeration, sequence state |
 **Self-hosted** | FR-17 | everything, including sequence enforcement | nothing — but the operator must run it |
 **Transparency log** | FR-14, FR-15 | public retention and enumeration | acceptable use at high cadence |
 
@@ -43,27 +43,40 @@ but they turn a cliff into a bounded window.
 ## Sequence enforcement — FR-42, FR-43 (stateful witnesses only)
 
 ```
-POST /checkpoint     { note }                       → 200 { note-with-countersignature }
-                                                      409 { expected_seq }   out of order
-                                                      412 { current_head }   rollback attempt
+POST /add-checkpoint  { note, old_size, consistency_proof }
+                        → 200  note with the witness signature line appended
+                        → 409  { last_size, last_root }   proof does not verify: fork or rollback
+                        → 400  tree_size < last_size      regression
 ```
 
-The witness keeps `(operator_id, last_seq, last_root, received_at)` and accepts a note only if its
-tree size is the immediate successor. A gap is refused with `409` and the expected sequence.
+The witness keeps `(operator_id, last_size, last_root, received_at)` and accepts when **both**
+hold: `tree_size >= last_size`, and an RFC 6962 **consistency proof** from `last_size` to
+`tree_size` verifies against `last_root`. State is updated atomically with the signature, so a
+concurrent submission cannot interleave.
+
+An earlier draft required the tree size to be the *immediate successor*. An external review
+pointed out that this contradicts `DES-05`: checkpoints publish every 10 seconds or 1,024
+records, so sizes legitimately jump — 100, then 140, then 200. The error was mine and recent: I
+changed `DES-05` to a running log and did not propagate it here. Consistency proofs are both the
+correct mechanism and what the C2SP witness protocol actually specifies.
+
+**Truncation detection is stronger this way, not weaker.** A truncated or forked tree fails the
+consistency proof at *any* size, so the witness refuses without needing to know how many records
+should have arrived.
 
 **Enrolment** (FR-42) registers an operator identity and public key. It is a precondition of
 sequence state: without an identity the witness cannot know whose successor this is. This is also
 why independence cannot be self-served — enrolment is a relationship, however lightweight.
 
-**Recovery, not deadlock — FR-26, FR-27.** Strict contiguity without an escape is a denial of
-service against yourself: one lost batch and the stream never resumes. A **signed gap
-declaration** (FR-26) is accepted at the expected sequence and advances the pointer, and is itself
-submitted for countersignature (FR-27), so the gap is recorded rather than silently healed.
+**Gap declarations — FR-26, FR-27.** With consistency proofs the witness cannot deadlock, so a
+gap declaration is no longer a protocol escape. It remains necessary one layer down: `DES-04`
+requires `record_seq` to increment by exactly one, so records lost before they were written leave
+a hole the **chain** must account for. A signed gap declaration (FR-26) occupies that span, is
+chained like any record, and is submitted for countersignature (FR-27) so its time is
+independently established.
 
-Gap declarations belong to this element rather than to coverage reporting, which was an ordering
-error CI caught: sequence enforcement here cannot function without them, so they cannot wait for
-M4. `DES-10` consumes them to distinguish a declared absence from an unexplained one; it does not
-define them. The declaration's own shape is specified there.
+They sit in this element because they must be countersigned, which needs the witness. `DES-10`
+consumes them to distinguish a declared absence from an unexplained one; it does not define them.
 
 ## Tree heads and rollback — FR-44, FR-50
 
@@ -79,7 +92,8 @@ indefinitely. A rotation is not an amnesty for anything signed before it.
 
 ## Quorum — FR-19, INT-02
 
-Quorum counts acceptable signature lines on a DES-07 note. `quorum: 2` across parties with no
+Quorum counts acceptable **proofs** — note signature lines *and* envelope entries (`DES-20`) —
+reported per capability class rather than as one number. `quorum: 2` across parties with no
 common interest is the operator's answer to collusion, and the default includes a public anchor
 precisely so independence is hard to lose by accident.
 

@@ -48,7 +48,7 @@ envelope, not inside it.
 |---|---|---|---|
 `c2sp-note` | the note bytes, per the signed-note spec | Ed25519 over the note | receipt, ordering, **sequence state** |
 `rfc3161` | a `MessageImprint` over `note_digest` | CMS path validation to the TSA's cert chain | **time**, from an independent clock |
-`opentimestamps` | a commitment to `note_digest` | attestation path to a Bitcoin block header | time **lower bound**, no party to trust |
+`opentimestamps` | a commitment to `note_digest` | attestation path to a Bitcoin block header | the note **existed no later than** the block time, with no party to trust |
 
 **`covers` is explicit on every entry.** Two signers signing different bytes and both appearing
 valid is precisely how a confused-deputy bug enters a verifier.
@@ -69,7 +69,7 @@ cheapest possible answer to it:
 
 ```
 witnesses   tsa.example (rfc3161, time only)
-            bitcoin     (opentimestamps, time lower bound only)
+            bitcoin     (opentimestamps, existed-no-later-than only)
 capability  no witness in this set maintains sequence state
             truncation above record_seq 4812 is NOT detectable
             below that height, cross-pack comparison applies (DES-19)

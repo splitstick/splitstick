@@ -7,7 +7,13 @@
 The unit of evidence is an **action record**: one consequential thing an agent did.
 It is not a conversation turn, not a span, and not a log line.
 
+**Two structures, never one — FR-59.** The `ActionRecord` below is the canonicalised, hashed subject. It
+carries no chain metadata, because a digest that depends on a value derived from itself is
+circular — an external review caught exactly that in an earlier draft, where `head` lived in the
+record while `DES-02` said every field contributes.
+
 ```jsonc
+// ActionRecord — canonicalised by DES-02, hashed by DES-03. Immutable.
 {
   "v": 1,                                  // DES-16 format version
   "collector": "treasury-host-1",          // scopes the chain and the log origin  FR-56
@@ -17,12 +23,27 @@ It is not a conversation turn, not a span, and not a log line.
   "kind": "tool_call",                     // tool_call | approval | heartbeat | gap | policy
   "agent": "treasury-agent",
   "tool": "transfer_funds",
-  "args": { "amount": 2000000, "currency": "EUR", "to": "ACME-9931" },
-  "result": { "ok": true, "content": "OK: transferred EUR 2000000 …" },
+  "args":   { "cid": "sha256:9f2c…", "bytes": 61 },     // salted digest, FR-35
+  "result": { "cid": "sha256:4b71…", "bytes": 54, "ok": true },
   "approval": null,                        // see below
   "consequential": true                    // as declared by the tool, never inferred
 }
 ```
+
+```jsonc
+// ChainEntry — the storage wrapper. NEVER canonicalised, never hashed as a unit.
+{ "record": { /* the ActionRecord above, verbatim */ },
+  "salt": "4ff729d8125d8ecf4b14a2931d5e28f0",
+  "leaf": "507c3f35…",      // H(0x00 ‖ salt ‖ JCS(record))        DES-03
+  "prev": "e818cb6b…",      // predecessor head
+  "head": "fe3c7f5e…" }     // H(0x02 ‖ prev ‖ leaf)               DES-04
+```
+
+**No payload is in either structure.** Arguments and results are salted content digests
+(`FR-35`); the plaintext lives encrypted in the deletable store (`DES-13`). This is what makes
+`PRIV-02` literally true rather than true of large payloads only — and it is what lets erasure
+reach *everything*, including a short inline argument that an earlier draft would have written
+into a chain that is never deleted.
 
 ### Field rules
 

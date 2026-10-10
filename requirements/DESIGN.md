@@ -10,9 +10,9 @@ Regenerate with `npm run backlog`.
 | | Count |
 |---|---:|
 | Design elements | 20 |
-| Release-1.0 requirements traced to a design element | 121 |
+| Release-1.0 requirements traced to a design element | 122 |
 | Classified non-design | 60 |
-| **Total 1.0** | **181** |
+| **Total 1.0** | **182** |
 
 ### Non-design classifications
 
@@ -27,7 +27,7 @@ Regenerate with `npm run backlog`.
 
 ### [DES-01 — Action record schema](../design/DES-01-action-record-schema.md)
 
-**Milestone:** M1 · **Requirements covered:** 3
+**Milestone:** M1 · **Requirements covered:** 4
 
 Which fields constitute an action record, their types, and what is deliberately excluded (no prompt, no conversation, no model output).
 
@@ -36,6 +36,7 @@ Which fields constitute an action record, their types, and what is deliberately 
 | `FR-05` | Digest tool identity and arguments | ☐ |
 | `FR-06` | Digest tool result | ☐ |
 | `FR-07` | Digest approval decisions | ☐ |
+| `FR-59` | Action record and chain entry are separate structures | ☐ |
 
 ### [DES-02 — Canonical encoding](../design/DES-02-canonical-encoding.md)
 
@@ -134,7 +135,7 @@ Submission and response, enrolment, per-operator sequence enforcement, countersi
 | `FR-21` | Soft anchor tier | ☐ |
 | `FR-22` | Hard anchor tier | ☐ |
 | `FR-42` | Operator enrolment | ☐ |
-| `FR-43` | Witness enforces monotonic sequence | ☐ |
+| `FR-43` | Witness verifies consistency, not increments | ☐ |
 | `FR-44` | Witness retains roots | ☐ |
 | `FR-50` | Witness publishes signed tree heads | ☐ |
 | `FR-51` | Witness key rotation | ☐ |
@@ -211,7 +212,7 @@ The content store, pointer scheme, crypto-shredding procedure, and how retention
 
 | Requirement | | Status |
 |---|---|---|
-| `FR-35` | Content externalised from the chain | ☐ |
+| `FR-35` | Payloads are content-addressed and externalised | ☐ |
 | `FR-36` | Crypto-shredding | ☐ |
 | `FR-37` | Retention policy on storage | ☐ |
 | `PRIV-02` | No content in the chain | ☐ |

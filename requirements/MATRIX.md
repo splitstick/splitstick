@@ -11,7 +11,7 @@ Regenerate with `npm run requirements`.
 
 | Category | Count |
 |---|---:|
-| Functional | 58 |
+| Functional | 59 |
 | Security | 26 |
 | Legal & regulatory | 19 |
 | Governance, licensing & community | 19 |
@@ -23,20 +23,20 @@ Regenerate with `npm run requirements`.
 | Interoperability & standards | 7 |
 | Operational | 6 |
 | Traceability & process | 5 |
-| **Total** | **198** |
+| **Total** | **199** |
 
 ### By release
 
 | Release | Count |
 |---|---:|
-| 1.0 | 181 |
+| 1.0 | 182 |
 | 2.0 | 5 |
 | commercial | 12 |
-| **Total** | **198** |
+| **Total** | **199** |
 
 ## Matrix
 
-### Functional — 58
+### Functional — 59
 
 | ID | Requirement | Traces to | Verified by | Rel | M | Status |
 |---|---|---|---|---|---|---|
@@ -74,7 +74,7 @@ Regenerate with `npm run requirements`.
 | `FR-32` | **splitstick disclose** — Emit a Merkle inclusion proof for a single named event. | Disclosure — splitstick disclose | Recipient verifies one event without the rest | 1.0 | M5 | ☐ |
 | `FR-33` | **Inclusion proof binds to countersigned root** — Inclusion proofs verify against a countersigned root, not a bare local digest. | Disclosure — against a countersigned root | Proof rejected when root is unwitnessed | 1.0 | M5 | ☐ |
 | `FR-34` | **Optional batch padding** — Provide optional padding of batches to obscure activity volume. | Disclosure — optional batch padding | Anchor volume decoupled from event volume when enabled | 1.0 | M5 | ☐ |
-| `FR-35` | **Content externalised from the chain** — The chain stores salted commitments and pointers only; content lives in operator-controlled mutable storage. | Erasure — no content is ever in the chain | Automated scan of chain files for any content string from the fixture finds nothing (shares PRIV-02 harness) | 1.0 | M1 | ☐ |
+| `FR-35` | **Payloads are content-addressed and externalised** — No payload enters the chain. Every argument and result is replaced by a salted content digest, cid = H(0x05 \|\| content_salt \|\| plaintext), and the plaintext is stored encrypted in the deletable store. Substituting a payload while preserving its pointer is therefore impossible, and deleting the salt, key and ciphertext leaves an unlinkable commitment. | Erasure — no content is ever in the chain | Payload-substitution test: replacing stored content without changing the cid fails verification. Automated scan asserts no payload bytes appear anywhere in the chain | 1.0 | M1 | ☐ |
 | `FR-36` | **Crypto-shredding** — Deleting content and its key leaves the chain verifiable and the commitment permanently unlinkable. | Erasure — crypto-shredding | Verify passes after content+key deletion | 1.0 | M5 | ☐ |
 | `FR-37` | **Retention policy on storage** — Retention and erasure are configurable at the storage layer, independent of the cryptography. | Erasure — policy settings on your storage | Retention config honoured; chain unaffected | 1.0 | M5 | ☐ |
 | `FR-38` | **Fail-open with marked batch** — When no witness is reachable, chain and sign locally, mark the batch unwitnessed, and queue it. | Operations — fails open, loudly | Agent completes with all witnesses unreachable | 1.0 | M3b | ☐ |
@@ -82,7 +82,7 @@ Regenerate with `npm run requirements`.
 | `FR-40` | **Late anchors reported as gaps** — Windows anchored late are reported as coverage gaps. | Operations — reported as a coverage gap | Coverage report flags the widened window | 1.0 | M4 | ☐ |
 | `FR-41` | **Configuration file** — Support splitstick.yaml with witnesses, quorum, on_unavailable and anchor_interval keys. | Getting started — splitstick.yaml | The documented example config is loaded in test and each key asserted to take effect | 1.0 | M1 | ☐ |
 | `FR-42` | **Operator enrolment** — Register an operator identity and public key with a witness so per-operator sequence state can be kept. | Witness Practice Statement — this enrolled operator | Enrolment then successive anchors tracked | 1.0 | M3a | ☐ |
-| `FR-43` | **Witness enforces monotonic sequence** — The witness verifies that each submitted root is the immediate successor of the last recorded for that operator. | Witness Practice Statement — immediate successor | Truncation and erasure both detected | 1.0 | M3a | ☐ |
+| `FR-43` | **Witness verifies consistency, not increments** — The witness accepts a checkpoint whose tree_size is greater than or equal to the last it recorded for that operator AND whose Merkle consistency proof from the previous size verifies. It does not require tree_size to increase by one: a checkpoint published every 10 seconds or 1,024 records legitimately jumps. Witness state is updated atomically with the signature. | Witness Practice Statement — immediate successor | 100 records then a checkpoint, then 40 more then a checkpoint at 140: accepted. A truncated or forked tree at any size: rejected, because consistency fails | 1.0 | M3a | ☐ |
 | `FR-44` | **Witness retains roots** — The witness keeps submitted roots in its own append-only store. | Witness Practice Statement — has retained it | Root retrievable from the witness independently | 1.0 | M3a | ☐ |
 | `FR-45` | **Witness stamps its own clock** — The countersignature carries the witness's own time, not the operator's. | Witness Practice Statement — at this time, per its clock | Operator-supplied time cannot influence the countersignature | 1.0 | M3a | ☐ |
 | `FR-46` | **Conformance test suite** — Publish an executable conformance suite any witness implementation can run against itself. | Licence and governance — conformance suite is open | Suite runs green against the reference witness | 1.0 | M6 | ☐ |
@@ -98,6 +98,7 @@ Regenerate with `npm run requirements`.
 | `FR-56` | **Collector instance identity** — Each collector instance has a stable identity that scopes its chain and its log origin. Records carry the run they belong to as a field; the chain itself is collector-scoped, so concurrent runs interleave in one log and heartbeats need no run at all. | Capture — action record; Coverage attestation | Two concurrent runs produce one contiguous chain with correct run tags; a heartbeat emitted with no run active is chained and anchored | 1.0 | M1 | ☐ |
 | `FR-57` | **Verifier states witness-set capabilities** — The verifier prints what the configured or observed witness set can and cannot establish — in particular whether any witness maintains operator sequence state, and therefore whether truncation above the last disclosed height is detectable at all. | Proof — offline verification; Independence | Test asserts a stateless witness set yields an explicit "truncation not detectable above <height>" line, and a stateful one does not | 1.0 | M3a | ☐ |
 | `FR-58` | **Reserved slot for gap declarations** — Pre-allocate storage sufficient to write a gap declaration, so the declaration can be written even when the store is otherwise exhausted. If even that fails, the condition is surfaced out of band and the next successful write declares the lost window. | Operations — fails open, loudly | Disk-exhaustion test: the agent completes, a gap declaration is written from the reserve, and the lost window appears in the coverage report | 1.0 | M3b | ☐ |
+| `FR-59` | **Action record and chain entry are separate structures** — The canonicalised, hashed ActionRecord is immutable and contains no chain metadata. prev, leaf and head live in a ChainEntry wrapper that is never canonicalised, so the digest of a record can never depend on a value derived from it. Conformance vectors publish the exact bytes hashed. | Integrity — chained, salted, ratcheted; Capture — action record | Conformance vectors: given a fixed ActionRecord, the canonical bytes, leaf and head are byte-exact. A test asserts no chain field appears inside the canonicalised subject | 1.0 | M1 | ☐ |
 
 ### Non-functional — 13
 
@@ -153,7 +154,7 @@ Regenerate with `npm run requirements`.
 | ID | Requirement | Traces to | Verified by | Rel | M | Status |
 |---|---|---|---|---|---|---|
 | `PRIV-01` | **Zero content egress** — No content bytes leave the operator's host under any configuration. | Numbers — 0 bytes of content leaving your host | Full egress capture during a representative run | 1.0 | M3a | ☐ |
-| `PRIV-02` | **No content in the chain** — The chain contains no plaintext content. | Erasure — no content is ever in the chain | Automated scan of chain files for plaintext | 1.0 | M1 | ☐ |
+| `PRIV-02` | **No content in the chain** — The chain contains no payload bytes at all — not merely no oversized ones. Records in the chain carry metadata and salted content digests; every argument and result lives in the deletable store, so there is nothing in the chain that erasure cannot reach. | Erasure — no content is ever in the chain | Automated scan of chain files for any payload string from the fixture finds nothing, including short inline-sized arguments | 1.0 | M1 | ☐ |
 | `PRIV-03` | **Erasure via crypto-shredding** — Support a documented erasure procedure satisfying a data-subject deletion request. | Erasure — GDPR-compatible | Procedure documented and exercised; independent privacy review deferred to a funded release | 1.0 | M5 | ☐ |
 | `PRIV-04` | **Chain survives erasure** — The chain still verifies after content deletion. | Erasure — the chain still verifies | Verify passes post-deletion | 1.0 | M5 | ☐ |
 | `PRIV-05` | **Minimal retained artefacts** — After erasure, only a salted hash and timestamp remain. | Erasure — what survives is a salted hash and a timestamp | Automated scan after crypto-shredding asserts only salted hashes and timestamps remain | 1.0 | M5 | ☐ |
@@ -296,4 +297,4 @@ Regenerate with `npm run requirements`.
 
 ---
 
-*198 requirements. Status column is maintained by hand as work lands.*
+*199 requirements. Status column is maintained by hand as work lands.*

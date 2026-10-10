@@ -312,10 +312,10 @@
       "id": "FR-35",
       "type": "functional",
       "release": "1.0",
-      "title": "Content externalised from the chain",
-      "statement": "The chain stores salted commitments and pointers only; content lives in operator-controlled mutable storage.",
+      "title": "Payloads are content-addressed and externalised",
+      "statement": "No payload enters the chain. Every argument and result is replaced by a salted content digest, cid = H(0x05 || content_salt || plaintext), and the plaintext is stored encrypted in the deletable store. Substituting a payload while preserving its pointer is therefore impossible, and deleting the salt, key and ciphertext leaves an unlinkable commitment.",
       "source": "Erasure — no content is ever in the chain",
-      "verify": "Automated scan of chain files for any content string from the fixture finds nothing (shares PRIV-02 harness)"
+      "verify": "Payload-substitution test: replacing stored content without changing the cid fails verification. Automated scan asserts no payload bytes appear anywhere in the chain"
     },
     {
       "id": "FR-36",
@@ -384,10 +384,10 @@
       "id": "FR-43",
       "type": "functional",
       "release": "1.0",
-      "title": "Witness enforces monotonic sequence",
-      "statement": "The witness verifies that each submitted root is the immediate successor of the last recorded for that operator.",
+      "title": "Witness verifies consistency, not increments",
+      "statement": "The witness accepts a checkpoint whose tree_size is greater than or equal to the last it recorded for that operator AND whose Merkle consistency proof from the previous size verifies. It does not require tree_size to increase by one: a checkpoint published every 10 seconds or 1,024 records legitimately jumps. Witness state is updated atomically with the signature.",
       "source": "Witness Practice Statement — immediate successor",
-      "verify": "Truncation and erasure both detected"
+      "verify": "100 records then a checkpoint, then 40 more then a checkpoint at 140: accepted. A truncated or forked tree at any size: rejected, because consistency fails"
     },
     {
       "id": "FR-44",

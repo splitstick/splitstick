@@ -69,9 +69,9 @@ imply more than was checked.
 Every verdict therefore carries what the observed witnesses can and cannot do:
 
 ```
-verdict     OK  (12 checks passed, 1 inconclusive)
+verdict     INCONCLUSIVE  (12 checks passed, 1 could not be answered, 0 failed)
 witnesses   tsa.example  (rfc3161, time only)
-            bitcoin      (opentimestamps, time lower bound only)
+            bitcoin      (opentimestamps, existed-no-later-than only)
 capability  no witness in this set maintains sequence state
             truncation above record_seq 4812 is NOT detectable
             below that height, cross-pack comparison applies (DES-19)
