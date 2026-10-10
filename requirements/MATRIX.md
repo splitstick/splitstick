@@ -69,8 +69,8 @@ Regenerate with `npm run requirements`.
 | `FR-27` | **Countersigned gap declarations** — Gap declarations are themselves submitted for countersignature. | Coverage attestation — signed, countersigned statement of absence | Declaration carries a witness signature | 1.0 | M4 | ☐ |
 | `FR-28` | **splitstick coverage** — Produce a coverage report over a date range stating the percentage of tool calls captured and proving collector liveness throughout. | Coverage attestation — splitstick coverage | Report output matches injected gaps exactly | 1.0 | M4 | ☐ |
 | `FR-29` | **splitstick verify** — Verify chain integrity, batch signatures and witness countersignatures from files alone. | Proof — offline verification | All red-team classes fail closed; baseline passes | 1.0 | M1 | ☐ |
-| `FR-30` | **Acceptance policy as input** — The verifier takes a caller-supplied acceptance policy naming trusted witness keys and quorum. | Proof — an input, not a hardcoded trust store | Same pack verifies under two different policies | 1.0 | M3b | ☐ |
-| `FR-31` | **Evidence pack carries all countersignatures** — Packs include every countersignature collected, not only Splitstick's. | Proof — never only ours | Pack inspection after multi-witness anchoring | 1.0 | M3b | ☐ |
+| `FR-30` | **Acceptance policy as input** — The verifier takes a caller-supplied acceptance policy naming trusted witness keys and quorum. | Proof — an input, not a hardcoded trust store | Same pack verifies under two different policies | 1.0 | M3a | ☐ |
+| `FR-31` | **Evidence pack carries all countersignatures** — Packs include every countersignature collected, not only Splitstick's. | Proof — never only ours | Pack inspection after multi-witness anchoring | 1.0 | M3a | ☐ |
 | `FR-32` | **splitstick disclose** — Emit a Merkle inclusion proof for a single named event. | Disclosure — splitstick disclose | Recipient verifies one event without the rest | 1.0 | M5 | ☐ |
 | `FR-33` | **Inclusion proof binds to countersigned root** — Inclusion proofs verify against a countersigned root, not a bare local digest. | Disclosure — against a countersigned root | Proof rejected when root is unwitnessed | 1.0 | M5 | ☐ |
 | `FR-34` | **Optional batch padding** — Provide optional padding of batches to obscure activity volume. | Disclosure — optional batch padding | Anchor volume decoupled from event volume when enabled | 1.0 | M5 | ☐ |
@@ -135,16 +135,16 @@ Regenerate with `npm run requirements`.
 | `SEC-19` | **Bounty intake and triage** — Operate an intake, triage and payment process for the tamper bounty. | Bounty terms | Process documented and exercised once before launch | 1.0 | M7 | ☐ |
 | `SEC-20` | **Coordinated disclosure window** — Disclose within 90 days or on fix, whichever is sooner. | Bounty terms — first reporter, 90 days | Policy published; tracked per report | 1.0 | M7 | ☐ |
 | `SEC-21` | **Publish unmitigated findings** — Publish findings even when no mitigation exists. | Bounty terms — including when we have no mitigation | Policy published; audited at each disclosure | 1.0 | M7 | ☐ |
-| `SEC-22` | **Build provenance attestation** — Publish a provenance attestation for every released collector artifact, binding the digest to its source commit and build, so the digest in a heartbeat can be independently traced. | Provenance — a build digest you can check | Attestation verifies against the published artifact and source revision | 1.0 | M0 | ☐ |
-| `SEC-23` | **Signed releases and SBOM** — Sign every release and publish an SBOM with pinned dependencies. | Provenance — signed releases and an SBOM | Signature and SBOM present and verified in CI for each release | 1.0 | M0 | ☐ |
-| `SEC-24` | **Key compromise recovery** — Document and support recovery from operator key compromise: a declared, countersigned discontinuity rather than a silent re-key. | Durability — key compromise | Compromise drill: discontinuity is recorded, countersigned and visible to the verifier | 1.0 | M2 | ☐ |
+| `SEC-22` | **Build provenance attestation** — Publish a provenance attestation for every released collector artifact, binding the digest to its source commit and build, so the digest in a heartbeat can be independently traced. | Provenance — a build digest you can check | Attestation verifies against the published artifact and source revision | 1.0 | M1 | ☐ |
+| `SEC-23` | **Signed releases and SBOM** — Sign every release and publish an SBOM with pinned dependencies. | Provenance — signed releases and an SBOM | Signature and SBOM present and verified in CI for each release | 1.0 | M1 | ☐ |
+| `SEC-24` | **Key compromise recovery** — Document and support recovery from operator key compromise: a declared, countersigned discontinuity rather than a silent re-key. | Durability — key compromise | Compromise drill: discontinuity is recorded, countersigned and visible to the verifier | 1.0 | M3b | ☐ |
 | `SEC-25` | **Witness time source** — The witness clock derives from a documented, traceable time source, and the verifier surfaces the witness's declared time discipline. | Durability — the clock the witness stamps with | Time source documented; drift monitored and alerted | 1.0 | M3a | ☐ |
 
 ### Privacy & data protection — 9
 
 | ID | Requirement | Traces to | Verified by | Rel | M | Status |
 |---|---|---|---|---|---|---|
-| `PRIV-01` | **Zero content egress** — No content bytes leave the operator's host under any configuration. | Numbers — 0 bytes of content leaving your host | Full egress capture during a representative run | 1.0 | M1 | ☐ |
+| `PRIV-01` | **Zero content egress** — No content bytes leave the operator's host under any configuration. | Numbers — 0 bytes of content leaving your host | Full egress capture during a representative run | 1.0 | M3a | ☐ |
 | `PRIV-02` | **No content in the chain** — The chain contains no plaintext content. | Erasure — no content is ever in the chain | Automated scan of chain files for plaintext | 1.0 | M1 | ☐ |
 | `PRIV-03` | **Erasure via crypto-shredding** — Support a documented erasure procedure satisfying a data-subject deletion request. | Erasure — GDPR-compatible | Procedure documented and exercised; independent privacy review deferred to a funded release | 1.0 | M5 | ☐ |
 | `PRIV-04` | **Chain survives erasure** — The chain still verifies after content deletion. | Erasure — the chain still verifies | Verify passes post-deletion | 1.0 | M5 | ☐ |
@@ -243,7 +243,7 @@ Regenerate with `npm run requirements`.
 | `SCOPE-12` | **No TEE suppression claim** — MUST NOT claim a TEE makes event suppression impossible. | Considered and rejected | Claims audit | 1.0 | M7 | ☐ |
 | `SCOPE-13` | **No blockchain as ledger** — MUST NOT use a blockchain as the primary ledger; a public chain may serve only as the optional hard anchor. | Considered and rejected | Architecture review | 1.0 | M7 | ☐ |
 | `SCOPE-14` | **No self-scored defeat metric** — MUST NOT publish an N-of-N attacks-defeated score. | Attack class section — we deliberately publish no score | Marketing and documentation audit | 1.0 | M7 | ☐ |
-| `SCOPE-15` | **Hard anchor off by default** — The trust-minimised hard anchor MUST default to disabled. | Independence — optional and off by default | Default config inspection | 1.0 | M3a | ☐ |
+| `SCOPE-15` | **Hard anchor off by default** — The trust-minimised hard anchor MUST default to disabled. | Independence — optional and off by default | Default config inspection | 1.0 | M6 | ☐ |
 | `SCOPE-16` | **No fail-closed option** — MUST NOT provide any configuration, flag or build that makes the collector block an agent run. Fail-open is a design constraint, not a setting. | Operations — a design constraint, not a setting | Config schema review; no enforcement path exists; rejected as a feature request by policy | 1.0 | M7 | ☐ |
 
 ### Documentation & transparency — 8

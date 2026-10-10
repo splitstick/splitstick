@@ -7,6 +7,7 @@ const extra = ['requirements/part2.json','requirements/part3.json','requirements
 const reqs = [...base.requirements, ...extra];
 const byId = new Map(reqs.map(r => [r.id, r]));
 const { gates, milestones, regressionRule } = JSON.parse(fs.readFileSync('requirements/milestones.json','utf8'));
+const { order, depends } = JSON.parse(fs.readFileSync('requirements/depends.json','utf8'));
 
 // --- validate ---------------------------------------------------------------
 const errs = [], assigned = new Map();
@@ -20,6 +21,17 @@ for (const r of r10) if (!assigned.has(r.id)) errs.push(`${r.id}: unassigned (re
 for (const m of milestones) for (const g of m.gate) if (!gates[g]) errs.push(`${m.id}: unknown gate ${g}`);
 const gated = new Set(milestones.flatMap(m => m.gate));
 for (const g of Object.keys(gates)) if (!gated.has(g)) errs.push(`gate ${g}: never closed by any milestone`);
+// ordering: a requirement may not depend on one in a later milestone
+const msOfId = new Map();
+for (const m of milestones) for (const id of m.ids) msOfId.set(id, m.id);
+const pos = id => order.indexOf(msOfId.get(id));
+for (const [id, deps] of Object.entries(depends)) {
+  if (!msOfId.has(id)) continue;
+  for (const dep of deps) {
+    if (!msOfId.has(dep)) { errs.push(`${id}: depends on ${dep}, which is in no 1.0 milestone`); continue; }
+    if (pos(dep) > pos(id)) errs.push(`${id} (${msOfId.get(id)}) depends on ${dep} (${msOfId.get(dep)}) — later milestone`);
+  }
+}
 if (errs.length) { console.error('PLAN VALIDATION FAILED:\n' + errs.join('\n')); process.exit(1); }
 
 // --- emit -------------------------------------------------------------------
@@ -88,7 +100,7 @@ md += `\n---\n\n*${r10.length} requirements in 1.0 across ${milestones.length} m
 
 fs.writeFileSync('requirements/PLAN.md', md);
 
-console.log(`plan validated: ${r10.length} requirements, ${milestones.length} milestones, all 7 gates closed, 0 errors\n`);
+console.log(`plan validated: ${r10.length} requirements, ${milestones.length} milestones, all 7 gates closed, ${Object.keys(depends).length} ordering constraints, 0 errors\n`);
 for (const m of milestones) {
   const g = m.gate.length ? m.gate.join(',') : '—';
   const openN = m.ids.filter(id=>byId.get(id).status!=='done').length;

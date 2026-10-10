@@ -59,8 +59,6 @@
         "SEC-01",
         "SEC-02",
         "SEC-05",
-        "SEC-22",
-        "SEC-23",
         "GOV-19"
       ]
     },
@@ -73,7 +71,7 @@
         "AC-2"
       ],
       "weeks": "3-4",
-      "exit": "Red-team A and C both DETECTED by splitstick verify; baseline still passes. p99 append overhead measured under 1 ms and run latency under 2% — measured, not assumed. Chain files contain no plaintext.",
+      "exit": "Red-team A and C both DETECTED by splitstick verify; baseline still passes. p99 append overhead measured under 1 ms and run latency under 2% — measured, not assumed. Chain files contain no plaintext. First package published with a provenance attestation and an SBOM, so the build digest M4 relies on can be traced to its source.",
       "ids": [
         "FR-01",
         "FR-02",
@@ -92,12 +90,13 @@
         "SEC-07",
         "SEC-13",
         "SEC-14",
-        "PRIV-01",
         "PRIV-02",
         "INT-04",
         "DOC-01",
         "NFR-07",
-        "INT-07"
+        "INT-07",
+        "SEC-22",
+        "SEC-23"
       ]
     },
     {
@@ -114,8 +113,7 @@
         "NFR-09",
         "SEC-08",
         "SEC-17",
-        "OPS-04",
-        "SEC-24"
+        "OPS-04"
       ]
     },
     {
@@ -127,7 +125,7 @@
         "AC-5"
       ],
       "weeks": "5-7",
-      "exit": "Red-team D, E and F all DETECTED. A run with no configuration at all anchors to two independent witnesses. A rolled-back witness is detected. Hard anchor confirmed off by default. Egress capture re-run now that a witness exists, re-verifying PRIV-01 against real traffic.",
+      "exit": "Red-team D, E and F all DETECTED. A run with no configuration at all anchors to a public log the project does not operate. A rolled-back witness is detected. An auditor supplying their own acceptance policy verifies the same pack. Egress captured against real witness traffic, confirming no content leaves the host.",
       "ids": [
         "FR-12",
         "FR-13",
@@ -147,10 +145,12 @@
         "SEC-15",
         "INT-01",
         "INT-02",
-        "SCOPE-15",
         "FR-48",
         "FR-50",
-        "SEC-25"
+        "SEC-25",
+        "PRIV-01",
+        "FR-30",
+        "FR-31"
       ]
     },
     {
@@ -159,10 +159,8 @@
       "goal": "Say exactly what the countersignature means, and make sure losing a witness does not lose the evidence.",
       "gate": [],
       "weeks": "3-4",
-      "exit": "Witness Practice Statement published, versioned and itself anchored, naming its time discipline. An agent run completes normally with every witness unreachable. Restore drill meets the stated recovery point objective. Countersignatures from a retired witness key still verify.",
+      "exit": "Practice statement published, versioned and itself anchored, naming its time discipline. An agent run completes normally with every witness unreachable. Restore drill meets the stated recovery point objective. Countersignatures from a retired witness key still verify. Operator key compromise recoverable as a declared, countersigned discontinuity.",
       "ids": [
-        "FR-30",
-        "FR-31",
         "FR-38",
         "FR-39",
         "NFR-12",
@@ -179,7 +177,8 @@
         "OPS-02",
         "FR-51",
         "OPS-06",
-        "LEG-19"
+        "LEG-19",
+        "SEC-24"
       ]
     },
     {
@@ -260,7 +259,8 @@
         "OPS-05",
         "LEG-13",
         "LEG-12",
-        "FR-49"
+        "FR-49",
+        "SCOPE-15"
       ]
     },
     {
