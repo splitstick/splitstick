@@ -116,7 +116,9 @@
         "FR-48",
         "INT-02",
         "SEC-15",
-        "PRIV-01"
+        "PRIV-01",
+        "FR-26",
+        "FR-27"
       ],
       "spec": "design/DES-08-witness-protocol.md"
     },
@@ -143,8 +145,6 @@
       "covers": [
         "FR-24",
         "FR-25",
-        "FR-26",
-        "FR-27",
         "FR-28",
         "FR-40",
         "SEC-11",

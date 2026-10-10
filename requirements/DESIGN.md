@@ -9,10 +9,10 @@ Regenerate with `npm run backlog`.
 
 | | Count |
 |---|---:|
-| Design elements | 19 |
-| Release-1.0 requirements traced to a design element | 118 |
+| Design elements | 20 |
+| Release-1.0 requirements traced to a design element | 121 |
 | Classified non-design | 60 |
-| **Total 1.0** | **178** |
+| **Total 1.0** | **181** |
 
 ### Non-design classifications
 
@@ -119,7 +119,7 @@ The C2SP tlog-witness conformant checkpoint, its signed preimage, and how the op
 
 ### [DES-08 — Witness protocol](../design/DES-08-witness-protocol.md)
 
-**Milestone:** M3a · **Requirements covered:** 18
+**Milestone:** M3a · **Requirements covered:** 20
 
 Submission and response, enrolment, per-operator sequence enforcement, countersignature contents, tree-head publication, key rotation, and every failure mode.
 
@@ -143,6 +143,8 @@ Submission and response, enrolment, per-operator sequence enforcement, countersi
 | `INT-02` | Verify third-party countersignatures | ☐ |
 | `SEC-15` | Witness sees roots only | ☐ |
 | `PRIV-01` | Zero content egress | ☐ |
+| `FR-26` | Signed gap declarations | ☐ |
+| `FR-27` | Countersigned gap declarations | ☐ |
 
 ### [DES-09 — Policy files](../design/DES-09-policy-files.md)
 
@@ -161,7 +163,7 @@ Two separate schemas: the collector's witness set, and the verifier's acceptance
 
 ### [DES-10 — Coverage model](../design/DES-10-coverage-model.md)
 
-**Milestone:** M4 · **Requirements covered:** 7
+**Milestone:** M4 · **Requirements covered:** 6
 
 Heartbeat cadence and contents, the build digest, gap declaration semantics, and precisely what the claim "100% captured between T1 and T2" asserts.
 
@@ -169,11 +171,10 @@ Heartbeat cadence and contents, the build digest, gap declaration semantics, and
 |---|---|---|
 | `FR-24` | Signed heartbeats | ☐ |
 | `FR-25` | Build digest in heartbeat | ☐ |
-| `FR-26` | Signed gap declarations | ☐ |
-| `FR-27` | Countersigned gap declarations | ☐ |
 | `FR-28` | splitstick coverage | ☐ |
 | `FR-40` | Late anchors reported as gaps | ☐ |
-| `SEC-11` | Resist collector suppression | ☐ |
+| `SEC-11` | Resist collector stoppage | ☐ |
+| `DOC-10` | Document the collector-patch limit | ☐ |
 
 ### [DES-11 — Evidence pack format](../design/DES-11-evidence-pack-format.md)
 
@@ -188,7 +189,7 @@ The artifact an auditor receives: records, salts, inclusion paths, every counter
 
 ### [DES-12 — Verification algorithm](../design/DES-12-verification-algorithm.md)
 
-**Milestone:** M1 · **Requirements covered:** 6
+**Milestone:** M1 · **Requirements covered:** 7
 
 The ordered checks, the verdict taxonomy including an inconclusive outcome, and what each distinct failure permits a reader to conclude.
 
@@ -200,6 +201,7 @@ The ordered checks, the verdict taxonomy including an inconclusive outcome, and 
 | `NFR-06` | No credentials at verification | ☐ |
 | `SEC-03` | No trust in operator or vendor | ☐ |
 | `SEC-04` | One honest witness assumption | ☐ |
+| `FR-57` | Verifier states witness-set capabilities | ☐ |
 
 ### [DES-13 — Storage and erasure](../design/DES-13-storage-and-erasure.md)
 
@@ -239,7 +241,7 @@ The shared capture core, the OMA backend, the MCP proxy, and where the capture b
 
 ### [DES-15 — Failure and availability model](../design/DES-15-failure-and-availability.md)
 
-**Milestone:** M3b · **Requirements covered:** 7
+**Milestone:** M3b · **Requirements covered:** 8
 
 Fail-open behaviour, the durable queue, retry and backoff, late countersignature handling, and the guarantee that the collector can never block a run.
 
@@ -252,6 +254,7 @@ Fail-open behaviour, the durable queue, retry and backoff, late countersignature
 | `OPS-02` | Queue drain and retry | ☐ |
 | `OPS-06` | Witness store durability | ☐ |
 | `SCOPE-16` | No fail-closed option | ☐ |
+| `FR-58` | Reserved slot for gap declarations | ☐ |
 
 ### [DES-16 — Format versioning and algorithm agility](../design/DES-16-format-versioning.md)
 
@@ -313,6 +316,18 @@ Two mechanisms that narrow attack classes 4 and 5 when no stateful witness is co
 | `FR-55` | Counterparty reference capture | ☐ |
 | `SEC-26` | Resist truncation below a disclosed height | ☐ |
 | `DOC-09` | Reconciliation guidance | ☐ |
+
+### [DES-20 — Countersignature envelope](../design/DES-20-countersignature-envelope.md)
+
+**Milestone:** M3a · **Requirements covered:** 3
+
+How proofs in three incompatible formats — C2SP note signature lines, DER RFC 3161 timestamp tokens, and OpenTimestamps proofs — are carried over one checkpoint and verified, since a TSA cannot sign a signed note and an OTS proof is not a signature at all.
+
+| Requirement | | Status |
+|---|---|---|
+| `FR-12` | C2SP checkpoint emission | ☐ |
+| `FR-31` | Evidence pack carries all countersignatures | ☐ |
+| `INT-02` | Verify third-party countersignatures | ☐ |
 
 ## Requirements with no design element
 

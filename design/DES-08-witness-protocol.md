@@ -55,10 +55,15 @@ tree size is the immediate successor. A gap is refused with `409` and the expect
 sequence state: without an identity the witness cannot know whose successor this is. This is also
 why independence cannot be self-served — enrolment is a relationship, however lightweight.
 
-**Recovery, not deadlock.** Strict contiguity without an escape is a denial of service against
-yourself: one lost batch and the stream never resumes. A signed **gap declaration** (DES-10) is
-accepted at the expected sequence and advances the pointer, so the gap is recorded rather than
-silently healed.
+**Recovery, not deadlock — FR-26, FR-27.** Strict contiguity without an escape is a denial of
+service against yourself: one lost batch and the stream never resumes. A **signed gap
+declaration** (FR-26) is accepted at the expected sequence and advances the pointer, and is itself
+submitted for countersignature (FR-27), so the gap is recorded rather than silently healed.
+
+Gap declarations belong to this element rather than to coverage reporting, which was an ordering
+error CI caught: sequence enforcement here cannot function without them, so they cannot wait for
+M4. `DES-10` consumes them to distinguish a declared absence from an unexplained one; it does not
+define them. The declaration's own shape is specified there.
 
 ## Tree heads and rollback — FR-44, FR-50
 

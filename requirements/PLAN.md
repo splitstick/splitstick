@@ -31,13 +31,13 @@ Every milestone runs the complete red-team suite, not only its own classes. A ga
 | **M0** Foundations and long-lead | — | 15 | 1-2, parallel to M1 | Start everything whose clock runs outside engineering, and turn the red-team suite into the acceptance harness. |
 | **M1** Local integrity | AC-1, AC-2 | 27 | 3-4 | Close the two attack classes that need no third party, and measure the performance budget before the design hardens. |
 | **M2** Key custody | AC-3 | 5 | 2 | Make yesterday's record unforgeable with today's key, and state the precondition honestly. |
-| **M3a** Anchoring and sequencing | AC-4, AC-5 | 32 | 5-7 | The first second party. Close truncation and erasure, which no amount of local cryptography can reach. |
-| **M3b** Practice statement and resilience | — | 18 | 3-4 | Say exactly what the countersignature means, and make sure losing a witness does not lose the evidence. |
-| **M4** Coverage attestation | AC-6, AC-7 | 10 | 3-4 | The differentiated claim: prove the record is complete, not merely unaltered. |
+| **M3a** Anchoring and sequencing | AC-4, AC-5 | 35 | 5-7 | The first second party. Close truncation and erasure, which no amount of local cryptography can reach. |
+| **M3b** Practice statement and resilience | — | 19 | 3-4 | Say exactly what the countersignature means, and make sure losing a witness does not lose the evidence. |
+| **M4** Coverage attestation | AC-6, AC-7 | 9 | 3-4 | The differentiated claim: prove the record is complete, not merely unaltered. |
 | **M5** Disclosure and erasure | — | 16 | 3-4 | No new attack class. This is the milestone that makes the product buyable by a regulated, multi-customer organisation. |
 | **M6** Reach and conformance | — | 19 | 4-6 | Stop depending on one upstream project, and make the format genuinely somebody else's to implement. |
 | **M7** Launch gate | — | 36 | 2 | Every promise that is a claim rather than a feature. This milestone is mostly about what we must not say. |
-| | | **178** | | |
+| | | **181** | | |
 
 ## Milestones
 
@@ -48,7 +48,7 @@ Start everything whose clock runs outside engineering, and turn the red-team sui
 - **Gate:** none — unlocks adoption rather than closing an attack class
 - **Requirements:** 15 (GOV×7  TRC×3  SEC×3  LEG×1  DOC×1)
 - **Effort:** weeks 1-2, parallel to M1
-- **Exit criteria:** Trademark search returned. External arbiter named. Counsel engaged. Threat model published. CI runs the canary. Harness inverted so each attack class can assert DETECTED against our own verifier.
+- **Exit criteria:** Trademark search returned and recorded. Counsel engagement deferred to a funded release. Threat model published. CI runs the canary, the DCO check and all three validators. Harness inverted so each attack class can assert DETECTED against our own verifier. Bounty adjudication removed rather than outsourced, so no arbiter is required.
 
 | | ID | Requirement | Verified by |
 |---|---|---|---|
@@ -129,7 +129,7 @@ Make yesterday's record unforgeable with today's key, and state the precondition
 The first second party. Close truncation and erasure, which no amount of local cryptography can reach.
 
 - **Gate:** `AC-4` — Truncate the record's tail; `AC-5` — Erase events and renumber into a clean stream
-- **Requirements:** 32 (FR×19  SEC×7  INT×2  NFR×1  PRIV×1  SCOPE×1  DOC×1)
+- **Requirements:** 35 (FR×22  SEC×7  INT×2  NFR×1  PRIV×1  SCOPE×1  DOC×1)
 - **Effort:** weeks 5-7
 - **Exit criteria:** Red-team D, E and F all DETECTED. A run with no configuration at all anchors to a public log the project does not operate. A rolled-back witness is detected. An auditor supplying their own acceptance policy verifies the same pack. Egress captured against real witness traffic, confirming no content leaves the host.
 
@@ -167,13 +167,16 @@ The first second party. Close truncation and erasure, which no amount of local c
 | ☐ `FR-54` | **Cross-pack consistency verification** — Given two or more evidence packs, detect a record inconsistent with a checkpoint already countersigned in an earlier pack — so a record truncated below a height previously disclosed is contradicted offline, with no live service. | Disclose at seq 5000, truncate to 4799, compare the two packs: the earlier countersigned checkpoint contradicts the later record |
 | ☐ `SEC-26` | **Resist truncation below a disclosed height** — A record truncated below a sequence already disclosed in a countersigned pack must be detectable by comparing the two, without any stateful witness. | Red-team class I: truncate below a disclosed height; cross-pack comparison fails closed |
 | ☐ `DOC-09` | **Reconciliation guidance** — Document reconciliation against counterparty records as a detection method for erasure and omission, with its limits stated: it requires access to the counterparty and it is a procedure an auditor performs, not a guarantee the software makes. | Guidance published; the limits appear wherever the method is claimed |
+| ☐ `FR-57` | **Verifier states witness-set capabilities** — The verifier prints what the configured or observed witness set can and cannot establish — in particular whether any witness maintains operator sequence state, and therefore whether truncation above the last disclosed height is detectable at all. | Test asserts a stateless witness set yields an explicit "truncation not detectable above <height>" line, and a stateful one does not |
+| ☐ `FR-26` | **Signed gap declarations** — Allow the operator to record an explicit, signed declaration of a genuinely lost batch so the sequence can recover. | Sequence resumes after a declared gap without a silent reset |
+| ☐ `FR-27` | **Countersigned gap declarations** — Gap declarations are themselves submitted for countersignature. | Declaration carries a witness signature |
 
 ### M3b — Practice statement and resilience
 
 Say exactly what the countersignature means, and make sure losing a witness does not lose the evidence.
 
 - **Gate:** none — unlocks adoption rather than closing an attack class
-- **Requirements:** 18 (LEG×10  FR×3  NFR×2  OPS×2  SEC×1)
+- **Requirements:** 19 (LEG×10  FR×4  NFR×2  OPS×2  SEC×1)
 - **Effort:** weeks 3-4
 - **Exit criteria:** Practice statement published, versioned and itself anchored, naming its time discipline. An agent run completes normally with every witness unreachable. Restore drill meets the stated recovery point objective. Countersignatures from a retired witness key still verify. Operator key compromise recoverable as a declared, countersigned discontinuity.
 
@@ -197,13 +200,14 @@ Say exactly what the countersignature means, and make sure losing a witness does
 | ☐ `OPS-06` | **Witness store durability** — The witness store is replicated and recoverable, with a documented recovery point objective, because a witness that loses its roots destroys the corroboration it exists to provide. | Restore drill from backup; RPO measured against the stated objective |
 | ☐ `LEG-19` | **WPS states the time discipline** — The practice statement names the witness's time source and the limits of the time assertion. | Statement text reviewed against SEC-25 implementation |
 | ☐ `SEC-24` | **Key compromise recovery** — Document and support recovery from operator key compromise: a declared, countersigned discontinuity rather than a silent re-key. | Compromise drill: discontinuity is recorded, countersigned and visible to the verifier |
+| ☐ `FR-58` | **Reserved slot for gap declarations** — Pre-allocate storage sufficient to write a gap declaration, so the declaration can be written even when the store is otherwise exhausted. If even that fails, the condition is surfaced out of band and the next successful write declares the lost window. | Disk-exhaustion test: the agent completes, a gap declaration is written from the reserve, and the lost window appears in the coverage report |
 
 ### M4 — Coverage attestation
 
 The differentiated claim: prove the record is complete, not merely unaltered.
 
 - **Gate:** `AC-6` — Stop or patch the collector, then claim quiet; `AC-7` — Weaken the anchoring policy, then tamper
-- **Requirements:** 10 (FR×7  SEC×2  DOC×1)
+- **Requirements:** 9 (FR×5  SEC×2  DOC×2)
 - **Effort:** weeks 3-4
 - **Exit criteria:** Killing the collector produces a detectable gap. Patching it reports an unrecognised build digest. Downgrading the witness policy appears as a countersigned chain event. A declared gap lets the sequence recover without a silent reset.
 
@@ -211,14 +215,13 @@ The differentiated claim: prove the record is complete, not merely unaltered.
 |---|---|---|---|
 | ☐ `FR-23` | **Policy changes as chain events** — Record any change to the witness set or quorum as a timestamped event inside the chain. | Red-team: policy downgrade is visible in the record |
 | ☐ `FR-24` | **Signed heartbeats** — Emit signed heartbeats into the collector-scoped chain at a configured interval, independently of whether any run is active, because the dangerous window is precisely when none is. | Stopping the collector produces a detectable gap, including during an interval with no agent run |
-| ☐ `FR-25` | **Build digest in heartbeat** — Each heartbeat carries the collector's build digest. | Patched binary reports an unrecognised digest |
-| ☐ `FR-26` | **Signed gap declarations** — Allow the operator to record an explicit, signed declaration of a genuinely lost batch so the sequence can recover. | Sequence resumes after a declared gap without a silent reset |
-| ☐ `FR-27` | **Countersigned gap declarations** — Gap declarations are themselves submitted for countersignature. | Declaration carries a witness signature |
-| ☐ `FR-28` | **splitstick coverage** — Produce a coverage report over a date range stating the percentage of tool calls captured and proving collector liveness throughout. | Report output matches injected gaps exactly |
+| ☐ `FR-25` | **Build digest in heartbeat** — Each heartbeat carries the collector build digest, binding a run to a traceable artifact for configuration assurance and non-repudiation by an honest operator. It is not an attestation of the running process and does not detect a dishonest patch. | Digest present and resolvable to a published provenance attestation; test asserts no claim of patch detection appears in output |
+| ☐ `FR-28` | **splitstick coverage** — Produce a coverage report over a date range stating the proportion of actions the collector reported that were captured, chained and anchored, plus heartbeat continuity — never a claim about actions the collector did not report. | Report wording asserted by test; injected gaps appear exactly; a suppressed action does not appear and the report does not imply completeness |
 | ☐ `FR-40` | **Late anchors reported as gaps** — Windows anchored late are reported as coverage gaps. | Coverage report flags the widened window |
-| ☐ `SEC-11` | **Resist collector suppression** — Stopping or patching the collector and claiming a quiet period must be detectable and attributable. | Kill and patch tests against coverage report |
+| ☐ `SEC-11` | **Resist collector stoppage** — Stopping the collector and claiming a quiet period must be detectable, by heartbeat discontinuity. Patching the collector is NOT covered: a modified build can report the original digest, and a self-reported digest is not remote attestation. | Kill the collector mid-window; the coverage report shows an undeclared gap. A separate test asserts a collector reporting a forged digest is NOT flagged, so the limit is pinned by a test rather than by prose |
 | ☐ `SEC-12` | **Resist policy downgrade** — Weakening the anchoring policy before tampering must be visible in the record. | Test weakens the witness set, then asserts a countersigned policy event appears in the chain before the next batch |
 | ☐ `DOC-05` | **Publish honest limits** — Publish the known information leaks and the attacks not covered. | Documentation review |
+| ☐ `DOC-10` | **Document the collector-patch limit** — State plainly, wherever coverage attestation is described, that a collector patched to report a valid digest while suppressing actions is not detectable without remote attestation, which this release does not provide. | Statement present in the threat model, the coverage report output, and DES-10; claims audit checks no surface implies otherwise |
 
 ### M5 — Disclosure and erasure
 
@@ -355,4 +358,4 @@ Every promise that is a claim rather than a feature. This milestone is mostly ab
 
 ---
 
-*178 requirements in 1.0 across 9 milestones; 195 total in the backlog.*
+*181 requirements in 1.0 across 9 milestones; 198 total in the backlog.*
