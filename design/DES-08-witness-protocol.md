@@ -36,6 +36,10 @@ of scope, it is the shape of the problem** — a notary you supply to yourself i
 The README must say which classes the default closes, and M3a's exit criteria must not claim
 otherwise.
 
+Until a witness is configured, `DES-19` narrows classes 4 and 5 by other means — cross-pack
+comparison and counterparty reconciliation. Neither replaces proactive rejection at submission,
+but they turn a cliff into a bounded window.
+
 ## Sequence enforcement — FR-42, FR-43 (stateful witnesses only)
 
 ```

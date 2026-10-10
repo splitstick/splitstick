@@ -42,6 +42,10 @@ That obligation is deliberate. The TypeScript verifier is a convenience; **the s
 guarantee.** If verifying ever requires our code, the whole thesis has inverted — a reader would
 be trusting us to tell them whether to trust us.
 
+Packs must therefore be **retained by recipients**, because `DES-19` makes every pack a
+permanent constraint on the operator: a countersigned checkpoint in a pack handed over last
+quarter contradicts a record truncated below it today.
+
 ## Scope of a pack
 
 `manifest.json` states precisely what is claimed, so a pack cannot imply more than it holds:

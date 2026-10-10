@@ -11,32 +11,32 @@ Regenerate with `npm run requirements`.
 
 | Category | Count |
 |---|---:|
-| Functional | 53 |
-| Security | 25 |
+| Functional | 55 |
+| Security | 26 |
 | Legal & regulatory | 19 |
 | Governance, licensing & community | 19 |
 | Scope guards (negative) | 16 |
 | Non-functional | 13 |
 | Roadmap (post-1.0) | 10 |
 | Privacy & data protection | 9 |
-| Documentation & transparency | 8 |
+| Documentation & transparency | 9 |
 | Interoperability & standards | 7 |
 | Operational | 6 |
 | Traceability & process | 5 |
-| **Total** | **190** |
+| **Total** | **194** |
 
 ### By release
 
 | Release | Count |
 |---|---:|
-| 1.0 | 173 |
+| 1.0 | 177 |
 | 2.0 | 5 |
 | commercial | 12 |
-| **Total** | **190** |
+| **Total** | **194** |
 
 ## Matrix
 
-### Functional — 53
+### Functional — 55
 
 | ID | Requirement | Traces to | Verified by | Rel | M | Status |
 |---|---|---|---|---|---|---|
@@ -93,6 +93,8 @@ Regenerate with `npm run requirements`.
 | `FR-51` | **Witness key rotation** — Rotate witness keys while keeping historical countersignatures verifiable, by publishing a signed key history. | Durability — key rotation | Countersignatures from a retired key still verify after rotation | 1.0 | M3b | ☐ |
 | `FR-52` | **Canonicalisation completeness** — The canonical encoding must cover every field of the action record at every nesting depth. A test must prove that mutating any single field, at any depth, changes the leaf digest. | Capture — action record: tool name, arguments, result, approval decision | Property test mutating each field in turn, including nested argument keys; every mutation must change the digest | 1.0 | M1 | ☐ |
 | `FR-53` | **Roll-up anchoring** — Anchor a periodic summary checkpoint covering many batches, separately from the per-batch soft anchor, so a public or rate-limited witness receives a handful of entries per day rather than thousands. | Independence — tiered anchoring | A day of 10-second batches produces one roll-up entry per configured interval, and the roll-up proves inclusion of every batch beneath it | 1.0 | M3a | ☐ |
+| `FR-54` | **Cross-pack consistency verification** — Given two or more evidence packs, detect a record inconsistent with a checkpoint already countersigned in an earlier pack — so a record truncated below a height previously disclosed is contradicted offline, with no live service. | Proof — offline verification; Durability | Disclose at seq 5000, truncate to 4799, compare the two packs: the earlier countersigned checkpoint contradicts the later record | 1.0 | M3a | ☐ |
+| `FR-55` | **Counterparty reference capture** — Extract externally issued identifiers from a tool result and index them for reconciliation. The index lives in the deletable content store, never in the chain, because a transaction reference can itself be identifying. | Capture — action record | A result containing an external reference is indexed and queryable; the index is removed by crypto-shredding | 1.0 | M1 | ☐ |
 
 ### Non-functional — 13
 
@@ -112,7 +114,7 @@ Regenerate with `npm run requirements`.
 | `NFR-12` | **Never degrade availability** — The collector must never be able to stop or block an agent run. | Operations — no audit layer that can take down production | Chaos test: witness outage, disk full, slow witness | 1.0 | M3b | ☐ |
 | `NFR-13` | **Durable local queue** — Unwitnessed batches survive process restart and are re-submitted. | Operations — marked unwitnessed, and queued | Kill -9 during outage, then recovery | 1.0 | M3b | ☐ |
 
-### Security — 25
+### Security — 26
 
 | ID | Requirement | Traces to | Verified by | Rel | M | Status |
 |---|---|---|---|---|---|---|
@@ -141,6 +143,7 @@ Regenerate with `npm run requirements`.
 | `SEC-23` | **Signed releases and SBOM** — Sign every release and publish an SBOM with pinned dependencies. | Provenance — signed releases and an SBOM | Signature and SBOM present and verified in CI for each release | 1.0 | M1 | ☐ |
 | `SEC-24` | **Key compromise recovery** — Document and support recovery from operator key compromise: a declared, countersigned discontinuity rather than a silent re-key. | Durability — key compromise | Compromise drill: discontinuity is recorded, countersigned and visible to the verifier | 1.0 | M3b | ☐ |
 | `SEC-25` | **Witness time source** — The witness clock derives from a documented, traceable time source, and the verifier surfaces the witness's declared time discipline. | Durability — the clock the witness stamps with | Time source documented; drift monitored and alerted | 1.0 | M3a | ☐ |
+| `SEC-26` | **Resist truncation below a disclosed height** — A record truncated below a sequence already disclosed in a countersigned pack must be detectable by comparing the two, without any stateful witness. | Attack class table, rows 4 and 5 | Red-team class I: truncate below a disclosed height; cross-pack comparison fails closed | 1.0 | M3a | ☐ |
 
 ### Privacy & data protection — 9
 
@@ -248,7 +251,7 @@ Regenerate with `npm run requirements`.
 | `SCOPE-15` | **Hard anchor must be disableable** — The trust-minimised roll-up anchor must be switchable off in one setting, and switching it off must be recorded in the chain like any other policy change. It is on by default because it is the only free public anchor with no acceptable-use objection; it must never be mandatory, because some regulated buyers forbid public-chain anchoring outright. | Independence — optional and off by default | One setting disables it; the change appears as a chain event | 1.0 | M3a | ☐ |
 | `SCOPE-16` | **No fail-closed option** — MUST NOT provide any configuration, flag or build that makes the collector block an agent run. Fail-open is a design constraint, not a setting. | Operations — a design constraint, not a setting | Config schema review; no enforcement path exists; rejected as a feature request by policy | 1.0 | M7 | ☐ |
 
-### Documentation & transparency — 8
+### Documentation & transparency — 9
 
 | ID | Requirement | Traces to | Verified by | Rel | M | Status |
 |---|---|---|---|---|---|---|
@@ -260,6 +263,7 @@ Regenerate with `npm run requirements`.
 | `DOC-06` | **Upstream attribution** — Credit OMA, Sigstore, Rekor, Trillian, C2SP and Schneier–Kelsey. | Credit | Attribution present in README and NOTICE | 1.0 | M7 | ☐ |
 | `DOC-07` | **Document the two-policy split** — Document that the witness list governs who is asked and the acceptance policy governs who is accepted. | Getting started — separate files on purpose | Documentation review; worked example for both | 1.0 | M7 | ☐ |
 | `DOC-08` | **Publish bounty terms** — Publish the full bounty terms alongside the offer. | Bounty terms | Terms published before the offer goes live | 1.0 | M7 | ☐ |
+| `DOC-09` | **Reconciliation guidance** — Document reconciliation against counterparty records as a detection method for erasure and omission, with its limits stated: it requires access to the counterparty and it is a procedure an auditor performs, not a guarantee the software makes. | Durability; Threat model — residual risk | Guidance published; the limits appear wherever the method is claimed | 1.0 | M3a | ☐ |
 
 ### Roadmap (post-1.0) — 10
 
@@ -288,4 +292,4 @@ Regenerate with `npm run requirements`.
 
 ---
 
-*190 requirements. Status column is maintained by hand as work lands.*
+*194 requirements. Status column is maintained by hand as work lands.*

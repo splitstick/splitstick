@@ -29,15 +29,15 @@ Every milestone runs the complete red-team suite, not only its own classes. A ga
 | Milestone | Gate | Reqs | Weeks | Goal |
 |---|---|---:|---|---|
 | **M0** Foundations and long-lead | — | 15 | 1-2, parallel to M1 | Start everything whose clock runs outside engineering, and turn the red-team suite into the acceptance harness. |
-| **M1** Local integrity | AC-1, AC-2 | 25 | 3-4 | Close the two attack classes that need no third party, and measure the performance budget before the design hardens. |
+| **M1** Local integrity | AC-1, AC-2 | 26 | 3-4 | Close the two attack classes that need no third party, and measure the performance budget before the design hardens. |
 | **M2** Key custody | AC-3 | 5 | 2 | Make yesterday's record unforgeable with today's key, and state the precondition honestly. |
-| **M3a** Anchoring and sequencing | AC-4, AC-5 | 29 | 5-7 | The first second party. Close truncation and erasure, which no amount of local cryptography can reach. |
+| **M3a** Anchoring and sequencing | AC-4, AC-5 | 32 | 5-7 | The first second party. Close truncation and erasure, which no amount of local cryptography can reach. |
 | **M3b** Practice statement and resilience | — | 18 | 3-4 | Say exactly what the countersignature means, and make sure losing a witness does not lose the evidence. |
 | **M4** Coverage attestation | AC-6, AC-7 | 10 | 3-4 | The differentiated claim: prove the record is complete, not merely unaltered. |
 | **M5** Disclosure and erasure | — | 16 | 3-4 | No new attack class. This is the milestone that makes the product buyable by a regulated, multi-customer organisation. |
 | **M6** Reach and conformance | — | 19 | 4-6 | Stop depending on one upstream project, and make the format genuinely somebody else's to implement. |
 | **M7** Launch gate | — | 36 | 2 | Every promise that is a claim rather than a feature. This milestone is mostly about what we must not say. |
-| | | **173** | | |
+| | | **177** | | |
 
 ## Milestones
 
@@ -73,7 +73,7 @@ Start everything whose clock runs outside engineering, and turn the red-team sui
 Close the two attack classes that need no third party, and measure the performance budget before the design hardens.
 
 - **Gate:** `AC-1` — Alter the recorded action — arguments, result, approval decision; `AC-2` — Alter an event and repair the citing digest
-- **Requirements:** 25 (FR×12  SEC×6  NFR×3  INT×2  PRIV×1  DOC×1)
+- **Requirements:** 26 (FR×13  SEC×6  NFR×3  INT×2  PRIV×1  DOC×1)
 - **Effort:** weeks 3-4
 - **Exit criteria:** Red-team A and C both DETECTED by splitstick verify; baseline still passes. p99 append overhead measured under 1 ms and run latency under 2% — measured, not assumed. Chain files contain no plaintext. First package published with a provenance attestation and an SBOM, so the build digest M4 relies on can be traced to its source.
 
@@ -104,6 +104,7 @@ Close the two attack classes that need no third party, and measure the performan
 | ☐ `SEC-22` | **Build provenance attestation** — Publish a provenance attestation for every released collector artifact, binding the digest to its source commit and build, so the digest in a heartbeat can be independently traced. | Attestation verifies against the published artifact and source revision |
 | ☐ `SEC-23` | **Signed releases and SBOM** — Sign every release and publish an SBOM with pinned dependencies. | Signature and SBOM present and verified in CI for each release |
 | ☐ `FR-52` | **Canonicalisation completeness** — The canonical encoding must cover every field of the action record at every nesting depth. A test must prove that mutating any single field, at any depth, changes the leaf digest. | Property test mutating each field in turn, including nested argument keys; every mutation must change the digest |
+| ☐ `FR-55` | **Counterparty reference capture** — Extract externally issued identifiers from a tool result and index them for reconciliation. The index lives in the deletable content store, never in the chain, because a transaction reference can itself be identifying. | A result containing an external reference is indexed and queryable; the index is removed by crypto-shredding |
 
 ### M2 — Key custody
 
@@ -127,7 +128,7 @@ Make yesterday's record unforgeable with today's key, and state the precondition
 The first second party. Close truncation and erasure, which no amount of local cryptography can reach.
 
 - **Gate:** `AC-4` — Truncate the record's tail; `AC-5` — Erase events and renumber into a clean stream
-- **Requirements:** 29 (FR×18  SEC×6  INT×2  NFR×1  PRIV×1  SCOPE×1)
+- **Requirements:** 32 (FR×19  SEC×7  INT×2  NFR×1  PRIV×1  SCOPE×1  DOC×1)
 - **Effort:** weeks 5-7
 - **Exit criteria:** Red-team D, E and F all DETECTED. A run with no configuration at all anchors to a public log the project does not operate. A rolled-back witness is detected. An auditor supplying their own acceptance policy verifies the same pack. Egress captured against real witness traffic, confirming no content leaves the host.
 
@@ -162,6 +163,9 @@ The first second party. Close truncation and erasure, which no amount of local c
 | ☐ `FR-53` | **Roll-up anchoring** — Anchor a periodic summary checkpoint covering many batches, separately from the per-batch soft anchor, so a public or rate-limited witness receives a handful of entries per day rather than thousands. | A day of 10-second batches produces one roll-up entry per configured interval, and the roll-up proves inclusion of every batch beneath it |
 | ☐ `FR-16` | **RFC 3161 TSA adapter** — Support an RFC 3161 timestamp authority as a witness type. | Timestamp token obtained and verified |
 | ☐ `FR-17` | **Operator-hosted witness adapter** — Support an operator's own internal witness endpoint. | Self-hosted witness round trip |
+| ☐ `FR-54` | **Cross-pack consistency verification** — Given two or more evidence packs, detect a record inconsistent with a checkpoint already countersigned in an earlier pack — so a record truncated below a height previously disclosed is contradicted offline, with no live service. | Disclose at seq 5000, truncate to 4799, compare the two packs: the earlier countersigned checkpoint contradicts the later record |
+| ☐ `SEC-26` | **Resist truncation below a disclosed height** — A record truncated below a sequence already disclosed in a countersigned pack must be detectable by comparing the two, without any stateful witness. | Red-team class I: truncate below a disclosed height; cross-pack comparison fails closed |
+| ☐ `DOC-09` | **Reconciliation guidance** — Document reconciliation against counterparty records as a detection method for erasure and omission, with its limits stated: it requires access to the counterparty and it is a procedure an auditor performs, not a guarantee the software makes. | Guidance published; the limits appear wherever the method is claimed |
 
 ### M3b — Practice statement and resilience
 
@@ -350,4 +354,4 @@ Every promise that is a claim rather than a feature. This milestone is mostly ab
 
 ---
 
-*173 requirements in 1.0 across 9 milestones; 190 total in the backlog.*
+*177 requirements in 1.0 across 9 milestones; 194 total in the backlog.*

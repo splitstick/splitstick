@@ -12,6 +12,7 @@ splitstick/
   batches/<seq>.json       roots, signatures, countersignatures
   content/<cid>.bin        large or sensitive payloads.  DELETABLE
   keys/<cid>.key           per-content encryption keys.  DELETABLE
+  content/refs.idx         counterparty reference index.  DELETABLE          [DES-19]
   queue/                   unwitnessed batches awaiting a witness (DES-15)
 ```
 

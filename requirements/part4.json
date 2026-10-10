@@ -153,5 +153,41 @@
     "statement": "Anchor a periodic summary checkpoint covering many batches, separately from the per-batch soft anchor, so a public or rate-limited witness receives a handful of entries per day rather than thousands.",
     "source": "Independence — tiered anchoring",
     "verify": "A day of 10-second batches produces one roll-up entry per configured interval, and the roll-up proves inclusion of every batch beneath it"
+  },
+  {
+    "id": "FR-54",
+    "type": "functional",
+    "release": "1.0",
+    "title": "Cross-pack consistency verification",
+    "statement": "Given two or more evidence packs, detect a record inconsistent with a checkpoint already countersigned in an earlier pack — so a record truncated below a height previously disclosed is contradicted offline, with no live service.",
+    "source": "Proof — offline verification; Durability",
+    "verify": "Disclose at seq 5000, truncate to 4799, compare the two packs: the earlier countersigned checkpoint contradicts the later record"
+  },
+  {
+    "id": "FR-55",
+    "type": "functional",
+    "release": "1.0",
+    "title": "Counterparty reference capture",
+    "statement": "Extract externally issued identifiers from a tool result and index them for reconciliation. The index lives in the deletable content store, never in the chain, because a transaction reference can itself be identifying.",
+    "source": "Capture — action record",
+    "verify": "A result containing an external reference is indexed and queryable; the index is removed by crypto-shredding"
+  },
+  {
+    "id": "SEC-26",
+    "type": "security",
+    "release": "1.0",
+    "title": "Resist truncation below a disclosed height",
+    "statement": "A record truncated below a sequence already disclosed in a countersigned pack must be detectable by comparing the two, without any stateful witness.",
+    "source": "Attack class table, rows 4 and 5",
+    "verify": "Red-team class I: truncate below a disclosed height; cross-pack comparison fails closed"
+  },
+  {
+    "id": "DOC-09",
+    "type": "documentation",
+    "release": "1.0",
+    "title": "Reconciliation guidance",
+    "statement": "Document reconciliation against counterparty records as a detection method for erasure and omission, with its limits stated: it requires access to the counterparty and it is a procedure an auditor performs, not a guarantee the software makes.",
+    "source": "Durability; Threat model — residual risk",
+    "verify": "Guidance published; the limits appear wherever the method is claimed"
   }
 ]

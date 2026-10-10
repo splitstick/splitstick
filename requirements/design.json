@@ -275,6 +275,19 @@
         "OPS-05"
       ],
       "spec": "design/DES-18-practice-statement-structure.md"
+    },
+    {
+      "id": "DES-19",
+      "milestone": "M1",
+      "title": "Detection without a stateful witness",
+      "decides": "Two mechanisms that narrow attack classes 4 and 5 when no stateful witness is configured: cross-pack comparison, which turns every disclosure into a permanent constraint; and counterparty reconciliation, which is the only free answer to omission.",
+      "covers": [
+        "FR-54",
+        "FR-55",
+        "SEC-26",
+        "DOC-09"
+      ],
+      "spec": "design/DES-19-detection-without-a-witness.md"
     }
   ],
   "nondesign": {

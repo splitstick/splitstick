@@ -37,6 +37,9 @@ content.
 10. POLICY       policy changes chained; report any weakening                [DES-09]
 ```
 
+`verify --compare <pack>` adds an eleventh check: **CROSS-PACK**, which contradicts a record
+truncated below a height already disclosed (`DES-19`).
+
 ## Failure codes
 
 Each carries what a reader may conclude, because "verification failed" is useless on its own.
@@ -53,6 +56,7 @@ Each carries what a reader may conclude, because "verification failed" is useles
 `SUCCESSION_BROKEN` | Epoch key not endorsed by its predecessor. |
 `DISCONTINUITY` | A declared key-compromise break was crossed (DES-06). Not a failure; always surfaced. |
 `COVERAGE_GAP` | A window with no heartbeat and no declaration. |
+`TRUNCATED_BELOW_DISCLOSED` | A pack already disclosed holds a countersigned checkpoint above where this record ends. **Truncation, caught without a stateful witness.** |
 
 ## Offline by construction — NFR-05, NFR-06
 

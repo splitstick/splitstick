@@ -9,10 +9,10 @@ Regenerate with `npm run backlog`.
 
 | | Count |
 |---|---:|
-| Design elements | 18 |
-| Release-1.0 requirements traced to a design element | 113 |
+| Design elements | 19 |
+| Release-1.0 requirements traced to a design element | 117 |
 | Classified non-design | 60 |
-| **Total 1.0** | **173** |
+| **Total 1.0** | **177** |
 
 ### Non-design classifications
 
@@ -299,6 +299,19 @@ What the countersignature asserts and disclaims, how the statement is versioned 
 | `LEG-19` | WPS states the time discipline | ☐ |
 | `OPS-03` | Self-hosted witness deployment guide | ☐ |
 | `OPS-05` | Zero-egress mode | ☐ |
+
+### [DES-19 — Detection without a stateful witness](../design/DES-19-detection-without-a-witness.md)
+
+**Milestone:** M1 · **Requirements covered:** 4
+
+Two mechanisms that narrow attack classes 4 and 5 when no stateful witness is configured: cross-pack comparison, which turns every disclosure into a permanent constraint; and counterparty reconciliation, which is the only free answer to omission.
+
+| Requirement | | Status |
+|---|---|---|
+| `FR-54` | Cross-pack consistency verification | ☐ |
+| `FR-55` | Counterparty reference capture | ☐ |
+| `SEC-26` | Resist truncation below a disclosed height | ☐ |
+| `DOC-09` | Reconciliation guidance | ☐ |
 
 ## Requirements with no design element
 
