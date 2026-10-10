@@ -421,9 +421,9 @@
       "type": "functional",
       "release": "1.0",
       "title": "Witness list as data",
-      "statement": "Maintain the list of known conformant witnesses as a machine-readable file in the repository.",
+      "statement": "Maintain the list of known conformant witnesses as a machine-readable file, each entry carrying its acceptable-use terms, rate limits, and whether it retains entries publicly, so an operator chooses on informed grounds rather than by default.",
       "source": "Licence and governance — a plain file in the repository",
-      "verify": "File parses; collector can consume it"
+      "verify": "File parses; the collector consumes it; every entry states its acceptable-use position"
     }
   ]
 }

@@ -3,10 +3,10 @@
     "id": "FR-48",
     "type": "functional",
     "release": "1.0",
-    "title": "Shipped default configuration",
-    "statement": "Ship with witnesses [rekor], quorum 1, anchor_interval 10s and on_unavailable mark_gap, so the out-of-box configuration anchors only to a public log the project does not operate. A second witness is the operator’s to add.",
+    "title": "Shipped default witness configuration",
+    "statement": "Ship a default the project neither operates nor overloads: an RFC 3161 timestamp authority for the per-batch countersignature and clock, plus a trust-minimised roll-up anchor on a slow interval. A transparency log such as Rekor is opt-in — for operators self-hosting one, or whose volume suits a public instance — and never the shipped default, because a 10-second cadence against a public good is not acceptable use.",
     "source": "Independence — the shipped default anchors to a log we do not run",
-    "verify": "Default config asserted in test; a run with no config anchors to a log outside the project’s control"
+    "verify": "Default config asserted in test; a day of operation produces no more than the configured roll-up count against any public service"
   },
   {
     "id": "FR-49",
@@ -144,5 +144,14 @@
     "statement": "The canonical encoding must cover every field of the action record at every nesting depth. A test must prove that mutating any single field, at any depth, changes the leaf digest.",
     "source": "Capture — action record: tool name, arguments, result, approval decision",
     "verify": "Property test mutating each field in turn, including nested argument keys; every mutation must change the digest"
+  },
+  {
+    "id": "FR-53",
+    "type": "functional",
+    "release": "1.0",
+    "title": "Roll-up anchoring",
+    "statement": "Anchor a periodic summary checkpoint covering many batches, separately from the per-batch soft anchor, so a public or rate-limited witness receives a handful of entries per day rather than thousands.",
+    "source": "Independence — tiered anchoring",
+    "verify": "A day of 10-second batches produces one roll-up entry per configured interval, and the roll-up proves inclusion of every batch beneath it"
   }
 ]

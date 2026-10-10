@@ -11,7 +11,7 @@ Regenerate with `npm run requirements`.
 
 | Category | Count |
 |---|---:|
-| Functional | 52 |
+| Functional | 53 |
 | Security | 25 |
 | Legal & regulatory | 19 |
 | Governance, licensing & community | 19 |
@@ -23,20 +23,20 @@ Regenerate with `npm run requirements`.
 | Interoperability & standards | 7 |
 | Operational | 6 |
 | Traceability & process | 5 |
-| **Total** | **189** |
+| **Total** | **190** |
 
 ### By release
 
 | Release | Count |
 |---|---:|
-| 1.0 | 172 |
+| 1.0 | 173 |
 | 2.0 | 5 |
 | commercial | 12 |
-| **Total** | **189** |
+| **Total** | **190** |
 
 ## Matrix
 
-### Functional — 52
+### Functional — 53
 
 | ID | Requirement | Traces to | Verified by | Rel | M | Status |
 |---|---|---|---|---|---|---|
@@ -55,13 +55,13 @@ Regenerate with `npm run requirements`.
 | `FR-13` | **Configurable witness set** — Submit roots to a configurable list of witnesses rather than a single endpoint. | Independence — to a witness set | Config test with 3 witnesses | 1.0 | M3a | ☐ |
 | `FR-14` | **Rekor witness adapter** — Support Rekor as a witness type. | Independence — Rekor | Live anchor against Rekor; inclusion proof retrieved | 1.0 | M3a | ☐ |
 | `FR-15` | **transparency-dev/witness adapter** — Support transparency-dev/witness as a witness type. | Independence — transparency-dev/witness | Anchor against a local instance | 1.0 | M6 | ☐ |
-| `FR-16` | **RFC 3161 TSA adapter** — Support an RFC 3161 timestamp authority as a witness type. | Independence — an RFC 3161 TSA | Timestamp token obtained and verified | 1.0 | M6 | ☐ |
-| `FR-17` | **Operator-hosted witness adapter** — Support an operator's own internal witness endpoint. | Independence — your own internal authority | Self-hosted witness round trip | 1.0 | M6 | ☐ |
+| `FR-16` | **RFC 3161 TSA adapter** — Support an RFC 3161 timestamp authority as a witness type. | Independence — an RFC 3161 TSA | Timestamp token obtained and verified | 1.0 | M3a | ☐ |
+| `FR-17` | **Operator-hosted witness adapter** — Support an operator's own internal witness endpoint. | Independence — your own internal authority | Self-hosted witness round trip | 1.0 | M3a | ☐ |
 | `FR-18` | **Splitstick hosted witness adapter** — Support the Splitstick hosted witness. | Independence — or Splitstick's | Hosted witness round trip | commercial | — | ☐ |
 | `FR-19` | **Configurable quorum** — Accept a K-of-N quorum setting governing how many countersignatures a batch requires. | Independence — set quorum: 2 | Verifier rejects a batch below quorum | 1.0 | M3a | ☐ |
 | `FR-20` | **Configurable anchor cadence** — Accept an anchor_interval setting that determines the mutability window. | Independence — cadence is yours to set | Observed anchor spacing matches configuration | 1.0 | M3a | ☐ |
 | `FR-21` | **Soft anchor tier** — Provide a fast anchor tier, default every 10 seconds. | Independence — soft anchor | Timing test | 1.0 | M3a | ☐ |
-| `FR-22` | **Hard anchor tier** — Provide an optional slow, trust-minimised anchor tier that no company can withdraw. | Independence — hard anchor | Anchor obtained; off unless explicitly enabled | 1.0 | M6 | ☐ |
+| `FR-22` | **Hard anchor tier** — Provide an optional slow, trust-minimised anchor tier that no company can withdraw. | Independence — hard anchor | Anchor obtained; off unless explicitly enabled | 1.0 | M3a | ☐ |
 | `FR-23` | **Policy changes as chain events** — Record any change to the witness set or quorum as a timestamped event inside the chain. | Independence — written into the chain | Red-team: policy downgrade is visible in the record | 1.0 | M4 | ☐ |
 | `FR-24` | **Signed heartbeats** — Emit signed heartbeats into the chain at a configured interval. | Coverage attestation — signed heartbeats | Stopping the collector produces a detectable gap | 1.0 | M4 | ☐ |
 | `FR-25` | **Build digest in heartbeat** — Each heartbeat carries the collector's build digest. | Coverage attestation — build digest | Patched binary reports an unrecognised digest | 1.0 | M4 | ☐ |
@@ -86,12 +86,13 @@ Regenerate with `npm run requirements`.
 | `FR-44` | **Witness retains roots** — The witness keeps submitted roots in its own append-only store. | Witness Practice Statement — has retained it | Root retrievable from the witness independently | 1.0 | M3a | ☐ |
 | `FR-45` | **Witness stamps its own clock** — The countersignature carries the witness's own time, not the operator's. | Witness Practice Statement — at this time, per its clock | Operator-supplied time cannot influence the countersignature | 1.0 | M3a | ☐ |
 | `FR-46` | **Conformance test suite** — Publish an executable conformance suite any witness implementation can run against itself. | Licence and governance — conformance suite is open | Suite runs green against the reference witness | 1.0 | M6 | ☐ |
-| `FR-47` | **Witness list as data** — Maintain the list of known conformant witnesses as a machine-readable file in the repository. | Licence and governance — a plain file in the repository | File parses; collector can consume it | 1.0 | M6 | ☐ |
-| `FR-48` | **Shipped default configuration** — Ship with witnesses [rekor], quorum 1, anchor_interval 10s and on_unavailable mark_gap, so the out-of-box configuration anchors only to a public log the project does not operate. A second witness is the operator’s to add. | Independence — the shipped default anchors to a log we do not run | Default config asserted in test; a run with no config anchors to a log outside the project’s control | 1.0 | M3a | ☐ |
+| `FR-47` | **Witness list as data** — Maintain the list of known conformant witnesses as a machine-readable file, each entry carrying its acceptable-use terms, rate limits, and whether it retains entries publicly, so an operator chooses on informed grounds rather than by default. | Licence and governance — a plain file in the repository | File parses; the collector consumes it; every entry states its acceptable-use position | 1.0 | M6 | ☐ |
+| `FR-48` | **Shipped default witness configuration** — Ship a default the project neither operates nor overloads: an RFC 3161 timestamp authority for the per-batch countersignature and clock, plus a trust-minimised roll-up anchor on a slow interval. A transparency log such as Rekor is opt-in — for operators self-hosting one, or whose volume suits a public instance — and never the shipped default, because a 10-second cadence against a public good is not acceptable use. | Independence — the shipped default anchors to a log we do not run | Default config asserted in test; a day of operation produces no more than the configured roll-up count against any public service | 1.0 | M3a | ☐ |
 | `FR-49` | **Documented CLI contract** — Provide the entry points and flags printed in Getting started: collect-oma, mcp-proxy (--upstream, --out), verify (--policy), coverage (--from, --to) and disclose (--event, --out). | Getting started — the published commands | CLI contract test executes every documented invocation verbatim | 1.0 | M6 | ☐ |
 | `FR-50` | **Witness publishes signed tree heads** — The witness publishes its own signed tree head so an operator or third party can detect a rolled-back or equivocating witness. | Durability — losing a witness must not lose the evidence | Rollback simulation: a witness serving an earlier head is detected | 1.0 | M3a | ☐ |
 | `FR-51` | **Witness key rotation** — Rotate witness keys while keeping historical countersignatures verifiable, by publishing a signed key history. | Durability — key rotation | Countersignatures from a retired key still verify after rotation | 1.0 | M3b | ☐ |
 | `FR-52` | **Canonicalisation completeness** — The canonical encoding must cover every field of the action record at every nesting depth. A test must prove that mutating any single field, at any depth, changes the leaf digest. | Capture — action record: tool name, arguments, result, approval decision | Property test mutating each field in turn, including nested argument keys; every mutation must change the digest | 1.0 | M1 | ☐ |
+| `FR-53` | **Roll-up anchoring** — Anchor a periodic summary checkpoint covering many batches, separately from the per-batch soft anchor, so a public or rate-limited witness receives a handful of entries per day rather than thousands. | Independence — tiered anchoring | A day of 10-second batches produces one roll-up entry per configured interval, and the roll-up proves inclusion of every batch beneath it | 1.0 | M3a | ☐ |
 
 ### Non-functional — 13
 
@@ -244,7 +245,7 @@ Regenerate with `npm run requirements`.
 | `SCOPE-12` | **No TEE suppression claim** — MUST NOT claim a TEE makes event suppression impossible. | Considered and rejected | Claims audit | 1.0 | M7 | ☐ |
 | `SCOPE-13` | **No blockchain as ledger** — MUST NOT use a blockchain as the primary ledger; a public chain may serve only as the optional hard anchor. | Considered and rejected | Architecture review | 1.0 | M7 | ☐ |
 | `SCOPE-14` | **No self-scored defeat metric** — MUST NOT publish an N-of-N attacks-defeated score. | Attack class section — we deliberately publish no score | Marketing and documentation audit | 1.0 | M7 | ☐ |
-| `SCOPE-15` | **Hard anchor off by default** — The trust-minimised hard anchor MUST default to disabled. | Independence — optional and off by default | Default config inspection | 1.0 | M6 | ☐ |
+| `SCOPE-15` | **Hard anchor must be disableable** — The trust-minimised roll-up anchor must be switchable off in one setting, and switching it off must be recorded in the chain like any other policy change. It is on by default because it is the only free public anchor with no acceptable-use objection; it must never be mandatory, because some regulated buyers forbid public-chain anchoring outright. | Independence — optional and off by default | One setting disables it; the change appears as a chain event | 1.0 | M3a | ☐ |
 | `SCOPE-16` | **No fail-closed option** — MUST NOT provide any configuration, flag or build that makes the collector block an agent run. Fail-open is a design constraint, not a setting. | Operations — a design constraint, not a setting | Config schema review; no enforcement path exists; rejected as a feature request by policy | 1.0 | M7 | ☐ |
 
 ### Documentation & transparency — 8
@@ -287,4 +288,4 @@ Regenerate with `npm run requirements`.
 
 ---
 
-*189 requirements. Status column is maintained by hand as work lands.*
+*190 requirements. Status column is maintained by hand as work lands.*

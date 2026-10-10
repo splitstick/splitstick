@@ -31,13 +31,13 @@ Every milestone runs the complete red-team suite, not only its own classes. A ga
 | **M0** Foundations and long-lead | — | 15 | 1-2, parallel to M1 | Start everything whose clock runs outside engineering, and turn the red-team suite into the acceptance harness. |
 | **M1** Local integrity | AC-1, AC-2 | 25 | 3-4 | Close the two attack classes that need no third party, and measure the performance budget before the design hardens. |
 | **M2** Key custody | AC-3 | 5 | 2 | Make yesterday's record unforgeable with today's key, and state the precondition honestly. |
-| **M3a** Anchoring and sequencing | AC-4, AC-5 | 24 | 5-7 | The first second party. Close truncation and erasure, which no amount of local cryptography can reach. |
+| **M3a** Anchoring and sequencing | AC-4, AC-5 | 29 | 5-7 | The first second party. Close truncation and erasure, which no amount of local cryptography can reach. |
 | **M3b** Practice statement and resilience | — | 18 | 3-4 | Say exactly what the countersignature means, and make sure losing a witness does not lose the evidence. |
 | **M4** Coverage attestation | AC-6, AC-7 | 10 | 3-4 | The differentiated claim: prove the record is complete, not merely unaltered. |
 | **M5** Disclosure and erasure | — | 16 | 3-4 | No new attack class. This is the milestone that makes the product buyable by a regulated, multi-customer organisation. |
-| **M6** Reach and conformance | — | 23 | 4-6 | Stop depending on one upstream project, and make the format genuinely somebody else's to implement. |
+| **M6** Reach and conformance | — | 19 | 4-6 | Stop depending on one upstream project, and make the format genuinely somebody else's to implement. |
 | **M7** Launch gate | — | 36 | 2 | Every promise that is a claim rather than a feature. This milestone is mostly about what we must not say. |
-| | | **172** | | |
+| | | **173** | | |
 
 ## Milestones
 
@@ -127,7 +127,7 @@ Make yesterday's record unforgeable with today's key, and state the precondition
 The first second party. Close truncation and erasure, which no amount of local cryptography can reach.
 
 - **Gate:** `AC-4` — Truncate the record's tail; `AC-5` — Erase events and renumber into a clean stream
-- **Requirements:** 24 (FR×14  SEC×6  INT×2  NFR×1  PRIV×1)
+- **Requirements:** 29 (FR×18  SEC×6  INT×2  NFR×1  PRIV×1  SCOPE×1)
 - **Effort:** weeks 5-7
 - **Exit criteria:** Red-team D, E and F all DETECTED. A run with no configuration at all anchors to a public log the project does not operate. A rolled-back witness is detected. An auditor supplying their own acceptance policy verifies the same pack. Egress captured against real witness traffic, confirming no content leaves the host.
 
@@ -151,12 +151,17 @@ The first second party. Close truncation and erasure, which no amount of local c
 | ☐ `SEC-15` | **Witness sees roots only** — Witnesses receive salted roots and nothing else. | Wire capture of all witness traffic |
 | ☐ `INT-01` | **C2SP conformance** — Conform to the C2SP tlog-witness checkpoint specification. | Conformance suite against the published spec |
 | ☐ `INT-02` | **Verify third-party countersignatures** — The verifier accepts countersignatures from witnesses we do not operate. | Verify a pack anchored only to Rekor and a third-party TSA |
-| ☐ `FR-48` | **Shipped default configuration** — Ship with witnesses [rekor], quorum 1, anchor_interval 10s and on_unavailable mark_gap, so the out-of-box configuration anchors only to a public log the project does not operate. A second witness is the operator’s to add. | Default config asserted in test; a run with no config anchors to a log outside the project’s control |
+| ☐ `FR-48` | **Shipped default witness configuration** — Ship a default the project neither operates nor overloads: an RFC 3161 timestamp authority for the per-batch countersignature and clock, plus a trust-minimised roll-up anchor on a slow interval. A transparency log such as Rekor is opt-in — for operators self-hosting one, or whose volume suits a public instance — and never the shipped default, because a 10-second cadence against a public good is not acceptable use. | Default config asserted in test; a day of operation produces no more than the configured roll-up count against any public service |
 | ☐ `FR-50` | **Witness publishes signed tree heads** — The witness publishes its own signed tree head so an operator or third party can detect a rolled-back or equivocating witness. | Rollback simulation: a witness serving an earlier head is detected |
 | ☐ `SEC-25` | **Witness time source** — The witness clock derives from a documented, traceable time source, and the verifier surfaces the witness's declared time discipline. | Time source documented; drift monitored and alerted |
 | ☐ `PRIV-01` | **Zero content egress** — No content bytes leave the operator's host under any configuration. | Full egress capture during a representative run |
 | ☐ `FR-30` | **Acceptance policy as input** — The verifier takes a caller-supplied acceptance policy naming trusted witness keys and quorum. | Same pack verifies under two different policies |
 | ☐ `FR-31` | **Evidence pack carries all countersignatures** — Packs include every countersignature collected, not only Splitstick's. | Pack inspection after multi-witness anchoring |
+| ☐ `FR-22` | **Hard anchor tier** — Provide an optional slow, trust-minimised anchor tier that no company can withdraw. | Anchor obtained; off unless explicitly enabled |
+| ☐ `SCOPE-15` | **Hard anchor must be disableable** — The trust-minimised roll-up anchor must be switchable off in one setting, and switching it off must be recorded in the chain like any other policy change. It is on by default because it is the only free public anchor with no acceptable-use objection; it must never be mandatory, because some regulated buyers forbid public-chain anchoring outright. | One setting disables it; the change appears as a chain event |
+| ☐ `FR-53` | **Roll-up anchoring** — Anchor a periodic summary checkpoint covering many batches, separately from the per-batch soft anchor, so a public or rate-limited witness receives a handful of entries per day rather than thousands. | A day of 10-second batches produces one roll-up entry per configured interval, and the roll-up proves inclusion of every batch beneath it |
+| ☐ `FR-16` | **RFC 3161 TSA adapter** — Support an RFC 3161 timestamp authority as a witness type. | Timestamp token obtained and verified |
+| ☐ `FR-17` | **Operator-hosted witness adapter** — Support an operator's own internal witness endpoint. | Self-hosted witness round trip |
 
 ### M3b — Practice statement and resilience
 
@@ -243,7 +248,7 @@ No new attack class. This is the milestone that makes the product buyable by a r
 Stop depending on one upstream project, and make the format genuinely somebody else's to implement.
 
 - **Gate:** none — unlocks adoption rather than closing an attack class
-- **Requirements:** 23 (FR×9  GOV×4  NFR×3  INT×2  OPS×2  LEG×2  SCOPE×1)
+- **Requirements:** 19 (FR×6  GOV×4  NFR×3  INT×2  OPS×2  LEG×2)
 - **Effort:** weeks 4-6
 - **Exit criteria:** End-to-end capture against two non-OMA runtimes over both MCP transports. A third-party witness passes the published conformance suite. A fully self-hosted deployment verified at zero egress, with no account and no enrolment with us.
 
@@ -252,11 +257,8 @@ Stop depending on one upstream project, and make the format genuinely somebody e
 | ☐ `FR-03` | **MCP proxy collector (stdio)** — Intercept agent-to-MCP-server traffic over stdio and record every tool call and result. | E2E test against a reference MCP server over stdio |
 | ☐ `FR-04` | **MCP proxy collector (HTTP)** — Same capture over HTTP transport. | E2E test against a reference MCP server over HTTP |
 | ☐ `FR-15` | **transparency-dev/witness adapter** — Support transparency-dev/witness as a witness type. | Anchor against a local instance |
-| ☐ `FR-16` | **RFC 3161 TSA adapter** — Support an RFC 3161 timestamp authority as a witness type. | Timestamp token obtained and verified |
-| ☐ `FR-17` | **Operator-hosted witness adapter** — Support an operator's own internal witness endpoint. | Self-hosted witness round trip |
-| ☐ `FR-22` | **Hard anchor tier** — Provide an optional slow, trust-minimised anchor tier that no company can withdraw. | Anchor obtained; off unless explicitly enabled |
 | ☐ `FR-46` | **Conformance test suite** — Publish an executable conformance suite any witness implementation can run against itself. | Suite runs green against the reference witness |
-| ☐ `FR-47` | **Witness list as data** — Maintain the list of known conformant witnesses as a machine-readable file in the repository. | File parses; collector can consume it |
+| ☐ `FR-47` | **Witness list as data** — Maintain the list of known conformant witnesses as a machine-readable file, each entry carrying its acceptable-use terms, rate limits, and whether it retains entries publicly, so an operator chooses on informed grounds rather than by default. | File parses; the collector consumes it; every entry states its acceptable-use position |
 | ☐ `NFR-08` | **Node.js 20+** — Run on Node.js 20 and later. | CI matrix across supported majors |
 | ☐ `NFR-10` | **OMA version compatibility** — Support @open-multi-agent/core 1.21.x. | CI pinned against the supported range |
 | ☐ `NFR-11` | **MCP transport coverage** — Support MCP over stdio and HTTP. | E2E per transport |
@@ -271,7 +273,6 @@ Stop depending on one upstream project, and make the format genuinely somebody e
 | ☐ `LEG-13` | **Qualified TSA configurable** — A qualified TSA can be configured in the witness set by the operator. | Live anchor against a qualified TSA |
 | ☐ `LEG-12` | **eIDAS presumption only via qualified TSA** — Document that the Art. 41 presumption attaches only when anchored to a qualified TSA, and not via Splitstick's own witness. | Documentation review; no contrary claim anywhere |
 | ☐ `FR-49` | **Documented CLI contract** — Provide the entry points and flags printed in Getting started: collect-oma, mcp-proxy (--upstream, --out), verify (--policy), coverage (--from, --to) and disclose (--event, --out). | CLI contract test executes every documented invocation verbatim |
-| ☐ `SCOPE-15` | **Hard anchor off by default** — The trust-minimised hard anchor MUST default to disabled. | Default config inspection |
 
 ### M7 — Launch gate
 
@@ -349,4 +350,4 @@ Every promise that is a claim rather than a feature. This milestone is mostly ab
 
 ---
 
-*172 requirements in 1.0 across 9 milestones; 189 total in the backlog.*
+*173 requirements in 1.0 across 9 milestones; 190 total in the backlog.*
