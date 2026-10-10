@@ -11,7 +11,9 @@
     "test": "npm run generate && npm run redteam",
     "requirements": "node requirements/build.mjs",
     "plan": "node requirements/plan.mjs",
-    "backlog": "npm run requirements && npm run plan"
+    "backlog": "npm run requirements && npm run plan && npm run design",
+    "design": "node requirements/design.mjs",
+    "review": "node requirements/review.mjs"
   },
   "dependencies": {
     "@open-multi-agent/core": "1.21.1",

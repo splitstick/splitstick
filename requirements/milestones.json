@@ -43,7 +43,7 @@
       "goal": "Start everything whose clock runs outside engineering, and turn the red-team suite into the acceptance harness.",
       "gate": [],
       "weeks": "1-2, parallel to M1",
-      "exit": "Trademark search returned. External arbiter named. Counsel engaged. Threat model published. CI runs the canary. Harness inverted so each attack class can assert DETECTED against our own verifier.",
+      "exit": "Trademark search returned and recorded. Counsel engagement deferred to a funded release. Threat model published. CI runs the canary, the DCO check and all three validators. Harness inverted so each attack class can assert DETECTED against our own verifier. Bounty adjudication removed rather than outsourced, so no arbiter is required.",
       "ids": [
         "GOV-01",
         "GOV-02",
@@ -96,7 +96,12 @@
         "NFR-07",
         "INT-07",
         "SEC-22",
-        "SEC-23"
+        "SEC-23",
+        "FR-52",
+        "FR-55",
+        "FR-56",
+        "FR-59",
+        "FR-62"
       ]
     },
     {
@@ -150,7 +155,21 @@
         "SEC-25",
         "PRIV-01",
         "FR-30",
-        "FR-31"
+        "FR-31",
+        "FR-22",
+        "SCOPE-15",
+        "FR-53",
+        "FR-16",
+        "FR-17",
+        "FR-54",
+        "SEC-26",
+        "DOC-09",
+        "FR-57",
+        "FR-26",
+        "FR-27",
+        "FR-63",
+        "FR-65",
+        "FR-70"
       ]
     },
     {
@@ -178,7 +197,11 @@
         "FR-51",
         "OPS-06",
         "LEG-19",
-        "SEC-24"
+        "SEC-24",
+        "FR-58",
+        "FR-60",
+        "FR-61",
+        "FR-68"
       ]
     },
     {
@@ -195,13 +218,14 @@
         "FR-23",
         "FR-24",
         "FR-25",
-        "FR-26",
-        "FR-27",
         "FR-28",
         "FR-40",
         "SEC-11",
         "SEC-12",
-        "DOC-05"
+        "DOC-05",
+        "DOC-10",
+        "FR-64",
+        "FR-66"
       ]
     },
     {
@@ -227,7 +251,8 @@
         "PRIV-07",
         "PRIV-08",
         "PRIV-09",
-        "INT-03"
+        "INT-03",
+        "FR-69"
       ]
     },
     {
@@ -241,9 +266,6 @@
         "FR-03",
         "FR-04",
         "FR-15",
-        "FR-16",
-        "FR-17",
-        "FR-22",
         "FR-46",
         "FR-47",
         "NFR-08",
@@ -259,8 +281,7 @@
         "OPS-05",
         "LEG-13",
         "LEG-12",
-        "FR-49",
-        "SCOPE-15"
+        "FR-49"
       ]
     },
     {
@@ -306,7 +327,8 @@
         "TRC-05",
         "SCOPE-16",
         "GOV-17",
-        "GOV-18"
+        "GOV-18",
+        "DOC-11"
       ]
     }
   ],

@@ -85,15 +85,28 @@ how many batches it has countersigned.
 What remains exposed after everything in 1.0 is built. Listed because a threat model that only
 describes its successes is marketing.
 
-**Omission.** The operator can decline to emit an event at all. Heartbeats prove the collector
-was running, and the build digest proves which collector — so suppression is attributable — but
-a patched collector that silently drops one tool call leaves a correct-looking record. The
-structural fix is bilateral receipts, where the counterparty co-signs; that is 2.0 (`RM-01`),
-and until then the record rests partly on the operator's word.
+**Omission.** The operator can decline to emit an event at all. A heartbeat gap shows that the
+collector *stopped*; the build digest shows which build the collector **claims** to be running.
+Neither makes selective suppression attributable: a patched collector that keeps heartbeating
+under the original digest and silently drops one tool call leaves a correct-looking record, and
+nothing here distinguishes that from a quiet period. The structural fix is bilateral receipts,
+where the counterparty co-signs; that is 2.0 (`RM-01`), and until then the record rests partly on
+the operator's word.
 
 **Collector integrity.** The collector is open source and runs in the operator's environment, so
-it can be patched. Build provenance (`SEC-22`) makes a modified build report an unrecognised
-digest, and a stopped one report nothing. Detectable and attributable — not prevented.
+it can be patched, and **a patch is not reliably detectable**. A modified collector controls what
+it reports and can emit the original digest while suppressing actions; a self-reported digest is
+not remote attestation, and this release provides none.
+
+What build provenance (`SEC-22`) does give: a digest that identifies the build the collector
+*claims* to be running, traceable to a source commit, so an honest build is verifiable and a
+misconfiguration is caught. What it does not give: any assurance that the process emitting the
+digest is the artifact the digest names.
+
+So the honest split — **stopping the collector produces a heartbeat gap and is detectable;
+patching it to suppress individual calls is neither detectable nor attributable by this
+mechanism.** Only remote attestation would change that, and `SCOPE-12` rejects the TEE claims
+that would be required, for reasons that still hold.
 
 **Forward secrecy depends on hardware.** The epoch ratchet only holds if the retired key is
 genuinely destroyed, and key destruction is not externally verifiable. Without non-exportable

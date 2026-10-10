@@ -22,8 +22,10 @@ jobs:
         run: npm test
       - name: Requirements traceability
         run: npm run backlog
+      - name: Specification review gate
+        run: npm run review
       - name: Generated files are up to date
-        run: git diff --exit-code -- requirements/MATRIX.md requirements/PLAN.md
+        run: git diff --exit-code -- requirements/MATRIX.md requirements/PLAN.md requirements/DESIGN.md
 
   # GOV-02 — DCO. Pull requests only: commits predating adoption are unsigned,
   # and their sole author affirms them in CONTRIBUTING.md rather than rewriting

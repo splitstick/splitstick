@@ -1,0 +1,126 @@
+// Mechanical review of the requirement and design set. Structural checks only —
+// substance still needs a reader.
+import fs from 'node:fs';
+
+const reqs = [...JSON.parse(fs.readFileSync('requirements/backlog.json','utf8')).requirements,
+  ...['part2','part3','part4'].flatMap(p => JSON.parse(fs.readFileSync(`requirements/${p}.json`,'utf8')))];
+const byId = new Map(reqs.map(r => [r.id, r]));
+const { elements, nondesign } = JSON.parse(fs.readFileSync('requirements/design.json','utf8'));
+const specs = new Map(elements.map(e => [e.id, fs.readFileSync(e.spec,'utf8')]));
+const ownedBy = new Map(); for (const e of elements) for (const id of e.covers) ownedBy.set(id, e.id);
+const classified = new Set(Object.values(nondesign).flat());
+const ID = /\b(FR|NFR|SEC|PRIV|LEG|GOV|OPS|INT|SCOPE|DOC|TRC|RM)-\d+\b/g;
+
+const out = []; const flag = (k, m) => out.push(`${k}  ${m}`);
+
+// 1. a spec must mention, by id, every requirement it claims to cover
+for (const e of elements) {
+  const miss = e.covers.filter(id => !specs.get(e.id).includes(id));
+  if (miss.length) flag('TRACE ', `${e.id} covers but never names: ${miss.join(' ')}`);
+}
+
+// 2. a spec must not cite an unknown id, or a 1.0 requirement nothing owns
+for (const e of elements) for (const id of new Set(specs.get(e.id).match(ID) || [])) {
+  if (!byId.has(id)) { flag('BADREF', `${e.id} cites unknown ${id}`); continue; }
+  if (byId.get(id).release !== '1.0') continue;              // deferred ids are checked below
+  if (!ownedBy.has(id) && !classified.has(id))
+    flag('ORPHAN', `${e.id} cites ${id}, which no element owns and nothing classifies`);
+}
+
+// 3. a deferred requirement cited in a spec must be marked as deferred on that line
+for (const e of elements) for (const id of new Set(specs.get(e.id).match(ID) || [])) {
+  const r = byId.get(id); if (!r || r.release === '1.0') continue;
+  const line = specs.get(e.id).split('\n').find(l => l.includes(id)) || '';
+  if (!/2\.0|funded|deferred|commercial|later|RM-/.test(line))
+    flag('LEAK  ', `${e.id} cites ${id} (${r.release}) without marking it deferred`);
+}
+
+// 4. the specs must not themselves break the scope guards
+const BANNED = [/tamper[- ]proof/i, /\bcertified\b/i, /\bcompliance certificate\b/i, /\bguarantees? compliance\b/i];
+for (const [id, s] of specs) for (const line of s.split('\n')) for (const re of BANNED)
+  if (re.test(line) && !/not |never |no |cannot |does not |is not /i.test(line))
+    flag('CLAIM ', `${id}: "${line.trim().slice(0,90)}"`);
+
+// 5. dangling design references
+for (const [id, s] of specs) for (const d of new Set(s.match(/\bDES-\d+\b/g) || []))
+  if (!elements.some(e => e.id === d)) flag('BADREF', `${id} references nonexistent ${d}`);
+
+// 6. a requirement we BUILD should be verifiable without a human reading something.
+//    Policy, document, process and audit requirements are human-verified by definition.
+const HUMAN = /review|inspection|published|documented|present|inventory|audit(?!able)/i;
+const AUTO  = /test|benchmark|red-team|fails closed|verifies|detected|captur|scan|drill|e2e|ci\b/i;
+for (const r of reqs.filter(r => r.release === '1.0' && ownedBy.has(r.id)))
+  if (HUMAN.test(r.verify) && !AUTO.test(r.verify))
+    flag('MANUAL', `${r.id} (${ownedBy.get(r.id)}) is built but verified by human review: "${r.verify}"`);
+
+// 7. prose must not restate counts or retracted figures — both drifted in review
+const PROSE = ['README.md','docs/splitstick-1.0-release-notes.md','docs/threat-model.md'];
+const STALE = [
+  [/\b\d{2,3} (?:requirements|design elements)\b/, 'a hardcoded count in prose; counts belong in the generated matrices'],
+  [/EUR 5,000|EUR 50,000/, 'a cash bounty figure retracted when the award became recognition'],
+  [/\bexternal arbiter\b/, 'the arbiter requirement was removed when adjudication was removed'],
+  [/shipped default is .\[rekor\]/, 'the default became a TSA plus a roll-up anchor; a transparency log is opt-in'],
+  [/100% of tool calls captured/, 'coverage reports what the collector reported, not what occurred'],
+  [/Either way it is attributable/, 'patching a collector is not detectable; only stopping it is'],
+  [/time lower bound/, 'OpenTimestamps establishes existed-no-later-than, not a lower bound'],
+  [/immediate successor of the previous/, 'a witness verifies a consistency proof, not an increment of one'],
+];
+for (const f of PROSE) {
+  if (!fs.existsSync(f)) continue;
+  const lines = fs.readFileSync(f,'utf8').split('\n');
+  lines.forEach((l, i) => { for (const [re, why] of STALE)
+    if (re.test(l) && !/never in prose|retracted|removed when|generated matri|^\|\s*\d+\s*\|/.test(l))
+      flag('STALE ', `${f}:${i+1} ${why} -> "${l.trim().slice(0,70)}"`); });
+}
+
+
+// 8. the documented default must match the canonical config, not drift from it
+const CANON = 'design/default-config.yaml';
+if (fs.existsSync(CANON)) {
+  const canon = fs.readFileSync(CANON,'utf8');
+  // compare key:value pairs, ignoring inline comments and spacing
+  const pairs = l => l.replace(/#.*$/,'').trim().replace(/\s+/g,' ');
+  const keys = /^(anchor_interval|rollup_interval|on_unavailable|quorum):/;
+  const canonPairs = canon.split('\n').filter(l => keys.test(l)).map(pairs);
+  const notes = fs.readFileSync('docs/splitstick-1.0-release-notes.md','utf8');
+  // only the documented YAML example counts — a value mentioned in prose elsewhere
+  // must not mask a drifted config block
+  const block = (notes.match(/```yaml\n([\s\S]*?)```/) || [,''])[1];
+  const notePairs = new Set(block.split('\n').filter(l => keys.test(l.trim())).map(pairs));
+  for (const p of canonPairs)
+    if (!notePairs.has(p)) flag('CONFIG', `the documented default omits or contradicts "${p}" from ${CANON}`);
+  for (const w of ['type: rfc3161', 'type: opentimestamps'])
+    if (!notes.includes(w)) flag('CONFIG', `the documented default is missing a canonical witness (${w})`);
+}
+
+
+// 9. the evidence rule (DOC-11): a claim resting only on the collector is an
+// assertion, not a guarantee. A curated phrase list, same approach as STALE.
+const OVERCLAIM = [
+  [/requires either a recorded config/i, 'FR-64 attests a self-report; it cannot detect a path created outside the collector'],
+  [/proves completeness|proof of complete capture(?! )/i, 'completeness cannot be proved by an operator-controlled collector'],
+  [/detects (an )?unobserved path/i, 'no mechanism here observes a path outside the collector'],
+  [/verified custody|custody is verified/i, 'custody is operator-declared unless a provider attestation is supplied'],
+  [/dropped countersignature/i, 'absence of a proof is not evidence of deletion; say missing, and inconclusive'],
+  [/tamper[- ]proof/i, 'tamper-evident, never tamper-proof'],
+  [/makes a modified build report an unrecognised/i, 'a dishonest collector reports whatever it likes; a self-reported digest is not attestation'],
+];
+// DOC-11 applies to every surface a reader sees, not only the design specs. The
+// first version of this check scanned specs alone, which is exactly how the threat
+// model kept an overclaim through a passing CI run.
+const CLAIMED = new Map(specs);
+for (const p of PROSE) if (fs.existsSync(p)) CLAIMED.set(p, fs.readFileSync(p,'utf8'));
+for (const [id, s] of CLAIMED) for (const line of s.split('\n')) for (const [re, why] of OVERCLAIM)
+  if (re.test(line) && !/not |never |cannot |does not |is not |rather than|an earlier draft|previously|path to|only when|supported only|unless a provider|say missing/i.test(line))
+    flag('OVERCLAIM', `${id}: ${why} -> "${line.trim().slice(0,70)}"`);
+
+console.log(out.length ? out.map(l => '  ' + l).join('\n') : '  no structural issues');
+
+// MANUAL findings are informational: a document requirement verified by reading a
+// document is correct, not a defect. Everything else is a gate.
+const BLOCKING = ['TRACE','BADREF','ORPHAN','LEAK','CLAIM','STALE','CONFIG','OVERCLAIM'];
+const blocking = out.filter(l => BLOCKING.some(k => l.startsWith(k)));
+const manual = out.length - blocking.length;
+console.log(`\n  ${out.length} finding(s) across ${reqs.length} requirements and ${elements.length} design elements`);
+console.log(`  ${blocking.length} blocking, ${manual} informational (human-verified by design)`);
+if (blocking.length) { console.error('\nREVIEW FAILED: ' + blocking.length + ' blocking finding(s)'); process.exit(1); }

@@ -1,6 +1,6 @@
 # Splitstick 1.0 — draft release notes
 
-`v1.0.0` · Apache-2.0 · rev. 9
+`v1.0.0` · Apache-2.0 · rev. 16
 
 **Agent actions you can prove — including the ones that aren't there.**
 
@@ -81,8 +81,9 @@ controls the file controls where it ends, and a chain over a truncated prefix is
 valid. Those rows are why Splitstick is not merely a library.
 
 We deliberately publish no "*N* of *N* attacks defeated" score. We wrote the attacks, so passing them
-proves little. Instead the suite is open, contributions are invited, and we pay **EUR 5,000 per novel
-tamper class** that survives a default Splitstick configuration. A number someone else can move is worth
+proves little. Instead the suite is open, contributions are invited, and a novel tamper class
+surviving a default configuration earns **attribution, credit in the suite and a named finding**.
+The project is unfunded; no cash is promised. See Bounty terms. A number someone else can move is worth
 more than one we award ourselves.
 
 ## What ships in 1.0
@@ -116,11 +117,16 @@ more than one we award ourselves.
 - **Soft anchor**, default every 10 seconds, to a witness *set* — Rekor,
   `transparency-dev/witness`, an RFC 3161 TSA, or your own internal authority. Cadence is the
   mutability window and it is yours to set.
-- **The shipped default is `[rekor]` — a log this project does not operate.** The out-of-box
+- **The shipped default is a free RFC 3161 timestamp authority for the per-batch countersignature
+  and clock, plus a trust-minimised roll-up anchor.** A transparency log is opt-in, for operators
+  self-hosting one or whose volume suits a public instance — never the default, because a
+  ten-second cadence against a public good is not acceptable use. The out-of-box
   configuration has no vendor in it at all, which is the strongest version of the independence
   claim and happens to be the cheapest. A second witness, internal or qualified, is yours to add.
-- **Hard anchor**, optional and *off by default*: a slow, trust-minimised backstop that no company
-  can withdraw. Off by default because its confirmation latency cannot serve a ten-second window,
+- **Roll-up anchor**, *on by default and switchable off in one setting*: a slow, trust-minimised
+  backstop no company can withdraw. On because it is the only free public anchor with no
+  acceptable-use objection; never mandatory, because public-chain anchoring is forbidden outright
+  at some regulated buyers. Turning it off is itself recorded as a chain event. It serves the roll-up tier rather than the ten-second tier because its confirmation latency cannot serve the latter,
   and because many regulated buyers hold blanket policies against it.
 - Set `quorum: 2` for records meant to be adverse to you. The active set and quorum are written into
   the chain, so weakening them is a timestamped event rather than a silent config edit.
@@ -148,13 +154,16 @@ that **everything was logged** — and silence is indistinguishable from "nothin
 - Collectors emit **signed heartbeats** into the same chain, so a window without one is as loud as a
   broken hash.
 - Each heartbeat carries the collector's **build digest**. A patched collector reports an
-  unrecognised build; a stopped one reports nothing. Either way it is attributable.
+  unrecognised build **only if it reports honestly**. A patched collector controls what it reports
+  and can emit the original digest, so **stopping is detectable and patching is not**. A
+  self-reported digest is not remote attestation, and this release provides none.
 - **Signed gap declarations.** When a batch is genuinely lost, the operator records an explicit,
   signed, countersigned statement of absence. Strict sequence contiguity without this is a
   denial-of-service on yourself: one lost batch and the stream never recovers.
 - An unexplained absence and a declared one are different objects — in engineering and, where
   adverse-inference doctrines apply, in litigation. Splitstick converts the first into the second.
-- `splitstick coverage` produces the claim that answers an auditor: *"100% of tool calls captured between
+- `splitstick coverage` produces the claim that answers an auditor: *"100% of tool calls **the
+  collector reported** were captured, chained and anchored between
   T1 and T2, with proof the collector was alive for every second of it."*
 
 ### Disclosure — prove one action, reveal one action
@@ -195,8 +204,10 @@ trace is a number, not evidence — so the artifact has to be checkable back to 
 - Every released collector artifact carries a **provenance attestation** binding its digest to the
   source commit and the build that produced it.
 - Releases are **signed**, with a published **SBOM** and pinned dependencies.
-- So when a heartbeat reports an unrecognised build, "unrecognised" is a verifiable claim rather
-  than our assertion. Without this, coverage attestation proves that *some* build ran.
+- So an honestly reported digest resolves to a published provenance attestation rather than to our
+  word. Without this, the field would prove only that *some* build ran. It still does not prove
+  that the process emitting the digest was the artifact the digest names — only remote attestation
+  would, and this release has none.
 
 ### Durability — losing a witness must not lose the evidence
 
@@ -318,7 +329,7 @@ half its design.
 | **Verifiable delay function** | Proposed as an offline lower bound on elapsed time. It bounds *sequential computation*, not wall-clock: an adversary with faster hardware shrinks the bound, and the parameters cannot be set safely across heterogeneous hosts. External anchoring is strictly stronger and already present. Cut. |
 | **Zero-knowledge compliance proofs** | Proposed as "prove every high-value action was approved, without disclosing the log." A ZK proof establishes correct computation over *claimed* inputs; it says nothing about whether the inputs are true. An operator generating a proof over their own unanchored data proves only that they can run a circuit. The only meaningful version operates over already-anchored roots, at which point the root is doing the work. Cut, and not placed on the roadmap. |
 | **Collector sealed in a TEE** | Proposed to make the collector unpatchable by its own operator. Enclave technologies have a sustained record of practical breaks, and presenting one as an assurance boundary adds attack surface while inviting justified scepticism. **Remote attestation of the collector build** remains interesting and stays experimental; the claim that a TEE makes suppression impossible does not ship. |
-| **A blockchain as the ledger** | Never seriously considered, stated for the avoidance of doubt. The requirement is an append-only log with inclusion proofs and independent witnessing, which transparency logs provide without consensus, tokens or throughput limits. A public chain appears in exactly one optional role — the slow hard anchor — and is off by default. |
+| **A blockchain as the ledger** | Never seriously considered, stated for the avoidance of doubt. The requirement is an append-only log with inclusion proofs and independent witnessing, which transparency logs provide without consensus, tokens or throughput limits. A public chain appears in exactly one role — the slow roll-up anchor — on by default and disableable in one setting. |
 
 ## Numbers we are signing up to
 
@@ -339,7 +350,7 @@ alongside the offer so that both sides know the shape of it before anyone starts
 | Term | |
 |---|---|
 | **One class, one payout** | The unit is a **tamper class**, not an instance. Twelve variations on truncation are one finding. We would rather pay well for a new idea than repeatedly for the same one. |
-| **Default configuration** | The attack must survive the shipped default: witnesses `[splitstick, rekor]`, `quorum: 1`, `anchor_interval: 10s`, `on_unavailable: mark_gap`. A tamper that only works once the operator has weakened their own policy is already a recorded chain event, by design. |
+| **Default configuration** | The attack must survive the shipped default: witnesses as shipped (a public TSA plus the roll-up anchor), `quorum: 1`, `anchor_interval: 10s`, `on_unavailable: mark_gap`. A tamper that only works once the operator has weakened their own policy is already a recorded chain event, by design. |
 | **The threat model is the scope** | The out-of-scope list published above is binding in both directions. A key exfiltrated before first use, collusion across the entire quorum, or a tool that lies about what it did are excluded — and we do not get to add exclusions after the fact. |
 | **Recognition, not cash** | While the project is unfunded, a novel class earns attribution, credit in the suite and a named finding. A cash award opens only if the project is funded. We would rather say that than advertise money we do not hold. |
 | **First reporter, 90 days** | First complete report wins. Coordinated disclosure after 90 days or on fix, whichever is sooner. We publish the finding either way, including when we have no mitigation. |
@@ -353,14 +364,18 @@ cheapest way to give away a judgement is to stop making one.
 
 ```yaml
 # splitstick.yaml — the witness surface. Defaults shown; every line is yours to change.
+anchor_interval: 10s             # the mutability window
+rollup_interval: 1h              # the slower, trust-minimised tier
+heartbeat_interval: 5s           # the resolution of every coverage claim
+unwitnessed_ceiling: 1h          # beyond this, no completeness claim is issued
+on_unavailable: mark_gap         # the only accepted value
 witnesses:
-  - { id: splitstick, url: "https://witness.splitstick.dev", key: "<shipped pubkey>" }
-  - { id: rekor, type: rekor }
-#  - { id: corp,  url: "https://tsa.audit.internal", key: "..." }   # your own
-#  - { id: qtsp,  type: rfc3161, url: "https://qts.provider.eu" }   # qualified
+  - { id: tsa, type: rfc3161, url: "https://<free-public-tsa>" }
+  - { id: ots, type: opentimestamps, tier: rollup }
+# - { id: audit, type: splitstick, url: "https://witness.audit.internal", key: "…" }  # yours
+# - { id: qtsp,  type: rfc3161,    url: "https://qts.provider.eu" }                   # qualified
+# - { id: rekor, type: rekor, tier: rollup }   # opt-in; see FR-47 on acceptable use
 quorum: 1
-on_unavailable: mark_gap
-anchor_interval: 10s
 ```
 
 ```bash
@@ -389,7 +404,8 @@ our key.
 ## Licence and governance
 
 **Apache-2.0**, including the patent grant. Contributions under DCO. The spec, wire format, test
-vectors, practice statement and both collectors are open, and **we commit publicly to never
+vectors, practice statement, both collectors **and the witness implementation** are open, and
+**we commit publicly to never
 relicensing them** — a business built on trust cannot afford a licence people expect to change.
 
 Anyone may run a witness against this format, including our competitors and the hyperscalers. The
@@ -445,6 +461,13 @@ is published rather than discarded, on the same principle as everything else her
 | 6 | ADDED | The witness time source is now named in the practice statement, since the countersignature asserts a time and nothing previously said where that time came from. |
 | 7 | SCOPED | Re-scoped as an unfunded open-source release after a feasibility review found that 40% of requirements were non-engineering and most existed only because the notes were written as a commercial launch. Nothing technical was cut. |
 | 7 | CHANGED | Default witness set is now `[rekor]` alone — no vendor in the shipped configuration, which is both the strongest independence claim and free. |
+| 16 | TIGHTENED | PRIV-05 and the DES-13 inventory now match the version-1 schema field for field, including the retry fields and a padding nonce — an implementation following the old list literally would have rejected valid records. Two residual claims left the threat model: a digest identifies the build a collector claims to be running, and while stopping it produces a heartbeat gap, patching it to suppress individual calls is neither detectable nor attributable by that mechanism. DES-01 no longer implies only oversized payloads are externalised; none are inline. And DES-13 no longer offers batch padding as a remedy for payload-length disclosure, because padding obscures how many records exist and says nothing about how large one was — the leak is documented and unmitigated, which is the honest pair of words. |
+| 15 | RECONCILED | Padding joined the version-1 record enum, which DES-05 had made a record without DES-01 permitting the kind, so a padded log violated its own schema. tree_size is now consistently described as a count of all records rather than of actions. The retry fields entered the erasure inventory, and the correlation identifier is required to be opaque and randomly generated, since it survives erasure and would otherwise be a retained disclosure. The threat model still asserted that build provenance makes a modified build report an unrecognised digest — the exact overclaim the previous revision removed elsewhere — because the assurance-claim lint scanned design specifications and not customer-facing documents. It now scans both. And FR-70 defines what validating a provider custody attestation requires: issuer, document signature, key identity, epoch applicability and the custody property itself, none of which together establish historical key destruction. |
+| 14 | NARROWED | A review found three of the previous round's additions claiming more than their evidence supports, which is one failure repeated rather than three. Configuration attestation is now stated as provenance of a self-report: it cannot detect a path created outside the collector, because nothing inside Splitstick observes one. A custody declaration proves the operator declared it, not that a key was non-exportable, and is labelled operator-declared unless a provider attestation is supplied. A missing witness proof is reported as missing and inconclusive rather than as a dropped countersignature, since absence is equally consistent with pending, unavailable and removed. Two data-model corrections came with them: source_seq now advances per attempt rather than per logical action, because advancing per action makes the counter move backwards under interleaved retries and because a timed-out attempt may already have had a side effect; and padding is a record kind, since dummy leaves without records broke record_seq equals tree_size. DOC-11 now requires every assurance claim to name its evidence, and the review gate fails on a curated list of overclaim phrasings. |
+| 13 | ANSWERED | Ten open questions from an independent study of rev. 6 closed. Retries, timeouts and errors entered the schema — a retry is a new record sharing a correlation id, never an overwrite. Key custody is now declared in a chained record, since an HSM signature and a file-key signature are byte-identical. The verifier pins an expected operator identity and compares witnesses asked against proofs present. The collector attests its own capture configuration, which converts quietly adding an unobserved path into leaving a trace. Fail-open gained a ceiling beyond which no completeness claim is issued. The witness implementation joined the open-component set, because the self-hosting story cannot rest on a binary nobody may read. Padding rules, the heartbeat interval, and the one notion of operator identity across hosted and self-hosted witnesses are all now specified. |
+| 12 | CORRECTED | A fourth review round, both findings narrow. gap_unknown was introduced in the failure model but never added to the record schema's closed enum, which would have made every unknown-loss record unverifiable; it is now a first-class kind, and a run containing one yields an inconclusive coverage verdict rather than proof of complete capture. The retained-metadata inventory was incomplete — a partial inventory reads as exhaustive and is worse than none — so it now lists every persisted field, and the undefined request_hash became a salted commitment like every other payload, because a bare hash of an approval request is brute-forceable from a handful of guessable fields. |
+| 11 | CORRECTED | A third review round. The leaf salt was removed from the persisted chain entry, where it could never have been shredded. The gap model was fixed: record_seq counts writes, so a lost action leaves no hole, and a gap declaration now occupies one record position while describing the lost span in a separate source_seq — a single gap record cannot occupy six positions and contribute one leaf. A dependency cycle between FR-08 and FR-59 was broken and the validator now rejects cycles. Erasure now enumerates exactly what permanently remains instead of claiming it removes all personal information, with the agent label and any reviewer moved to erasable digests. The default configuration became one canonical file that documentation is checked against. |
+| 10 | CORRECTED | Two external review rounds. A TSA cannot sign a C2SP note, so heterogeneous proofs moved into a typed envelope (DES-20) and the operator now signs the note itself rather than a custom preimage no witness could have matched. The build-digest claim was narrowed: stopping the collector is detectable, patching it is not. A witness now verifies a Merkle consistency proof rather than requiring tree_size to increase by one, which contradicted ten-second checkpointing. Payloads became content-addressed and fully externalised, so substitution is impossible and erasure reaches everything. ActionRecord and ChainEntry were separated to remove a circular hash. Stale defaults and coverage wording in these notes corrected. |
 | 9 | SIMPLIFIED | Dropped the external arbiter. Once the award became recognition rather than cash, the stakes of adjudication collapsed — nobody disputes attribution the way they dispute money. Publishing every finding and crediting every reporter removes the judgement entirely, which is more credible than appointing a referee and needs no one to agree to serve. The arbiter returns if cash ever does. |
 | 8 | RENAMED | Tally became Splitstick. A knockout search found "Tally" registered to Tally Solutions for accounting software, the npm and GitHub namespaces taken, and the word descriptive of what an audit tool does. Splitstick is arbitrary in class 9, free everywhere that matters, and names the two-party property rather than the counting. Recorded in docs/name-search.md. |
 | 7 | REMOVED | The hosted witness, the certification mark, accreditation and the cash bounty. All four are now stated as funded-release items rather than implied capabilities. |

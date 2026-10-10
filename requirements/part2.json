@@ -216,10 +216,10 @@
     "id": "SEC-11",
     "type": "security",
     "release": "1.0",
-    "title": "Resist collector suppression",
-    "statement": "Stopping or patching the collector and claiming a quiet period must be detectable and attributable.",
+    "title": "Resist collector stoppage",
+    "statement": "Stopping the collector and claiming a quiet period must be detectable, by heartbeat discontinuity. Patching the collector is NOT covered: a modified build can report the original digest, and a self-reported digest is not remote attestation.",
     "source": "Attack class table, row 6",
-    "verify": "Kill and patch tests against coverage report"
+    "verify": "Kill the collector mid-window; the coverage report shows an undeclared gap. A separate test asserts a collector reporting a forged digest is NOT flagged, so the limit is pinned by a test rather than by prose"
   },
   {
     "id": "SEC-12",
@@ -228,7 +228,7 @@
     "title": "Resist policy downgrade",
     "statement": "Weakening the anchoring policy before tampering must be visible in the record.",
     "source": "Attack class table, row 7",
-    "verify": "Policy-change event present and countersigned"
+    "verify": "Test weakens the witness set, then asserts a countersigned policy event appears in the chain before the next batch"
   },
   {
     "id": "SEC-13",
@@ -246,7 +246,7 @@
     "title": "Operator key never leaves operator",
     "statement": "Splitstick must never hold, receive, request or log the operator signing key.",
     "source": "Integrity — Splitstick never holds it, sees it, or asks for it",
-    "verify": "Code audit plus egress inspection"
+    "verify": "Automated egress capture during a representative run asserts no private key material leaves the host; plus a code check that no verifier or collector module imports a key-export API"
   },
   {
     "id": "SEC-15",
@@ -325,18 +325,18 @@
     "type": "privacy",
     "release": "1.0",
     "title": "No content in the chain",
-    "statement": "The chain contains no plaintext content.",
+    "statement": "The chain contains no payload bytes at all — not merely no oversized ones. Records in the chain carry metadata and salted content digests; every argument and result lives in the deletable store, so there is nothing in the chain that erasure cannot reach.",
     "source": "Erasure — no content is ever in the chain",
-    "verify": "Automated scan of chain files for plaintext"
+    "verify": "Automated scan of chain files for any payload string from the fixture finds nothing, including short inline-sized arguments"
   },
   {
     "id": "PRIV-03",
     "type": "privacy",
     "release": "1.0",
     "title": "Erasure via crypto-shredding",
-    "statement": "Support a documented erasure procedure satisfying a data-subject deletion request.",
+    "statement": "Support a documented erasure procedure satisfying a data-subject deletion request, over payloads, content salts, leaf salts, the reference index, the agent label and any approval reviewer. The claim is scoped to that enumerated set, not to all personal information everywhere.",
     "source": "Erasure — GDPR-compatible",
-    "verify": "Procedure documented and exercised; independent privacy review deferred to a funded release"
+    "verify": "Procedure executed; the enumerated set is unrecoverable; an independent privacy assessment of the residue is deferred to a funded release and recorded as such"
   },
   {
     "id": "PRIV-04",
@@ -352,9 +352,9 @@
     "type": "privacy",
     "release": "1.0",
     "title": "Minimal retained artefacts",
-    "statement": "After erasure, only a salted hash and timestamp remain.",
+    "statement": "After erasure the chain retains only the version-1 permanent set: v, collector, run, record_seq, source_seq, ts, kind, consequential, tool, outcome, attempt, correlation, approval.decision, result.ok, args.bytes, result.bytes, a padding record pad nonce, gap spans, unknown-loss intervals, and salted digests, leaf digests and chain heads. Every other field is erasable: payloads, the agent label, the approval reviewer, the reviewed request, content salts, leaf salts and the reference index. The byte lengths and the correlation relationship are documented residual leaks with no mitigation in 1.0.",
     "source": "Erasure — what survives is a salted hash and a timestamp",
-    "verify": "Residue inspection"
+    "verify": "Automated scan after crypto-shredding asserts the residue matches the enumerated permanent set exactly, field for field, across every record kind including padding; the list is derived from the version-1 schema so a schema change fails the test rather than silently passing"
   },
   {
     "id": "PRIV-06",
@@ -363,16 +363,16 @@
     "title": "Disclosure minimisation",
     "statement": "A disclosure reveals the named event and nothing else about other events' contents.",
     "source": "Disclosure — without seeing anything else",
-    "verify": "Pack inspection; sibling hashes carry no recoverable content"
+    "verify": "Test asserts a disclosure pack contains exactly one salt and that no sibling leaf is reproducible from the pack"
   },
   {
     "id": "PRIV-07",
     "type": "privacy",
     "release": "1.0",
     "title": "Disclose the tree-size leak",
-    "statement": "Document that an inclusion proof reveals the total count of recorded actions.",
+    "statement": "Document that an inclusion proof reveals the log tree size, and that tree size is the count of ALL records — actions, heartbeats, policy events, gap declarations and padding — not a count of agent actions. The action count is therefore not directly disclosed, which is a weaker leak than an earlier draft claimed.",
     "source": "Disclosure — the honest limit",
-    "verify": "Documentation review"
+    "verify": "Documentation review; a test asserts tree size exceeds the action count in any run containing heartbeats"
   },
   {
     "id": "PRIV-08",

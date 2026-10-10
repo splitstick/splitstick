@@ -190,9 +190,9 @@
     "type": "governance",
     "release": "1.0",
     "title": "Open component set",
-    "statement": "Keep the spec, wire format, test vectors, practice statement and both collectors open.",
+    "statement": "Keep the spec, wire format, test vectors, practice statement, both collectors AND the witness implementation open. The witness is in the open set because the self-hosting story is load-bearing: the operator must supply the second party, and cannot do so from a binary they are not permitted to read.",
     "source": "Licence and governance",
-    "verify": "Repository inventory",
+    "verify": "Repository inventory lists every component above under the open licence, witness included",
     "status": "done",
     "evidence": "repository inventory matches the declared open set"
   },
@@ -548,10 +548,10 @@
     "id": "SCOPE-15",
     "type": "scope-guard",
     "release": "1.0",
-    "title": "Hard anchor off by default",
-    "statement": "The trust-minimised hard anchor MUST default to disabled.",
+    "title": "Hard anchor must be disableable",
+    "statement": "The trust-minimised roll-up anchor must be switchable off in one setting, and switching it off must be recorded in the chain like any other policy change. It is on by default because it is the only free public anchor with no acceptable-use objection; it must never be mandatory, because some regulated buyers forbid public-chain anchoring outright.",
     "source": "Independence — optional and off by default",
-    "verify": "Default config inspection"
+    "verify": "One setting disables it; the change appears as a chain event"
   },
   {
     "id": "DOC-01",

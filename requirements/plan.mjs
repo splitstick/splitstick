@@ -11,6 +11,10 @@ const { order, depends } = JSON.parse(fs.readFileSync('requirements/depends.json
 
 // --- validate ---------------------------------------------------------------
 const errs = [], assigned = new Map();
+for (const m of milestones) {
+  const dup = m.ids.filter((id, i) => m.ids.indexOf(id) !== i);
+  if (dup.length) errs.push(`${m.id}: duplicate ids in list: ${[...new Set(dup)].join(' ')}`);
+}
 for (const m of milestones) for (const id of m.ids) {
   if (!byId.has(id)) errs.push(`${m.id}: unknown id ${id}`);
   if (assigned.has(id)) errs.push(`${id}: assigned to both ${assigned.get(id)} and ${m.id}`);
@@ -32,6 +36,17 @@ for (const [id, deps] of Object.entries(depends)) {
     if (pos(dep) > pos(id)) errs.push(`${id} (${msOfId.get(id)}) depends on ${dep} (${msOfId.get(dep)}) — later milestone`);
   }
 }
+// dependency cycles: milestone ordering alone cannot catch a same-milestone cycle
+const seenCycles = new Set();
+const visit = (n, path) => {
+  if (path.includes(n)) {
+    const cyc = [...path.slice(path.indexOf(n)), n].join(' -> ');
+    if (!seenCycles.has(cyc)) { seenCycles.add(cyc); errs.push(`dependency cycle: ${cyc}`); }
+    return;
+  }
+  for (const m of depends[n] || []) visit(m, [...path, n]);
+};
+for (const n of Object.keys(depends)) visit(n, []);
 if (errs.length) { console.error('PLAN VALIDATION FAILED:\n' + errs.join('\n')); process.exit(1); }
 
 // --- emit -------------------------------------------------------------------
@@ -43,7 +58,7 @@ const TY = {functional:'FR','non-functional':'NFR',security:'SEC',privacy:'PRIV'
 
 let md = `# Delivery plan — Splitstick 1.0
 
-160 release-1.0 requirements sequenced into 8 milestones, gated by the attack-class
+${r10.length} release-1.0 requirements sequenced into ${milestones.length} milestones, gated by the attack-class
 table in [the release notes](../docs/splitstick-1.0-release-notes.md).
 
 **Generated — do not edit by hand.** Source of truth is \`requirements/milestones.json\`.
