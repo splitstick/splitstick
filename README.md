@@ -46,6 +46,15 @@ and `PLAN.md` are generated. The validator rejects any requirement without a rel
 section behind it and any release-1.0 requirement not assigned to a milestone — a
 requirement cannot exist without a promise.
 
+## Resourcing
+
+Unfunded: one person's time, no budget. No hosted witness, no accreditation, no certification
+mark, and recognition rather than cash for findings — all stated in the
+[release notes](docs/tally-1.0-release-notes.md) rather than left to be inferred.
+
+The software is unaffected. Everything in 1.0 is buildable at zero cost and anchors by default
+to a public transparency log this project does not operate.
+
 ## Licence
 
 Apache-2.0, including the patent grant. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
