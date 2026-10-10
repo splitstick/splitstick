@@ -198,5 +198,32 @@
     "statement": "Each collector instance has a stable identity that scopes its chain and its log origin. Records carry the run they belong to as a field; the chain itself is collector-scoped, so concurrent runs interleave in one log and heartbeats need no run at all.",
     "source": "Capture — action record; Coverage attestation",
     "verify": "Two concurrent runs produce one contiguous chain with correct run tags; a heartbeat emitted with no run active is chained and anchored"
+  },
+  {
+    "id": "DOC-10",
+    "type": "documentation",
+    "release": "1.0",
+    "title": "Document the collector-patch limit",
+    "statement": "State plainly, wherever coverage attestation is described, that a collector patched to report a valid digest while suppressing actions is not detectable without remote attestation, which this release does not provide.",
+    "source": "Coverage attestation; Threat model — residual risk",
+    "verify": "Statement present in the threat model, the coverage report output, and DES-10; claims audit checks no surface implies otherwise"
+  },
+  {
+    "id": "FR-57",
+    "type": "functional",
+    "release": "1.0",
+    "title": "Verifier states witness-set capabilities",
+    "statement": "The verifier prints what the configured or observed witness set can and cannot establish — in particular whether any witness maintains operator sequence state, and therefore whether truncation above the last disclosed height is detectable at all.",
+    "source": "Proof — offline verification; Independence",
+    "verify": "Test asserts a stateless witness set yields an explicit \"truncation not detectable above <height>\" line, and a stateful one does not"
+  },
+  {
+    "id": "FR-58",
+    "type": "functional",
+    "release": "1.0",
+    "title": "Reserved slot for gap declarations",
+    "statement": "Pre-allocate storage sufficient to write a gap declaration, so the declaration can be written even when the store is otherwise exhausted. If even that fails, the condition is surfaced out of band and the next successful write declares the lost window.",
+    "source": "Operations — fails open, loudly",
+    "verify": "Disk-exhaustion test: the agent completes, a gap declaration is written from the reserve, and the lost window appears in the coverage report"
   }
 ]

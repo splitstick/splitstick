@@ -81,8 +81,9 @@ controls the file controls where it ends, and a chain over a truncated prefix is
 valid. Those rows are why Splitstick is not merely a library.
 
 We deliberately publish no "*N* of *N* attacks defeated" score. We wrote the attacks, so passing them
-proves little. Instead the suite is open, contributions are invited, and we pay **EUR 5,000 per novel
-tamper class** that survives a default Splitstick configuration. A number someone else can move is worth
+proves little. Instead the suite is open, contributions are invited, and a novel tamper class
+surviving a default configuration earns **attribution, credit in the suite and a named finding**.
+The project is unfunded; no cash is promised. See Bounty terms. A number someone else can move is worth
 more than one we award ourselves.
 
 ## What ships in 1.0

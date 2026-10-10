@@ -8,12 +8,19 @@
 `node:crypto`.
 
 ```
-preimage = 0x03 ‖ root ‖ u64be(tree_size) ‖ ts
-sig      = Ed25519-Sign(K_epoch, preimage)
+subject = the C2SP note bytes          // origin ‖ tree_size ‖ root, per DES-07
+sig     = Ed25519-Sign(K_epoch, subject)      // emitted as a signed-note line
 ```
 
-The signature covers the root, the log's `tree_size` **and** the timestamp together — the same `tree_size` the C2SP checkpoint asserts (DES-07), never a batch ordinal. Signing the
-root alone would let a batch be replayed at a different claimed position or time.
+The note already binds origin, `tree_size` and root together, so signing the note signs all
+three — and signing the **note itself** rather than a bespoke concatenation is what lets any
+existing C2SP witness countersign it. An earlier draft specified a custom preimage; an external
+review pointed out that no C2SP witness could then have signed the same bytes, which would have
+broken INT-01. There is one signed subject in this system, not two.
+
+The operator's clock does not appear in the signed subject at all. Trustworthy time enters only
+through a countersignature (`DES-20`), which is the honest position: `DES-01`'s `ts` is
+self-asserted and nothing should be built on it.
 
 ## Epoch ratchet — FR-11, M2
 

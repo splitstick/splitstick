@@ -53,5 +53,20 @@ for (const r of reqs.filter(r => r.release === '1.0' && ownedBy.has(r.id)))
   if (HUMAN.test(r.verify) && !AUTO.test(r.verify))
     flag('MANUAL', `${r.id} (${ownedBy.get(r.id)}) is built but verified by human review: "${r.verify}"`);
 
+// 7. prose must not restate counts or retracted figures — both drifted in review
+const PROSE = ['README.md','docs/splitstick-1.0-release-notes.md','docs/threat-model.md'];
+const STALE = [
+  [/\b\d{2,3} (?:requirements|design elements)\b/, 'a hardcoded count in prose; counts belong in the generated matrices'],
+  [/EUR 5,000|EUR 50,000/, 'a cash bounty figure retracted when the award became recognition'],
+  [/\bexternal arbiter\b/, 'the arbiter requirement was removed when adjudication was removed'],
+];
+for (const f of PROSE) {
+  if (!fs.existsSync(f)) continue;
+  const lines = fs.readFileSync(f,'utf8').split('\n');
+  lines.forEach((l, i) => { for (const [re, why] of STALE)
+    if (re.test(l) && !/never in prose|retracted|removed when|generated matri|^\|\s*\d+\s*\|/.test(l))
+      flag('STALE ', `${f}:${i+1} ${why} -> "${l.trim().slice(0,70)}"`); });
+}
+
 console.log(out.length ? out.map(l => '  ' + l).join('\n') : '  no structural issues');
 console.log(`\n  ${out.length} finding(s) across ${reqs.length} requirements and ${elements.length} design elements`);

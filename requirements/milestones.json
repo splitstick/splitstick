@@ -43,7 +43,7 @@
       "goal": "Start everything whose clock runs outside engineering, and turn the red-team suite into the acceptance harness.",
       "gate": [],
       "weeks": "1-2, parallel to M1",
-      "exit": "Trademark search returned. External arbiter named. Counsel engaged. Threat model published. CI runs the canary. Harness inverted so each attack class can assert DETECTED against our own verifier.",
+      "exit": "Trademark search returned and recorded. Counsel engagement deferred to a funded release. Threat model published. CI runs the canary, the DCO check and all three validators. Harness inverted so each attack class can assert DETECTED against our own verifier. Bounty adjudication removed rather than outsourced, so no arbiter is required.",
       "ids": [
         "GOV-01",
         "GOV-02",
@@ -161,7 +161,8 @@
         "FR-17",
         "FR-54",
         "SEC-26",
-        "DOC-09"
+        "DOC-09",
+        "FR-57"
       ]
     },
     {
@@ -189,7 +190,8 @@
         "FR-51",
         "OPS-06",
         "LEG-19",
-        "SEC-24"
+        "SEC-24",
+        "FR-58"
       ]
     },
     {
@@ -212,7 +214,8 @@
         "FR-40",
         "SEC-11",
         "SEC-12",
-        "DOC-05"
+        "DOC-05",
+        "DOC-10"
       ]
     },
     {

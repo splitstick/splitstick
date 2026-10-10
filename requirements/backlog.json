@@ -223,9 +223,9 @@
       "type": "functional",
       "release": "1.0",
       "title": "Build digest in heartbeat",
-      "statement": "Each heartbeat carries the collector's build digest.",
+      "statement": "Each heartbeat carries the collector build digest, binding a run to a traceable artifact for configuration assurance and non-repudiation by an honest operator. It is not an attestation of the running process and does not detect a dishonest patch.",
       "source": "Coverage attestation — build digest",
-      "verify": "Patched binary reports an unrecognised digest"
+      "verify": "Digest present and resolvable to a published provenance attestation; test asserts no claim of patch detection appears in output"
     },
     {
       "id": "FR-26",
@@ -250,9 +250,9 @@
       "type": "functional",
       "release": "1.0",
       "title": "splitstick coverage",
-      "statement": "Produce a coverage report over a date range stating the percentage of tool calls captured and proving collector liveness throughout.",
+      "statement": "Produce a coverage report over a date range stating the proportion of actions the collector reported that were captured, chained and anchored, plus heartbeat continuity — never a claim about actions the collector did not report.",
       "source": "Coverage attestation — splitstick coverage",
-      "verify": "Report output matches injected gaps exactly"
+      "verify": "Report wording asserted by test; injected gaps appear exactly; a suppressed action does not appear and the report does not imply completeness"
     },
     {
       "id": "FR-29",

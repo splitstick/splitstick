@@ -216,10 +216,10 @@
     "id": "SEC-11",
     "type": "security",
     "release": "1.0",
-    "title": "Resist collector suppression",
-    "statement": "Stopping or patching the collector and claiming a quiet period must be detectable and attributable.",
+    "title": "Resist collector stoppage",
+    "statement": "Stopping the collector and claiming a quiet period must be detectable, by heartbeat discontinuity. Patching the collector is NOT covered: a modified build can report the original digest, and a self-reported digest is not remote attestation.",
     "source": "Attack class table, row 6",
-    "verify": "Kill and patch tests against coverage report"
+    "verify": "Kill the collector mid-window; the coverage report shows an undeclared gap. A separate test asserts a collector reporting a forged digest is NOT flagged, so the limit is pinned by a test rather than by prose"
   },
   {
     "id": "SEC-12",

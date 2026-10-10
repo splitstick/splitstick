@@ -15,15 +15,21 @@ splitstick.example/treasury-agent
 3ba3f74c546447627be1c2dfb309e63f8c1d4e7a9b2f5c8d0e3a6b9c2d5f8a1b=
 
 — operator.treasury 7f3a9c2e MEUCIQD…
-— tsa.example       b3b9f297 MEQCIBc…
+— audit.internal    5d1e8a3b MEQCIBc…
 ```
+
+Only signers implementing the C2SP witness protocol appear as note lines. **An RFC 3161 TSA
+cannot** — it produces a DER `TimeStampToken`, and an OpenTimestamps proof is not a signature at
+all. Those live in the typed envelope beside the note (`DES-20`), each declaring the bytes it
+covers.
 
 Lines are: origin (a unique identifier for this log), tree size, base64 root hash, blank line,
 then one `— <key name> <key hint> <base64 signature>` line per signer.
 
 **Multiple signature lines on one note is why this format was chosen.** The operator signs, then
-each witness appends. Quorum (FR-19) is a count of acceptable signature lines, and nothing needs
-restructuring to add a second witness.
+each C2SP-protocol witness appends. Quorum (FR-19) counts acceptable proofs across the note lines
+*and* the envelope (`DES-20`), and is reported per capability class rather than as one number —
+two time-only witnesses are not two independent sequence witnesses.
 
 ## The time assertion — FR-45, SEC-25
 

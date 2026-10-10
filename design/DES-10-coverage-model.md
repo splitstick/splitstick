@@ -29,11 +29,22 @@ This is why the chain is collector-scoped (DES-04). A heartbeat stream living in
 prove nothing about the interval between runs — which is precisely when stopping the collector is
 invisible, and therefore precisely the window an operator would choose.
 
-**`build` is what makes suppression attributable.** A patched collector reports an unrecognised
-digest; a stopped one reports nothing. And the digest is only meaningful because DES-17 publishes
-a provenance attestation binding it to a source commit — **without DES-17 this field proves that
-some build ran**, which is why SEC-22 had to move into M1 rather than sit in M0 where it could
-not be done.
+**What `build` does and does not do.** An external review was right to push back here, and an
+earlier draft of this document overclaimed.
+
+It **does**: bind a window to a traceable artifact, so an honest operator can show which build
+ran, a misconfiguration is caught, and the digest resolves to a provenance attestation (`DES-17`)
+that ties the artifact to a source commit. Without `DES-17` the field would prove only that
+*some* build ran, which is why `SEC-22` had to move into M1.
+
+It **does not**: detect a dishonest patch. A modified collector controls what it reports and can
+emit the original digest while suppressing actions. **A self-reported digest is not remote
+attestation**, and this release deliberately provides none (`SCOPE-12` rejected TEE claims for
+reasons that still hold).
+
+So the honest split, now pinned by `SEC-11`'s tests rather than by prose: **stopping the
+collector is detectable** by heartbeat discontinuity; **patching it is not.** `DOC-10` requires
+that limit stated wherever coverage is described, including in the report output itself.
 
 ### Gap declaration — FR-26, FR-27
 
@@ -62,8 +73,10 @@ Produces the claim that answers an auditor:
 
 ```
 window          2027-01-01 .. 2027-03-31
-actions         18,422 captured, all chained and anchored
-collector       alive 99.98% of the window, one build: sha256:7f3a…
+actions         18,422 reported by the collector, all chained and anchored
+collector       heartbeat continuous 99.98% of the window, one build: sha256:7f3a…
+                (a patched collector reporting a valid digest is not detectable
+                 without remote attestation, which this release does not provide)
 gaps            1 declared  (4790-4795, queue_lost_on_disk_full, countersigned)
                 0 undeclared
 anchoring       100% of batches witnessed; 3 late (max delay 11 min), reported below
@@ -76,9 +89,13 @@ weaker, rather than silently absent.
 
 ## What this does not prove — SEC-11's boundary
 
-A collector patched to **drop one specific tool call** while still heartbeating with a recognised
-build digest produces a correct-looking, complete-looking record. Coverage proves the collector
-was running and which build; it cannot prove the build did not lie.
+A collector patched to **drop one specific tool call** while still heartbeating with the original
+build digest produces a correct-looking, complete-looking record. Coverage proves a heartbeat was
+continuous and reports a digest; it proves nothing about whether the process emitting that digest
+was the artifact the digest names.
+
+So "100% captured" means **100% of what the collector reported** — stated that way in the output,
+not softened in a footnote.
 
 Closing that requires the counterparty to co-sign, which is bilateral receipts (RM-01) in 2.0.
 Until then the record rests partly on the operator's word, and the threat model says so under

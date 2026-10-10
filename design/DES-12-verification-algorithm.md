@@ -60,6 +60,29 @@ Each carries what a reader may conclude, because "verification failed" is useles
 `COVERAGE_GAP` | A window with no heartbeat and no declaration. |
 `TRUNCATED_BELOW_DISCLOSED` | A pack already disclosed holds a countersigned checkpoint above where this record ends. **Truncation, caught without a stateful witness.** |
 
+## The capability statement — FR-57
+
+A verdict is incomplete without saying what the evidence could establish. An external review
+pushed on this: the default witness set cannot reject a truncated history, so a bare `ok` would
+imply more than was checked.
+
+Every verdict therefore carries what the observed witnesses can and cannot do:
+
+```
+verdict     OK  (12 checks passed, 1 inconclusive)
+witnesses   tsa.example  (rfc3161, time only)
+            bitcoin      (opentimestamps, time lower bound only)
+capability  no witness in this set maintains sequence state
+            truncation above record_seq 4812 is NOT detectable
+            below that height, cross-pack comparison applies (DES-19)
+trusting    the primitives; tsa.example's clock; whoever retained the compared pack
+```
+
+Derived from the proof types actually present in the envelope (`DES-20`), not from
+configuration — a verifier reads evidence, and the operator's config is not evidence. Quorum is
+reported **per capability class**, because two time-only witnesses are not two independent
+sequence witnesses and one aggregate number would hide that.
+
 ## Offline by construction — NFR-05, NFR-06
 
 `verify` opens files and performs arithmetic. It makes **no** network call, reads **no**

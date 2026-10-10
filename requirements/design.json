@@ -147,7 +147,8 @@
         "FR-27",
         "FR-28",
         "FR-40",
-        "SEC-11"
+        "SEC-11",
+        "DOC-10"
       ],
       "spec": "design/DES-10-coverage-model.md"
     },
@@ -173,7 +174,8 @@
         "NFR-05",
         "NFR-06",
         "SEC-03",
-        "SEC-04"
+        "SEC-04",
+        "FR-57"
       ],
       "spec": "design/DES-12-verification-algorithm.md"
     },
@@ -225,7 +227,8 @@
         "NFR-13",
         "OPS-02",
         "OPS-06",
-        "SCOPE-16"
+        "SCOPE-16",
+        "FR-58"
       ],
       "spec": "design/DES-15-failure-and-availability.md"
     },
@@ -289,6 +292,18 @@
         "DOC-09"
       ],
       "spec": "design/DES-19-detection-without-a-witness.md"
+    },
+    {
+      "id": "DES-20",
+      "milestone": "M3a",
+      "title": "Countersignature envelope",
+      "decides": "How proofs in three incompatible formats — C2SP note signature lines, DER RFC 3161 timestamp tokens, and OpenTimestamps proofs — are carried over one checkpoint and verified, since a TSA cannot sign a signed note and an OTS proof is not a signature at all.",
+      "covers": [
+        "FR-12",
+        "FR-31",
+        "INT-02"
+      ],
+      "spec": "design/DES-20-countersignature-envelope.md"
     }
   ],
   "nondesign": {

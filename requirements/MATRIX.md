@@ -11,32 +11,32 @@ Regenerate with `npm run requirements`.
 
 | Category | Count |
 |---|---:|
-| Functional | 56 |
+| Functional | 58 |
 | Security | 26 |
 | Legal & regulatory | 19 |
 | Governance, licensing & community | 19 |
 | Scope guards (negative) | 16 |
 | Non-functional | 13 |
+| Documentation & transparency | 10 |
 | Roadmap (post-1.0) | 10 |
 | Privacy & data protection | 9 |
-| Documentation & transparency | 9 |
 | Interoperability & standards | 7 |
 | Operational | 6 |
 | Traceability & process | 5 |
-| **Total** | **195** |
+| **Total** | **198** |
 
 ### By release
 
 | Release | Count |
 |---|---:|
-| 1.0 | 178 |
+| 1.0 | 181 |
 | 2.0 | 5 |
 | commercial | 12 |
-| **Total** | **195** |
+| **Total** | **198** |
 
 ## Matrix
 
-### Functional — 56
+### Functional — 58
 
 | ID | Requirement | Traces to | Verified by | Rel | M | Status |
 |---|---|---|---|---|---|---|
@@ -64,10 +64,10 @@ Regenerate with `npm run requirements`.
 | `FR-22` | **Hard anchor tier** — Provide an optional slow, trust-minimised anchor tier that no company can withdraw. | Independence — hard anchor | Anchor obtained; off unless explicitly enabled | 1.0 | M3a | ☐ |
 | `FR-23` | **Policy changes as chain events** — Record any change to the witness set or quorum as a timestamped event inside the chain. | Independence — written into the chain | Red-team: policy downgrade is visible in the record | 1.0 | M4 | ☐ |
 | `FR-24` | **Signed heartbeats** — Emit signed heartbeats into the collector-scoped chain at a configured interval, independently of whether any run is active, because the dangerous window is precisely when none is. | Coverage attestation — signed heartbeats | Stopping the collector produces a detectable gap, including during an interval with no agent run | 1.0 | M4 | ☐ |
-| `FR-25` | **Build digest in heartbeat** — Each heartbeat carries the collector's build digest. | Coverage attestation — build digest | Patched binary reports an unrecognised digest | 1.0 | M4 | ☐ |
+| `FR-25` | **Build digest in heartbeat** — Each heartbeat carries the collector build digest, binding a run to a traceable artifact for configuration assurance and non-repudiation by an honest operator. It is not an attestation of the running process and does not detect a dishonest patch. | Coverage attestation — build digest | Digest present and resolvable to a published provenance attestation; test asserts no claim of patch detection appears in output | 1.0 | M4 | ☐ |
 | `FR-26` | **Signed gap declarations** — Allow the operator to record an explicit, signed declaration of a genuinely lost batch so the sequence can recover. | Coverage attestation — signed gap declarations | Sequence resumes after a declared gap without a silent reset | 1.0 | M4 | ☐ |
 | `FR-27` | **Countersigned gap declarations** — Gap declarations are themselves submitted for countersignature. | Coverage attestation — signed, countersigned statement of absence | Declaration carries a witness signature | 1.0 | M4 | ☐ |
-| `FR-28` | **splitstick coverage** — Produce a coverage report over a date range stating the percentage of tool calls captured and proving collector liveness throughout. | Coverage attestation — splitstick coverage | Report output matches injected gaps exactly | 1.0 | M4 | ☐ |
+| `FR-28` | **splitstick coverage** — Produce a coverage report over a date range stating the proportion of actions the collector reported that were captured, chained and anchored, plus heartbeat continuity — never a claim about actions the collector did not report. | Coverage attestation — splitstick coverage | Report wording asserted by test; injected gaps appear exactly; a suppressed action does not appear and the report does not imply completeness | 1.0 | M4 | ☐ |
 | `FR-29` | **splitstick verify** — Verify chain integrity, batch signatures and witness countersignatures from files alone. | Proof — offline verification | All red-team classes fail closed; baseline passes | 1.0 | M1 | ☐ |
 | `FR-30` | **Acceptance policy as input** — The verifier takes a caller-supplied acceptance policy naming trusted witness keys and quorum. | Proof — an input, not a hardcoded trust store | Same pack verifies under two different policies | 1.0 | M3a | ☐ |
 | `FR-31` | **Evidence pack carries all countersignatures** — Packs include every countersignature collected, not only Splitstick's. | Proof — never only ours | Automated pack assertion: after anchoring to three witnesses, the pack contains three signature lines and verification succeeds under a policy naming only the third | 1.0 | M3a | ☐ |
@@ -96,6 +96,8 @@ Regenerate with `npm run requirements`.
 | `FR-54` | **Cross-pack consistency verification** — Given two or more evidence packs, detect a record inconsistent with a checkpoint already countersigned in an earlier pack — so a record truncated below a height previously disclosed is contradicted offline, with no live service. | Proof — offline verification; Durability | Disclose at seq 5000, truncate to 4799, compare the two packs: the earlier countersigned checkpoint contradicts the later record | 1.0 | M3a | ☐ |
 | `FR-55` | **Counterparty reference capture** — Extract externally issued identifiers from a tool result and index them for reconciliation. The index lives in the deletable content store, never in the chain, because a transaction reference can itself be identifying. | Capture — action record | A result containing an external reference is indexed and queryable; the index is removed by crypto-shredding | 1.0 | M1 | ☐ |
 | `FR-56` | **Collector instance identity** — Each collector instance has a stable identity that scopes its chain and its log origin. Records carry the run they belong to as a field; the chain itself is collector-scoped, so concurrent runs interleave in one log and heartbeats need no run at all. | Capture — action record; Coverage attestation | Two concurrent runs produce one contiguous chain with correct run tags; a heartbeat emitted with no run active is chained and anchored | 1.0 | M1 | ☐ |
+| `FR-57` | **Verifier states witness-set capabilities** — The verifier prints what the configured or observed witness set can and cannot establish — in particular whether any witness maintains operator sequence state, and therefore whether truncation above the last disclosed height is detectable at all. | Proof — offline verification; Independence | Test asserts a stateless witness set yields an explicit "truncation not detectable above <height>" line, and a stateful one does not | 1.0 | M3a | ☐ |
+| `FR-58` | **Reserved slot for gap declarations** — Pre-allocate storage sufficient to write a gap declaration, so the declaration can be written even when the store is otherwise exhausted. If even that fails, the condition is surfaced out of band and the next successful write declares the lost window. | Operations — fails open, loudly | Disk-exhaustion test: the agent completes, a gap declaration is written from the reserve, and the lost window appears in the coverage report | 1.0 | M3b | ☐ |
 
 ### Non-functional — 13
 
@@ -129,7 +131,7 @@ Regenerate with `npm run requirements`.
 | `SEC-08` | **Resist re-signing history** — Re-signing rewritten history with the current key must be detectable under non-exportable custody. | Attack class table, row 3 | Epoch ratchet test with HSM | 1.0 | M2 | ☐ |
 | `SEC-09` | **Resist truncation** — Truncating the record's tail must be detectable. | Attack class table, row 4 | Red-team class D | 1.0 | M3a | ☐ |
 | `SEC-10` | **Resist erasure and renumbering** — Erasing events and renumbering into a clean stream must be detectable. | Attack class table, row 5 | Red-team class F | 1.0 | M3a | ☐ |
-| `SEC-11` | **Resist collector suppression** — Stopping or patching the collector and claiming a quiet period must be detectable and attributable. | Attack class table, row 6 | Kill and patch tests against coverage report | 1.0 | M4 | ☐ |
+| `SEC-11` | **Resist collector stoppage** — Stopping the collector and claiming a quiet period must be detectable, by heartbeat discontinuity. Patching the collector is NOT covered: a modified build can report the original digest, and a self-reported digest is not remote attestation. | Attack class table, row 6 | Kill the collector mid-window; the coverage report shows an undeclared gap. A separate test asserts a collector reporting a forged digest is NOT flagged, so the limit is pinned by a test rather than by prose | 1.0 | M4 | ☐ |
 | `SEC-12` | **Resist policy downgrade** — Weakening the anchoring policy before tampering must be visible in the record. | Attack class table, row 7 | Test weakens the witness set, then asserts a countersigned policy event appears in the chain before the next batch | 1.0 | M4 | ☐ |
 | `SEC-13` | **Digest pre-image resistance in practice** — Salting must prevent brute-force recovery of low-entropy action records from their digests. | Integrity — otherwise simply brute-forced | Dictionary attack against salted digests fails | 1.0 | M1 | ☐ |
 | `SEC-14` | **Operator key never leaves operator** — Splitstick must never hold, receive, request or log the operator signing key. | Integrity — Splitstick never holds it, sees it, or asks for it | Automated egress capture during a representative run asserts no private key material leaves the host; plus a code check that no verifier or collector module imports a key-export API | 1.0 | M1 | ☐ |
@@ -252,7 +254,7 @@ Regenerate with `npm run requirements`.
 | `SCOPE-15` | **Hard anchor must be disableable** — The trust-minimised roll-up anchor must be switchable off in one setting, and switching it off must be recorded in the chain like any other policy change. It is on by default because it is the only free public anchor with no acceptable-use objection; it must never be mandatory, because some regulated buyers forbid public-chain anchoring outright. | Independence — optional and off by default | One setting disables it; the change appears as a chain event | 1.0 | M3a | ☐ |
 | `SCOPE-16` | **No fail-closed option** — MUST NOT provide any configuration, flag or build that makes the collector block an agent run. Fail-open is a design constraint, not a setting. | Operations — a design constraint, not a setting | Config schema review; no enforcement path exists; rejected as a feature request by policy | 1.0 | M7 | ☐ |
 
-### Documentation & transparency — 9
+### Documentation & transparency — 10
 
 | ID | Requirement | Traces to | Verified by | Rel | M | Status |
 |---|---|---|---|---|---|---|
@@ -265,6 +267,7 @@ Regenerate with `npm run requirements`.
 | `DOC-07` | **Document the two-policy split** — Document that the witness list governs who is asked and the acceptance policy governs who is accepted. | Getting started — separate files on purpose | Documentation review; worked example for both | 1.0 | M7 | ☐ |
 | `DOC-08` | **Publish bounty terms** — Publish the full bounty terms alongside the offer. | Bounty terms | Terms published before the offer goes live | 1.0 | M7 | ☐ |
 | `DOC-09` | **Reconciliation guidance** — Document reconciliation against counterparty records as a detection method for erasure and omission, with its limits stated: it requires access to the counterparty and it is a procedure an auditor performs, not a guarantee the software makes. | Durability; Threat model — residual risk | Guidance published; the limits appear wherever the method is claimed | 1.0 | M3a | ☐ |
+| `DOC-10` | **Document the collector-patch limit** — State plainly, wherever coverage attestation is described, that a collector patched to report a valid digest while suppressing actions is not detectable without remote attestation, which this release does not provide. | Coverage attestation; Threat model — residual risk | Statement present in the threat model, the coverage report output, and DES-10; claims audit checks no surface implies otherwise | 1.0 | M4 | ☐ |
 
 ### Roadmap (post-1.0) — 10
 
@@ -293,4 +296,4 @@ Regenerate with `npm run requirements`.
 
 ---
 
-*195 requirements. Status column is maintained by hand as work lands.*
+*198 requirements. Status column is maintained by hand as work lands.*

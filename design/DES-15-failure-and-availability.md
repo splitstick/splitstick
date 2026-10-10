@@ -46,6 +46,27 @@ Durability | Queue entries are `fsync`ed before the run continues. A `kill -9` l
 Ordering | Drained in sequence order, because a stateful witness requires contiguity (DES-08). |
 Retry | Exponential backoff, 1 s to 5 min, indefinitely. Never a dead-letter drop: a batch abandoned silently is exactly the evidence gap this project exists to detect. |
 Bounded growth | At a configurable ceiling, emit a `gap` declaration (DES-10) rather than grow without limit or discard quietly. |
+Reserved slot | Space for one gap declaration is **pre-allocated at startup** (FR-58), so the declaration can be written even when the store is otherwise exhausted. A design that can only report failure while healthy reports nothing when it matters. |
+
+## When nothing can be persisted
+
+An external review noted correctly that durable recording and uninterrupted execution cannot both
+hold under disk exhaustion. The design must say which gives way, rather than implying neither
+does.
+
+**Execution gives way to nothing; durability gives way.** In order:
+
+1. The queue's reserved slot (FR-58) is used to write a gap declaration. Normally sufficient.
+2. If even the reserve cannot be written, the run **still continues** and **records are lost**.
+3. The condition is surfaced out of band — non-zero exit status on the collector process, a line
+   on stderr, and a metric — because an unreportable failure that is also silent is the worst
+   available outcome.
+4. On the next successful write, a gap declaration covering the lost window is emitted and
+   anchored.
+
+What must never happen is a claim of durability over that window. The coverage report shows it as
+an **undeclared** gap until step 4 converts it to a declared one, and an undeclared gap is exactly
+the signal an auditor should treat as adverse.
 
 ## Witness store durability — OPS-06
 
