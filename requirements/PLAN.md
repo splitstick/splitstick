@@ -29,7 +29,7 @@ Every milestone runs the complete red-team suite, not only its own classes. A ga
 | Milestone | Gate | Reqs | Weeks | Goal |
 |---|---|---:|---|---|
 | **M0** Foundations and long-lead | — | 15 | 1-2, parallel to M1 | Start everything whose clock runs outside engineering, and turn the red-team suite into the acceptance harness. |
-| **M1** Local integrity | AC-1, AC-2 | 24 | 3-4 | Close the two attack classes that need no third party, and measure the performance budget before the design hardens. |
+| **M1** Local integrity | AC-1, AC-2 | 25 | 3-4 | Close the two attack classes that need no third party, and measure the performance budget before the design hardens. |
 | **M2** Key custody | AC-3 | 5 | 2 | Make yesterday's record unforgeable with today's key, and state the precondition honestly. |
 | **M3a** Anchoring and sequencing | AC-4, AC-5 | 24 | 5-7 | The first second party. Close truncation and erasure, which no amount of local cryptography can reach. |
 | **M3b** Practice statement and resilience | — | 18 | 3-4 | Say exactly what the countersignature means, and make sure losing a witness does not lose the evidence. |
@@ -37,7 +37,7 @@ Every milestone runs the complete red-team suite, not only its own classes. A ga
 | **M5** Disclosure and erasure | — | 16 | 3-4 | No new attack class. This is the milestone that makes the product buyable by a regulated, multi-customer organisation. |
 | **M6** Reach and conformance | — | 23 | 4-6 | Stop depending on one upstream project, and make the format genuinely somebody else's to implement. |
 | **M7** Launch gate | — | 36 | 2 | Every promise that is a claim rather than a feature. This milestone is mostly about what we must not say. |
-| | | **171** | | |
+| | | **172** | | |
 
 ## Milestones
 
@@ -73,7 +73,7 @@ Start everything whose clock runs outside engineering, and turn the red-team sui
 Close the two attack classes that need no third party, and measure the performance budget before the design hardens.
 
 - **Gate:** `AC-1` — Alter the recorded action — arguments, result, approval decision; `AC-2` — Alter an event and repair the citing digest
-- **Requirements:** 24 (FR×11  SEC×6  NFR×3  INT×2  PRIV×1  DOC×1)
+- **Requirements:** 25 (FR×12  SEC×6  NFR×3  INT×2  PRIV×1  DOC×1)
 - **Effort:** weeks 3-4
 - **Exit criteria:** Red-team A and C both DETECTED by splitstick verify; baseline still passes. p99 append overhead measured under 1 ms and run latency under 2% — measured, not assumed. Chain files contain no plaintext. First package published with a provenance attestation and an SBOM, so the build digest M4 relies on can be traced to its source.
 
@@ -103,6 +103,7 @@ Close the two attack classes that need no third party, and measure the performan
 | ☐ `INT-07` | **No agent code changes** — Both collectors integrate by dependency and configuration only; no change to the customer's agent code is required. | Byte-identical agent source before and after integration, for both collectors |
 | ☐ `SEC-22` | **Build provenance attestation** — Publish a provenance attestation for every released collector artifact, binding the digest to its source commit and build, so the digest in a heartbeat can be independently traced. | Attestation verifies against the published artifact and source revision |
 | ☐ `SEC-23` | **Signed releases and SBOM** — Sign every release and publish an SBOM with pinned dependencies. | Signature and SBOM present and verified in CI for each release |
+| ☐ `FR-52` | **Canonicalisation completeness** — The canonical encoding must cover every field of the action record at every nesting depth. A test must prove that mutating any single field, at any depth, changes the leaf digest. | Property test mutating each field in turn, including nested argument keys; every mutation must change the digest |
 
 ### M2 — Key custody
 
@@ -348,4 +349,4 @@ Every promise that is a claim rather than a feature. This milestone is mostly ab
 
 ---
 
-*171 requirements in 1.0 across 9 milestones; 188 total in the backlog.*
+*172 requirements in 1.0 across 9 milestones; 189 total in the backlog.*

@@ -135,5 +135,14 @@
     "verify": "Section present in the release notes and the README",
     "status": "done",
     "evidence": "Resourcing section in README and notes"
+  },
+  {
+    "id": "FR-52",
+    "type": "functional",
+    "release": "1.0",
+    "title": "Canonicalisation completeness",
+    "statement": "The canonical encoding must cover every field of the action record at every nesting depth. A test must prove that mutating any single field, at any depth, changes the leaf digest.",
+    "source": "Capture — action record: tool name, arguments, result, approval decision",
+    "verify": "Property test mutating each field in turn, including nested argument keys; every mutation must change the digest"
   }
 ]

@@ -11,7 +11,7 @@ Regenerate with `npm run requirements`.
 
 | Category | Count |
 |---|---:|
-| Functional | 51 |
+| Functional | 52 |
 | Security | 25 |
 | Legal & regulatory | 19 |
 | Governance, licensing & community | 19 |
@@ -23,20 +23,20 @@ Regenerate with `npm run requirements`.
 | Interoperability & standards | 7 |
 | Operational | 6 |
 | Traceability & process | 5 |
-| **Total** | **188** |
+| **Total** | **189** |
 
 ### By release
 
 | Release | Count |
 |---|---:|
-| 1.0 | 171 |
+| 1.0 | 172 |
 | 2.0 | 5 |
 | commercial | 12 |
-| **Total** | **188** |
+| **Total** | **189** |
 
 ## Matrix
 
-### Functional — 51
+### Functional — 52
 
 | ID | Requirement | Traces to | Verified by | Rel | M | Status |
 |---|---|---|---|---|---|---|
@@ -91,6 +91,7 @@ Regenerate with `npm run requirements`.
 | `FR-49` | **Documented CLI contract** — Provide the entry points and flags printed in Getting started: collect-oma, mcp-proxy (--upstream, --out), verify (--policy), coverage (--from, --to) and disclose (--event, --out). | Getting started — the published commands | CLI contract test executes every documented invocation verbatim | 1.0 | M6 | ☐ |
 | `FR-50` | **Witness publishes signed tree heads** — The witness publishes its own signed tree head so an operator or third party can detect a rolled-back or equivocating witness. | Durability — losing a witness must not lose the evidence | Rollback simulation: a witness serving an earlier head is detected | 1.0 | M3a | ☐ |
 | `FR-51` | **Witness key rotation** — Rotate witness keys while keeping historical countersignatures verifiable, by publishing a signed key history. | Durability — key rotation | Countersignatures from a retired key still verify after rotation | 1.0 | M3b | ☐ |
+| `FR-52` | **Canonicalisation completeness** — The canonical encoding must cover every field of the action record at every nesting depth. A test must prove that mutating any single field, at any depth, changes the leaf digest. | Capture — action record: tool name, arguments, result, approval decision | Property test mutating each field in turn, including nested argument keys; every mutation must change the digest | 1.0 | M1 | ☐ |
 
 ### Non-functional — 13
 
@@ -286,4 +287,4 @@ Regenerate with `npm run requirements`.
 
 ---
 
-*188 requirements. Status column is maintained by hand as work lands.*
+*189 requirements. Status column is maintained by hand as work lands.*
