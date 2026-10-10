@@ -8,6 +8,8 @@ signer:
   epoch: 24h
 anchor_interval: 10s             # the mutability window                        NFR-03
 rollup_interval: 1h              # the slower, trust-minimised tier             FR-53
+heartbeat_interval: 5s           # the RESOLUTION of every coverage claim        FR-24
+unwitnessed_ceiling: 1h          # beyond this, no completeness claim is issued  FR-68
 on_unavailable: mark_gap         # the only accepted value                      SCOPE-16
 witnesses:
   - { id: tsa, type: rfc3161, url: "https://<free-public-tsa>" }

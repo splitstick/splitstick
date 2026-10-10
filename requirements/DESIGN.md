@@ -10,9 +10,9 @@ Regenerate with `npm run backlog`.
 | | Count |
 |---|---:|
 | Design elements | 20 |
-| Release-1.0 requirements traced to a design element | 124 |
+| Release-1.0 requirements traced to a design element | 130 |
 | Classified non-design | 60 |
-| **Total 1.0** | **184** |
+| **Total 1.0** | **190** |
 
 ### Non-design classifications
 
@@ -27,7 +27,7 @@ Regenerate with `npm run backlog`.
 
 ### [DES-01 — Action record schema](../design/DES-01-action-record-schema.md)
 
-**Milestone:** M1 · **Requirements covered:** 4
+**Milestone:** M1 · **Requirements covered:** 5
 
 Which fields constitute an action record, their types, and what is deliberately excluded (no prompt, no conversation, no model output).
 
@@ -37,6 +37,7 @@ Which fields constitute an action record, their types, and what is deliberately 
 | `FR-06` | Digest tool result | ☐ |
 | `FR-07` | Digest approval decisions | ☐ |
 | `FR-59` | Action record and chain entry are separate structures | ☐ |
+| `FR-62` | Retries, timeouts and errors in the schema | ☐ |
 
 ### [DES-02 — Canonical encoding](../design/DES-02-canonical-encoding.md)
 
@@ -90,7 +91,7 @@ Batch boundaries, tree shape, odd-leaf handling, and root computation — the co
 
 ### [DES-06 — Key hierarchy, signing and epoch ratchet](../design/DES-06-keys-and-ratchet.md)
 
-**Milestone:** M1 · **Requirements covered:** 8
+**Milestone:** M1 · **Requirements covered:** 9
 
 What an epoch is, how the signing key evolves, how the predecessor is destroyed, the KMS and HSM integration surface, and recovery after compromise.
 
@@ -104,6 +105,7 @@ What an epoch is, how the signing key evolves, how the predecessor is destroyed,
 | `SEC-17` | State the forward-secrecy precondition | ☐ |
 | `SEC-24` | Key compromise recovery | ☐ |
 | `OPS-04` | Separation-of-duties guidance | ☐ |
+| `FR-65` | Chained key-custody declaration | ☐ |
 
 ### [DES-07 — Checkpoint format](../design/DES-07-checkpoint-format.md)
 
@@ -164,7 +166,7 @@ Two separate schemas: the collector's witness set, and the verifier's acceptance
 
 ### [DES-10 — Coverage model](../design/DES-10-coverage-model.md)
 
-**Milestone:** M4 · **Requirements covered:** 6
+**Milestone:** M4 · **Requirements covered:** 7
 
 Heartbeat cadence and contents, the build digest, gap declaration semantics, and precisely what the claim "100% captured between T1 and T2" asserts.
 
@@ -176,6 +178,7 @@ Heartbeat cadence and contents, the build digest, gap declaration semantics, and
 | `FR-40` | Late anchors reported as gaps | ☐ |
 | `SEC-11` | Resist collector stoppage | ☐ |
 | `DOC-10` | Document the collector-patch limit | ☐ |
+| `FR-64` | Collector configuration attestation | ☐ |
 
 ### [DES-11 — Evidence pack format](../design/DES-11-evidence-pack-format.md)
 
@@ -190,7 +193,7 @@ The artifact an auditor receives: records, salts, inclusion paths, every counter
 
 ### [DES-12 — Verification algorithm](../design/DES-12-verification-algorithm.md)
 
-**Milestone:** M1 · **Requirements covered:** 7
+**Milestone:** M1 · **Requirements covered:** 9
 
 The ordered checks, the verdict taxonomy including an inconclusive outcome, and what each distinct failure permits a reader to conclude.
 
@@ -203,6 +206,8 @@ The ordered checks, the verdict taxonomy including an inconclusive outcome, and 
 | `SEC-03` | No trust in operator or vendor | ☐ |
 | `SEC-04` | One honest witness assumption | ☐ |
 | `FR-57` | Verifier states witness-set capabilities | ☐ |
+| `FR-63` | Pinned operator identity | ☐ |
+| `FR-66` | Compare witnesses asked against proofs present | ☐ |
 
 ### [DES-13 — Storage and erasure](../design/DES-13-storage-and-erasure.md)
 
@@ -242,7 +247,7 @@ The shared capture core, the OMA backend, the MCP proxy, and where the capture b
 
 ### [DES-15 — Failure and availability model](../design/DES-15-failure-and-availability.md)
 
-**Milestone:** M3b · **Requirements covered:** 10
+**Milestone:** M3b · **Requirements covered:** 11
 
 Fail-open behaviour, the durable queue, retry and backoff, late countersignature handling, and the guarantee that the collector can never block a run.
 
@@ -258,6 +263,7 @@ Fail-open behaviour, the durable queue, retry and backoff, late countersignature
 | `FR-58` | Reserved slot for gap declarations | ☐ |
 | `FR-60` | Unknown-loss intervals | ☐ |
 | `FR-61` | Observation counter durability | ☐ |
+| `FR-68` | Unwitnessed outage ceiling | ☐ |
 
 ### [DES-16 — Format versioning and algorithm agility](../design/DES-16-format-versioning.md)
 

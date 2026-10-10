@@ -48,8 +48,15 @@ So this element specifies two modes and the claim differs between them:
 | **Software keys** | Ratchet implemented, succession chain valid. **No forward-security claim.** Suitable for development only. |
 | **Non-exportable KMS/HSM** (NFR-09) | Key material never exists outside the module; scheduled deletion is logged by the provider. Forward security claimed, **with the custody precondition stated in the same sentence**. |
 
-The precondition appears wherever the claim does, in docs and in `verify` output. A verifier
-reports which mode produced a signature, so a reader is never left to assume.
+**How a verifier knows which mode applied — FR-65.** It cannot tell from the signature: an HSM
+signature and a signature from a PEM file on disk are byte-identical. So the custody class is
+**declared in a chained, countersigned policy record** per epoch. Without that declaration the
+forward-secrecy precondition is invisible and the claim unverifiable, which an earlier draft
+missed by saying the verifier "reports which mode produced a signature" without saying how it
+could know.
+
+A verifier prints the declared class per epoch and refuses to claim forward secrecy for any epoch
+declared software-keyed.
 
 ## Key compromise — SEC-24, M3b
 

@@ -75,6 +75,17 @@ and *"you can prove I deleted none."* The count is deliberately public.
 **FR-34** offers optional batch padding with dummy leaves where activity volume itself is
 sensitive. Off by default, because it inflates every proof and most operators do not need it.
 
+Three rules, because padding interacts directly with the count guarantee above and an
+underspecified version would undermine it:
+
+1. **Applied only at batch close, never retroactively.** Retroactive padding would let an
+   operator reshape a committed tree.
+2. **Dummy leaves are explicitly typed**, so a verifier holding the pack counts real and padded
+   leaves separately. Indistinguishable padding would make the disclosed tree size meaningless,
+   which is the one thing the count guarantee rests on.
+3. **A real action can never be reclassified as padding.** Its leaf is already committed; a
+   reclassification changes the leaf and fails verification.
+
 ## Consequences
 
 - Proof size is O(log n) twice over — around 20 sibling digests for a million records, so under

@@ -1,6 +1,6 @@
 # Splitstick 1.0 — draft release notes
 
-`v1.0.0` · Apache-2.0 · rev. 12
+`v1.0.0` · Apache-2.0 · rev. 13
 
 **Agent actions you can prove — including the ones that aren't there.**
 
@@ -366,6 +366,8 @@ cheapest way to give away a judgement is to stop making one.
 # splitstick.yaml — the witness surface. Defaults shown; every line is yours to change.
 anchor_interval: 10s             # the mutability window
 rollup_interval: 1h              # the slower, trust-minimised tier
+heartbeat_interval: 5s           # the resolution of every coverage claim
+unwitnessed_ceiling: 1h          # beyond this, no completeness claim is issued
 on_unavailable: mark_gap         # the only accepted value
 witnesses:
   - { id: tsa, type: rfc3161, url: "https://<free-public-tsa>" }
@@ -402,7 +404,8 @@ our key.
 ## Licence and governance
 
 **Apache-2.0**, including the patent grant. Contributions under DCO. The spec, wire format, test
-vectors, practice statement and both collectors are open, and **we commit publicly to never
+vectors, practice statement, both collectors **and the witness implementation** are open, and
+**we commit publicly to never
 relicensing them** — a business built on trust cannot afford a licence people expect to change.
 
 Anyone may run a witness against this format, including our competitors and the hyperscalers. The
@@ -458,6 +461,7 @@ is published rather than discarded, on the same principle as everything else her
 | 6 | ADDED | The witness time source is now named in the practice statement, since the countersignature asserts a time and nothing previously said where that time came from. |
 | 7 | SCOPED | Re-scoped as an unfunded open-source release after a feasibility review found that 40% of requirements were non-engineering and most existed only because the notes were written as a commercial launch. Nothing technical was cut. |
 | 7 | CHANGED | Default witness set is now `[rekor]` alone — no vendor in the shipped configuration, which is both the strongest independence claim and free. |
+| 13 | ANSWERED | Ten open questions from an independent study of rev. 6 closed. Retries, timeouts and errors entered the schema — a retry is a new record sharing a correlation id, never an overwrite. Key custody is now declared in a chained record, since an HSM signature and a file-key signature are byte-identical. The verifier pins an expected operator identity and compares witnesses asked against proofs present. The collector attests its own capture configuration, which converts quietly adding an unobserved path into leaving a trace. Fail-open gained a ceiling beyond which no completeness claim is issued. The witness implementation joined the open-component set, because the self-hosting story cannot rest on a binary nobody may read. Padding rules, the heartbeat interval, and the one notion of operator identity across hosted and self-hosted witnesses are all now specified. |
 | 12 | CORRECTED | A fourth review round, both findings narrow. gap_unknown was introduced in the failure model but never added to the record schema's closed enum, which would have made every unknown-loss record unverifiable; it is now a first-class kind, and a run containing one yields an inconclusive coverage verdict rather than proof of complete capture. The retained-metadata inventory was incomplete — a partial inventory reads as exhaustive and is worse than none — so it now lists every persisted field, and the undefined request_hash became a salted commitment like every other payload, because a bare hash of an approval request is brute-forceable from a handful of guessable fields. |
 | 11 | CORRECTED | A third review round. The leaf salt was removed from the persisted chain entry, where it could never have been shredded. The gap model was fixed: record_seq counts writes, so a lost action leaves no hole, and a gap declaration now occupies one record position while describing the lost span in a separate source_seq — a single gap record cannot occupy six positions and contribute one leaf. A dependency cycle between FR-08 and FR-59 was broken and the validator now rejects cycles. Erasure now enumerates exactly what permanently remains instead of claiming it removes all personal information, with the agent label and any reviewer moved to erasable digests. The default configuration became one canonical file that documentation is checked against. |
 | 10 | CORRECTED | Two external review rounds. A TSA cannot sign a C2SP note, so heterogeneous proofs moved into a typed envelope (DES-20) and the operator now signs the note itself rather than a custom preimage no witness could have matched. The build-digest claim was narrowed: stopping the collector is detectable, patching it is not. A witness now verifies a Merkle consistency proof rather than requiring tree_size to increase by one, which contradicted ten-second checkpointing. Payloads became content-addressed and fully externalised, so substitution is impossible and erasure reaches everything. ActionRecord and ChainEntry were separated to remove a circular hash. Stale defaults and coverage wording in these notes corrected. |

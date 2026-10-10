@@ -10,7 +10,8 @@
         "FR-05",
         "FR-06",
         "FR-07",
-        "FR-59"
+        "FR-59",
+        "FR-62"
       ],
       "spec": "design/DES-01-action-record-schema.md"
     },
@@ -77,7 +78,8 @@
         "SEC-14",
         "SEC-17",
         "SEC-24",
-        "OPS-04"
+        "OPS-04",
+        "FR-65"
       ],
       "spec": "design/DES-06-keys-and-ratchet.md"
     },
@@ -149,7 +151,8 @@
         "FR-28",
         "FR-40",
         "SEC-11",
-        "DOC-10"
+        "DOC-10",
+        "FR-64"
       ],
       "spec": "design/DES-10-coverage-model.md"
     },
@@ -176,7 +179,9 @@
         "NFR-06",
         "SEC-03",
         "SEC-04",
-        "FR-57"
+        "FR-57",
+        "FR-63",
+        "FR-66"
       ],
       "spec": "design/DES-12-verification-algorithm.md"
     },
@@ -231,7 +236,8 @@
         "SCOPE-16",
         "FR-58",
         "FR-60",
-        "FR-61"
+        "FR-61",
+        "FR-68"
       ],
       "spec": "design/DES-15-failure-and-availability.md"
     },

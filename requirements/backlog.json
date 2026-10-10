@@ -304,9 +304,9 @@
       "type": "functional",
       "release": "1.0",
       "title": "Optional batch padding",
-      "statement": "Provide optional padding of batches to obscure activity volume.",
+      "statement": "Provide optional padding of batches with dummy leaves to obscure activity volume. Padding is applied only at batch close and never retroactively; dummy leaves are explicitly typed so a verifier holding the pack can count them; and a real action can never be reclassified as padding, because its leaf is already committed.",
       "source": "Disclosure — optional batch padding",
-      "verify": "Anchor volume decoupled from event volume when enabled"
+      "verify": "Retroactive padding is rejected; a verifier reports real and dummy leaf counts separately; reclassifying a committed action fails the leaf check"
     },
     {
       "id": "FR-35",
@@ -367,18 +367,18 @@
       "type": "functional",
       "release": "1.0",
       "title": "Configuration file",
-      "statement": "Support splitstick.yaml with witnesses, quorum, on_unavailable and anchor_interval keys.",
+      "statement": "Support splitstick.yaml with store, signer, anchor_interval, rollup_interval, heartbeat_interval, on_unavailable, witnesses, quorum and unwitnessed_ceiling keys.",
       "source": "Getting started — splitstick.yaml",
-      "verify": "The documented example config is loaded in test and each key asserted to take effect"
+      "verify": "The documented example config is loaded in test and each key asserted to take effect; heartbeat_interval is present because it sets the resolution of every coverage claim"
     },
     {
       "id": "FR-42",
       "type": "functional",
       "release": "1.0",
       "title": "Operator enrolment",
-      "statement": "Register an operator identity and public key with a witness so per-operator sequence state can be kept.",
+      "statement": "Operator identity is the operator public key together with the log origin, and it is the same notion whether the witness is hosted or self-hosted. Only the provisioning differs: with a self-hosted witness it is local configuration and no account exists anywhere, which is what the zero-egress promise means; with a hosted witness it is a registration.",
       "source": "Witness Practice Statement — this enrolled operator",
-      "verify": "Enrolment then successive anchors tracked"
+      "verify": "Zero-egress deployment completes with no account and no outbound registration; a hosted deployment registers the same key and origin and the verifier treats both identically"
     },
     {
       "id": "FR-43",

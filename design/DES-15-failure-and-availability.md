@@ -87,6 +87,21 @@ What must never happen is a claim of durability over that window. The coverage r
 an **undeclared** gap until step 4 converts it to a declared one, and an undeclared gap is exactly
 the signal an auditor should treat as adverse.
 
+## Fail-open must not become indefinite — FR-68
+
+Unlimited queuing means an operator can run unwitnessed for a month with an operational excuse,
+and every batch in that window is locally signed but externally uncorroborated. Fail-open is a
+constraint on *availability*, not a licence to abandon anchoring.
+
+`unwitnessed_ceiling`, default one hour, sets two behaviours:
+
+- **At the ceiling**, an alert is raised out of band — the same channel as the terminal storage
+  case, because both are conditions the record alone cannot shout about.
+- **Beyond it**, the coverage report **refuses to issue a completeness claim spanning the
+  outage** and states the unwitnessed window instead. Declining to make a claim is the honest
+  behaviour; reporting the window as covered because the chain was intact would be true and
+  misleading at once.
+
 ## Witness store durability — OPS-06
 
 For an operator running their own witness (FR-17): **a witness that loses its roots destroys the

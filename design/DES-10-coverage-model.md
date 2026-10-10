@@ -18,7 +18,8 @@ collector emits positive evidence that it was alive and which build it was.
 { "v":1, "collector":"treasury-host-1", "run":null, "record_seq":4813, "ts":"…", "kind":"heartbeat",
   "build":"sha256:7f3a…",          // the collector's own artifact digest   FR-25
   "suite":"SS1",
-  "policy":"sha256:b2c8…",         // digest of the effective policy        DES-09
+  "policy":"sha256:b2c8…",         // effective capture configuration       FR-64
+  "heartbeat_interval":"5s",       // the resolution of this coverage claim
   "counts": { "tool_call": 41, "approval": 3 } }
 ```
 
@@ -98,6 +99,18 @@ was the artifact the digest names.
 
 So "100% captured" means **100% of what the collector reported** — stated that way in the output,
 not softened in a footnote.
+
+**The cheapest available narrowing — FR-64.** The heartbeat attests a digest of the collector's
+effective capture configuration: which upstreams it proxies, which interfaces it binds, and its
+heartbeat and anchor intervals. Adding an unobserved path then requires either a recorded
+configuration change, which is visible, or a divergence between the attested config and the
+observed one, which is also visible. It does not close the bypass gap — only a counterparty
+signature does — but it converts "quietly add a second path" into "leave a trace".
+
+**The heartbeat interval sets the resolution of every claim it supports**, which is why it is in
+the config (`FR-41`) and in the attested digest. A sixty-second heartbeat makes a fifty-second
+suppression invisible, and a coverage report must never imply finer resolution than its own
+interval.
 
 Closing that requires the counterparty to co-sign, which is bilateral receipts (RM-01) in 2.0.
 Until then the record rests partly on the operator's word, and the threat model says so under

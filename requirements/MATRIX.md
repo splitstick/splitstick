@@ -11,7 +11,7 @@ Regenerate with `npm run requirements`.
 
 | Category | Count |
 |---|---:|
-| Functional | 61 |
+| Functional | 67 |
 | Security | 26 |
 | Legal & regulatory | 19 |
 | Governance, licensing & community | 19 |
@@ -23,20 +23,20 @@ Regenerate with `npm run requirements`.
 | Interoperability & standards | 7 |
 | Operational | 6 |
 | Traceability & process | 5 |
-| **Total** | **201** |
+| **Total** | **207** |
 
 ### By release
 
 | Release | Count |
 |---|---:|
-| 1.0 | 184 |
+| 1.0 | 190 |
 | 2.0 | 5 |
 | commercial | 12 |
-| **Total** | **201** |
+| **Total** | **207** |
 
 ## Matrix
 
-### Functional — 61
+### Functional — 67
 
 | ID | Requirement | Traces to | Verified by | Rel | M | Status |
 |---|---|---|---|---|---|---|
@@ -73,15 +73,15 @@ Regenerate with `npm run requirements`.
 | `FR-31` | **Evidence pack carries all countersignatures** — Packs include every countersignature collected, not only Splitstick's. | Proof — never only ours | Automated pack assertion: after anchoring to three witnesses, the pack contains three signature lines and verification succeeds under a policy naming only the third | 1.0 | M3a | ☐ |
 | `FR-32` | **splitstick disclose** — Emit a Merkle inclusion proof for a single named event. | Disclosure — splitstick disclose | Recipient verifies one event without the rest | 1.0 | M5 | ☐ |
 | `FR-33` | **Inclusion proof binds to countersigned root** — Inclusion proofs verify against a countersigned root, not a bare local digest. | Disclosure — against a countersigned root | Proof rejected when root is unwitnessed | 1.0 | M5 | ☐ |
-| `FR-34` | **Optional batch padding** — Provide optional padding of batches to obscure activity volume. | Disclosure — optional batch padding | Anchor volume decoupled from event volume when enabled | 1.0 | M5 | ☐ |
+| `FR-34` | **Optional batch padding** — Provide optional padding of batches with dummy leaves to obscure activity volume. Padding is applied only at batch close and never retroactively; dummy leaves are explicitly typed so a verifier holding the pack can count them; and a real action can never be reclassified as padding, because its leaf is already committed. | Disclosure — optional batch padding | Retroactive padding is rejected; a verifier reports real and dummy leaf counts separately; reclassifying a committed action fails the leaf check | 1.0 | M5 | ☐ |
 | `FR-35` | **Payloads are content-addressed and externalised** — No payload enters the chain. Every argument and result is replaced by a salted content digest, cid = H(0x05 \|\| content_salt \|\| plaintext), and the plaintext is stored encrypted in the deletable store. Substituting a payload while preserving its pointer is therefore impossible, and deleting the salt, key and ciphertext leaves an unlinkable commitment. | Erasure — no content is ever in the chain | Payload-substitution test: replacing stored content without changing the cid fails verification. Automated scan asserts no payload bytes appear anywhere in the chain | 1.0 | M1 | ☐ |
 | `FR-36` | **Crypto-shredding** — Deleting content and its key leaves the chain verifiable and the commitment permanently unlinkable. | Erasure — crypto-shredding | Verify passes after content+key deletion | 1.0 | M5 | ☐ |
 | `FR-37` | **Retention policy on storage** — Retention and erasure are configurable at the storage layer, independent of the cryptography. | Erasure — policy settings on your storage | Retention config honoured; chain unaffected | 1.0 | M5 | ☐ |
 | `FR-38` | **Fail-open with marked batch** — When no witness is reachable, chain and sign locally, mark the batch unwitnessed, and queue it. | Operations — fails open, loudly | Agent completes with all witnesses unreachable | 1.0 | M3b | ☐ |
 | `FR-39` | **Late countersignature records real time** — A retroactive countersignature records the witness's actual receipt time, not the batch's claimed time. | Operations — the witness's real time | Test asserts the witness receipt time differs from the batch timestamp and both appear in the record | 1.0 | M3b | ☐ |
 | `FR-40` | **Late anchors reported as gaps** — Windows anchored late are reported as coverage gaps. | Operations — reported as a coverage gap | Coverage report flags the widened window | 1.0 | M4 | ☐ |
-| `FR-41` | **Configuration file** — Support splitstick.yaml with witnesses, quorum, on_unavailable and anchor_interval keys. | Getting started — splitstick.yaml | The documented example config is loaded in test and each key asserted to take effect | 1.0 | M1 | ☐ |
-| `FR-42` | **Operator enrolment** — Register an operator identity and public key with a witness so per-operator sequence state can be kept. | Witness Practice Statement — this enrolled operator | Enrolment then successive anchors tracked | 1.0 | M3a | ☐ |
+| `FR-41` | **Configuration file** — Support splitstick.yaml with store, signer, anchor_interval, rollup_interval, heartbeat_interval, on_unavailable, witnesses, quorum and unwitnessed_ceiling keys. | Getting started — splitstick.yaml | The documented example config is loaded in test and each key asserted to take effect; heartbeat_interval is present because it sets the resolution of every coverage claim | 1.0 | M1 | ☐ |
+| `FR-42` | **Operator enrolment** — Operator identity is the operator public key together with the log origin, and it is the same notion whether the witness is hosted or self-hosted. Only the provisioning differs: with a self-hosted witness it is local configuration and no account exists anywhere, which is what the zero-egress promise means; with a hosted witness it is a registration. | Witness Practice Statement — this enrolled operator | Zero-egress deployment completes with no account and no outbound registration; a hosted deployment registers the same key and origin and the verifier treats both identically | 1.0 | M3a | ☐ |
 | `FR-43` | **Witness verifies consistency, not increments** — The witness accepts a checkpoint whose tree_size is greater than or equal to the last it recorded for that operator AND whose Merkle consistency proof from the previous size verifies. It does not require tree_size to increase by one: a checkpoint published every 10 seconds or 1,024 records legitimately jumps. Witness state is updated atomically with the signature. | Witness Practice Statement — immediate successor | 100 records then a checkpoint, then 40 more then a checkpoint at 140: accepted. A truncated or forked tree at any size: rejected, because consistency fails | 1.0 | M3a | ☐ |
 | `FR-44` | **Witness retains roots** — The witness keeps submitted roots in its own append-only store. | Witness Practice Statement — has retained it | Root retrievable from the witness independently | 1.0 | M3a | ☐ |
 | `FR-45` | **Witness stamps its own clock** — The countersignature carries the witness's own time, not the operator's. | Witness Practice Statement — at this time, per its clock | Operator-supplied time cannot influence the countersignature | 1.0 | M3a | ☐ |
@@ -101,6 +101,12 @@ Regenerate with `npm run requirements`.
 | `FR-59` | **Action record and chain entry are separate structures** — The canonicalised, hashed ActionRecord is immutable and contains no chain metadata. prev, leaf and head live in a ChainEntry wrapper that is never canonicalised, so the digest of a record can never depend on a value derived from it. Conformance vectors publish the exact bytes hashed. | Integrity — chained, salted, ratcheted; Capture — action record | Conformance vectors: given a fixed ActionRecord, the canonical bytes, leaf and head are byte-exact. A test asserts no chain field appears inside the canonicalised subject | 1.0 | M1 | ☐ |
 | `FR-60` | **Unknown-loss intervals** — When the observation counter did not survive — an unrecoverable crash with the counter only in memory — declare an unknown-loss interval bounded by the last durable checkpoint and the first record after restart. Never fabricate an exact span. The two kinds of loss evidence are distinct record kinds and a verifier reports them differently. | Operations — fails open, loudly; Coverage attestation | Disk exhaustion followed by kill -9 and restart: an unknown-loss interval is written with no span, and no exact gap is invented. A verifier distinguishes it from a declared span | 1.0 | M3b | ☐ |
 | `FR-61` | **Observation counter durability** — Checkpoint the observation counter durably at each batch flush, so an unrecoverable crash loses at most the current window and the unknown-loss interval is bounded rather than open-ended. | Operations — fails open, loudly | Kill -9 mid-window: the restart reads the last checkpointed source_seq and the declared unknown interval starts there, not at zero | 1.0 | M3b | ☐ |
+| `FR-62` | **Retries, timeouts and errors in the schema** — The record schema represents a failed, timed-out or retried tool call explicitly: an outcome enum, an attempt number, and a correlation id linking attempts of one logical action. A retry is a distinct record, not an overwrite, and source_seq advances once per logical action rather than once per attempt. | Capture — action record | A timeout followed by a successful retry produces two records with one correlation id, source_seq advances once, and the coverage count reports one action | 1.0 | M1 | ☐ |
+| `FR-63` | **Pinned operator identity** — The acceptance policy names the operator identity the reader expects, and the verifier reports any pack presented under a different key or origin rather than silently accepting it. Nothing prevents an operator maintaining a second log; the guarantee is that a reader who pinned an identity is told when they are shown another. | Proof — offline verification; Threat model | A pack under an unpinned key yields IDENTITY_UNPINNED; a pack under the pinned key verifies; the limit is documented as detection rather than prevention | 1.0 | M3a | ☐ |
+| `FR-64` | **Collector configuration attestation** — Each heartbeat carries a digest of the collector’s effective capture configuration — which upstreams it proxies, which interfaces it binds, and its heartbeat and anchor intervals — so adding an unobserved path requires either a recorded configuration change or a visible divergence. | Coverage attestation | Adding an upstream changes the attested digest and emits a policy record; a collector bound to an undeclared interface is detectable by divergence | 1.0 | M4 | ☐ |
+| `FR-65` | **Chained key-custody declaration** — The key custody class — non-exportable KMS or HSM, versus a software key — is declared in a chained, countersigned policy record, because an HSM signature and a file-key signature are byte-identical and the forward-secrecy precondition is otherwise invisible to a verifier. | Integrity — forward-secure epoch ratchet | A verifier reports the declared custody class per epoch and refuses to claim forward secrecy for an epoch declared software-keyed | 1.0 | M2 | ☐ |
+| `FR-66` | **Compare witnesses asked against proofs present** — The verifier compares the witness set recorded in the chain against the countersignatures present in the pack, and reports any witness that was asked but whose proof is absent. This is the only way an offline reader detects a dropped countersignature. | Proof — offline verification | Remove one countersignature from a pack: the verifier reports WITNESS_OMITTED naming it, while the chain and remaining proofs still verify | 1.0 | M4 | ☐ |
+| `FR-68` | **Unwitnessed outage ceiling** — Fail-open must not become indefinite. An unwitnessed_ceiling sets the point at which the collector raises an alert out of band, and beyond which the coverage report refuses to issue a completeness claim spanning the outage, stating the unwitnessed window instead. | Operations — fails open, loudly | Exceed the ceiling: an alert is raised and the coverage report declines a completeness claim for that window rather than reporting it as covered | 1.0 | M3b | ☐ |
 
 ### Non-functional — 13
 
@@ -195,7 +201,7 @@ Regenerate with `npm run requirements`.
 |---|---|---|---|---|---|---|
 | `GOV-01` | **Apache-2.0 with patent grant** — Licence all open components under Apache-2.0. | Licence and governance | LICENSE present; headers applied | 1.0 | M0 | ✅ |
 | `GOV-02` | **DCO on contributions** — Require Signed-off-by on all contributions. | Licence and governance — contributions under DCO | CI check enforces the trailer | 1.0 | M0 | ✅ |
-| `GOV-03` | **Open component set** — Keep the spec, wire format, test vectors, practice statement and both collectors open. | Licence and governance | Repository inventory | 1.0 | M0 | ✅ |
+| `GOV-03` | **Open component set** — Keep the spec, wire format, test vectors, practice statement, both collectors AND the witness implementation open. The witness is in the open set because the self-hosting story is load-bearing: the operator must supply the second party, and cannot do so from a binary they are not permitted to read. | Licence and governance | Repository inventory lists every component above under the open licence, witness included | 1.0 | M0 | ✅ |
 | `GOV-04` | **Non-relicensing commitment** — Publish a commitment never to relicense the open components. | Licence and governance — we commit publicly | Commitment published in the repository | 1.0 | M0 | ✅ |
 | `GOV-05` | **Third-party witnesses permitted** — Anyone, including competitors and hyperscalers, may run a conformant witness. | Licence and governance | No technical or licence barrier; third-party witness interoperates | 1.0 | M6 | ☐ |
 | `GOV-06` | **Open conformance suite** — Publish the conformance suite so implementations can self-check. | Licence and governance | Suite in the repository under the open licence | 1.0 | M6 | ☐ |
@@ -299,4 +305,4 @@ Regenerate with `npm run requirements`.
 
 ---
 
-*201 requirements. Status column is maintained by hand as work lands.*
+*207 requirements. Status column is maintained by hand as work lands.*

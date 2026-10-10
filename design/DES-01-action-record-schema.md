@@ -27,7 +27,10 @@ record while `DES-02` said every field contributes.
   "args":   { "cid": "sha256:9f2c…", "bytes": 61 },     // salted digest, FR-35
   "result": { "cid": "sha256:4b71…", "bytes": 54, "ok": true },
   "approval": null,                        // see below
-  "consequential": true                    // as declared by the tool, never inferred
+  "consequential": true,                   // as declared by the tool, never inferred
+  "outcome": "ok",                         // ok | error | timeout | denied        FR-62
+  "attempt": 1,                            // attempt number within one logical action
+  "correlation": "c-7f3a9c2e"              // links attempts of the same action
 }
 ```
 
@@ -66,6 +69,7 @@ into a chain that is never deleted.
 | `args`, `result` | Arbitrary JSON, canonicalised by DES-02. Size-capped; over the cap, content moves to the store (DES-13) and the field holds a pointer. |
 | `approval` | `null`, or `{ "decision": "approve"\|"deny", "reviewer": { "cid": "sha256:…" }, "request": { "cid": "sha256:…" } }`. Both the reviewer and the reviewed request are **salted content commitments** using the same mechanism as every payload (`FR-35`), so both are erasable. An earlier draft wrote `request_hash` without defining it; a bare hash of an approval request is brute-forceable, because the request states the action — the amount, the counterparty — in a handful of guessable fields. `decision` is retained in the clear: approve or deny identifies nobody. |
 | `consequential` | Taken from the tool's own declaration. Never inferred from names or arguments. |
+| `outcome`, `attempt`, `correlation` | **FR-62.** A timeout or error is an outcome, not an absence. A retry is a *new record* sharing a `correlation`, never an overwrite — overwriting would make the chain a mutable store. `source_seq` advances once per logical action, so three attempts are three records and one observation. An external study of the earlier draft asked what happened to retries and errors; the answer was nothing, and every unnamed field is an unprotected field. |
 
 ### What is deliberately absent
 

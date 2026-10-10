@@ -44,6 +44,12 @@ accumulating constraints is to never prove anything to anyone, and proving thing
   comparison a single flag; it cannot make anyone run it.
 - A mild perverse incentive: an operator who understands this discloses less. Self-limiting
   rather than exploitable — an operator who stops producing evidence is its own signal.
+- **A second parallel log.** An operator can always start a fresh log under a fresh key and
+  present whichever history suits. This is not cryptographically preventable, and an earlier
+  draft left it unaddressed. `FR-63` closes the half that can be closed: the acceptance policy
+  pins the identity a reader expects, and anything else is reported as `IDENTITY_UNPINNED`
+  rather than quietly accepted. A reader who never pinned an identity is not protected, and the
+  documentation says so.
 - **Origin substitution.** Comparison keys on log identity, so presenting a record under a *new*
   origin would sidestep it. Closed by keying on the **operator key** as well: a new origin signed
   by the same key is reported as `ORIGIN_CHANGED` and compared anyway, and a new key requires a

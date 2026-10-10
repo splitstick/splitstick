@@ -252,5 +252,59 @@
     "statement": "Checkpoint the observation counter durably at each batch flush, so an unrecoverable crash loses at most the current window and the unknown-loss interval is bounded rather than open-ended.",
     "source": "Operations — fails open, loudly",
     "verify": "Kill -9 mid-window: the restart reads the last checkpointed source_seq and the declared unknown interval starts there, not at zero"
+  },
+  {
+    "id": "FR-62",
+    "type": "functional",
+    "release": "1.0",
+    "title": "Retries, timeouts and errors in the schema",
+    "statement": "The record schema represents a failed, timed-out or retried tool call explicitly: an outcome enum, an attempt number, and a correlation id linking attempts of one logical action. A retry is a distinct record, not an overwrite, and source_seq advances once per logical action rather than once per attempt.",
+    "source": "Capture — action record",
+    "verify": "A timeout followed by a successful retry produces two records with one correlation id, source_seq advances once, and the coverage count reports one action"
+  },
+  {
+    "id": "FR-63",
+    "type": "functional",
+    "release": "1.0",
+    "title": "Pinned operator identity",
+    "statement": "The acceptance policy names the operator identity the reader expects, and the verifier reports any pack presented under a different key or origin rather than silently accepting it. Nothing prevents an operator maintaining a second log; the guarantee is that a reader who pinned an identity is told when they are shown another.",
+    "source": "Proof — offline verification; Threat model",
+    "verify": "A pack under an unpinned key yields IDENTITY_UNPINNED; a pack under the pinned key verifies; the limit is documented as detection rather than prevention"
+  },
+  {
+    "id": "FR-64",
+    "type": "functional",
+    "release": "1.0",
+    "title": "Collector configuration attestation",
+    "statement": "Each heartbeat carries a digest of the collector’s effective capture configuration — which upstreams it proxies, which interfaces it binds, and its heartbeat and anchor intervals — so adding an unobserved path requires either a recorded configuration change or a visible divergence.",
+    "source": "Coverage attestation",
+    "verify": "Adding an upstream changes the attested digest and emits a policy record; a collector bound to an undeclared interface is detectable by divergence"
+  },
+  {
+    "id": "FR-65",
+    "type": "functional",
+    "release": "1.0",
+    "title": "Chained key-custody declaration",
+    "statement": "The key custody class — non-exportable KMS or HSM, versus a software key — is declared in a chained, countersigned policy record, because an HSM signature and a file-key signature are byte-identical and the forward-secrecy precondition is otherwise invisible to a verifier.",
+    "source": "Integrity — forward-secure epoch ratchet",
+    "verify": "A verifier reports the declared custody class per epoch and refuses to claim forward secrecy for an epoch declared software-keyed"
+  },
+  {
+    "id": "FR-66",
+    "type": "functional",
+    "release": "1.0",
+    "title": "Compare witnesses asked against proofs present",
+    "statement": "The verifier compares the witness set recorded in the chain against the countersignatures present in the pack, and reports any witness that was asked but whose proof is absent. This is the only way an offline reader detects a dropped countersignature.",
+    "source": "Proof — offline verification",
+    "verify": "Remove one countersignature from a pack: the verifier reports WITNESS_OMITTED naming it, while the chain and remaining proofs still verify"
+  },
+  {
+    "id": "FR-68",
+    "type": "functional",
+    "release": "1.0",
+    "title": "Unwitnessed outage ceiling",
+    "statement": "Fail-open must not become indefinite. An unwitnessed_ceiling sets the point at which the collector raises an alert out of band, and beyond which the coverage report refuses to issue a completeness claim spanning the outage, stating the unwitnessed window instead.",
+    "source": "Operations — fails open, loudly",
+    "verify": "Exceed the ceiling: an alert is raised and the coverage report declines a completeness claim for that window rather than reporting it as covered"
   }
 ]
