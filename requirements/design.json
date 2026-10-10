@@ -1,0 +1,332 @@
+{
+  "note": "Design elements are decisions with a specification: a format, an algorithm, a protocol, a schema. Requirements trace to them many-to-one. A requirement with no design element must be explicitly classified instead, so the absence is deliberate rather than an oversight. The chain is: release-notes promise -> requirement -> design element -> test.",
+  "elements": [
+    {
+      "id": "DES-01",
+      "milestone": "M1",
+      "title": "Action record schema",
+      "decides": "Which fields constitute an action record, their types, and what is deliberately excluded (no prompt, no conversation, no model output).",
+      "covers": [
+        "FR-05",
+        "FR-06",
+        "FR-07"
+      ]
+    },
+    {
+      "id": "DES-02",
+      "milestone": "M1",
+      "title": "Canonical encoding",
+      "decides": "Deterministic serialisation: recursive key ordering, array order preserved, number and null handling, and the rule that every field at every depth contributes to the digest.",
+      "covers": [
+        "FR-52",
+        "SEC-07"
+      ]
+    },
+    {
+      "id": "DES-03",
+      "milestone": "M1",
+      "title": "Leaf and salt construction",
+      "decides": "Salt length and source, leaf = H(salt || canonical), and where salts are stored so a disclosure can carry one without revealing others.",
+      "covers": [
+        "FR-09",
+        "SEC-13"
+      ]
+    },
+    {
+      "id": "DES-04",
+      "milestone": "M1",
+      "title": "Chain construction",
+      "decides": "h_i = H(h_(i-1) || leaf_i), the genesis value, sequence semantics, and what a verifier may conclude from a break.",
+      "covers": [
+        "FR-08",
+        "SEC-06",
+        "SEC-09",
+        "SEC-10"
+      ]
+    },
+    {
+      "id": "DES-05",
+      "milestone": "M1",
+      "title": "Batching and Merkle tree",
+      "decides": "Batch boundaries, tree shape, odd-leaf handling, and root computation — the construction that lets one action be disclosed without the rest.",
+      "covers": [
+        "FR-32",
+        "FR-33",
+        "FR-34",
+        "FR-53",
+        "PRIV-06"
+      ]
+    },
+    {
+      "id": "DES-06",
+      "milestone": "M1",
+      "title": "Key hierarchy, signing and epoch ratchet",
+      "decides": "What an epoch is, how the signing key evolves, how the predecessor is destroyed, the KMS and HSM integration surface, and recovery after compromise.",
+      "covers": [
+        "FR-10",
+        "FR-11",
+        "NFR-09",
+        "SEC-08",
+        "SEC-14",
+        "SEC-17",
+        "SEC-24",
+        "OPS-04"
+      ]
+    },
+    {
+      "id": "DES-07",
+      "milestone": "M3a",
+      "title": "Checkpoint format",
+      "decides": "The C2SP tlog-witness conformant checkpoint, its signed preimage, and how the operator identity and sequence appear in it.",
+      "covers": [
+        "FR-12",
+        "FR-45",
+        "INT-01",
+        "SEC-25"
+      ]
+    },
+    {
+      "id": "DES-08",
+      "milestone": "M3a",
+      "title": "Witness protocol",
+      "decides": "Submission and response, enrolment, per-operator sequence enforcement, countersignature contents, tree-head publication, key rotation, and every failure mode.",
+      "covers": [
+        "FR-13",
+        "FR-14",
+        "FR-16",
+        "FR-17",
+        "FR-19",
+        "FR-20",
+        "FR-21",
+        "FR-22",
+        "FR-42",
+        "FR-43",
+        "FR-44",
+        "FR-50",
+        "FR-51",
+        "FR-15",
+        "FR-48",
+        "INT-02",
+        "SEC-15",
+        "PRIV-01"
+      ]
+    },
+    {
+      "id": "DES-09",
+      "milestone": "M1",
+      "title": "Policy files",
+      "decides": "Two separate schemas: the collector's witness set, and the verifier's acceptance policy. Plus how a policy change is recorded as a chain event.",
+      "covers": [
+        "FR-41",
+        "FR-30",
+        "FR-23",
+        "SEC-12",
+        "SCOPE-15",
+        "NFR-03"
+      ]
+    },
+    {
+      "id": "DES-10",
+      "milestone": "M4",
+      "title": "Coverage model",
+      "decides": "Heartbeat cadence and contents, the build digest, gap declaration semantics, and precisely what the claim \"100% captured between T1 and T2\" asserts.",
+      "covers": [
+        "FR-24",
+        "FR-25",
+        "FR-26",
+        "FR-27",
+        "FR-28",
+        "FR-40",
+        "SEC-11"
+      ]
+    },
+    {
+      "id": "DES-11",
+      "milestone": "M3a",
+      "title": "Evidence pack format",
+      "decides": "The artifact an auditor receives: records, salts, inclusion paths, every countersignature collected, and the public keys needed to check them.",
+      "covers": [
+        "FR-31",
+        "INT-03"
+      ]
+    },
+    {
+      "id": "DES-12",
+      "milestone": "M1",
+      "title": "Verification algorithm",
+      "decides": "The ordered checks, the verdict taxonomy including an inconclusive outcome, and what each distinct failure permits a reader to conclude.",
+      "covers": [
+        "FR-29",
+        "NFR-04",
+        "NFR-05",
+        "NFR-06",
+        "SEC-03",
+        "SEC-04"
+      ]
+    },
+    {
+      "id": "DES-13",
+      "milestone": "M1",
+      "title": "Storage and erasure",
+      "decides": "The content store, pointer scheme, crypto-shredding procedure, and how retention is configured without touching the cryptography.",
+      "covers": [
+        "FR-35",
+        "FR-36",
+        "FR-37",
+        "PRIV-02",
+        "PRIV-03",
+        "PRIV-04",
+        "PRIV-05",
+        "PRIV-09"
+      ]
+    },
+    {
+      "id": "DES-14",
+      "milestone": "M1",
+      "title": "Collector architecture",
+      "decides": "The shared capture core, the OMA backend, the MCP proxy, and where the capture boundary sits in each.",
+      "covers": [
+        "FR-01",
+        "FR-02",
+        "FR-03",
+        "FR-04",
+        "INT-04",
+        "INT-05",
+        "INT-07",
+        "FR-46",
+        "FR-47",
+        "INT-06"
+      ]
+    },
+    {
+      "id": "DES-15",
+      "milestone": "M3b",
+      "title": "Failure and availability model",
+      "decides": "Fail-open behaviour, the durable queue, retry and backoff, late countersignature handling, and the guarantee that the collector can never block a run.",
+      "covers": [
+        "FR-38",
+        "FR-39",
+        "NFR-12",
+        "NFR-13",
+        "OPS-02",
+        "OPS-06",
+        "SCOPE-16"
+      ]
+    },
+    {
+      "id": "DES-16",
+      "milestone": "M1",
+      "title": "Format versioning and algorithm agility",
+      "decides": "Version negotiation in the record and pack, and the migration path when a hash or signature algorithm must change.",
+      "covers": [
+        "NFR-07",
+        "NFR-08",
+        "NFR-10",
+        "NFR-11"
+      ]
+    },
+    {
+      "id": "DES-17",
+      "milestone": "M1",
+      "title": "Release and provenance pipeline",
+      "decides": "Build reproducibility, provenance attestation, release signing, SBOM generation, and how a heartbeat's build digest is traced back to source.",
+      "covers": [
+        "SEC-22",
+        "SEC-23",
+        "NFR-01",
+        "NFR-02",
+        "FR-49"
+      ]
+    },
+    {
+      "id": "DES-18",
+      "milestone": "M3b",
+      "title": "Witness practice statement structure",
+      "decides": "What the countersignature asserts and disclaims, how the statement is versioned and anchored, and how the time discipline is declared.",
+      "covers": [
+        "LEG-01",
+        "LEG-02",
+        "LEG-03",
+        "LEG-04",
+        "LEG-05",
+        "LEG-06",
+        "LEG-07",
+        "LEG-08",
+        "LEG-09",
+        "LEG-19",
+        "OPS-03",
+        "OPS-05"
+      ]
+    }
+  ],
+  "nondesign": {
+    "policy": [
+      "SCOPE-01",
+      "SCOPE-02",
+      "SCOPE-03",
+      "SCOPE-04",
+      "SCOPE-05",
+      "SCOPE-06",
+      "SCOPE-07",
+      "SCOPE-08",
+      "SCOPE-09",
+      "SCOPE-10",
+      "SCOPE-11",
+      "SCOPE-12",
+      "SCOPE-13",
+      "SCOPE-14",
+      "SEC-16",
+      "SEC-20",
+      "SEC-21",
+      "GOV-04",
+      "GOV-05",
+      "GOV-09",
+      "GOV-10",
+      "GOV-11",
+      "GOV-12",
+      "GOV-13",
+      "GOV-14",
+      "GOV-15",
+      "GOV-17",
+      "LEG-14",
+      "LEG-15",
+      "LEG-16",
+      "LEG-12",
+      "LEG-13",
+      "LEG-18"
+    ],
+    "document": [
+      "DOC-01",
+      "DOC-02",
+      "DOC-03",
+      "DOC-04",
+      "DOC-05",
+      "DOC-06",
+      "DOC-07",
+      "DOC-08",
+      "SEC-01",
+      "SEC-02",
+      "SEC-05",
+      "PRIV-07",
+      "PRIV-08",
+      "GOV-16",
+      "GOV-19",
+      "GOV-03"
+    ],
+    "process": [
+      "GOV-01",
+      "GOV-02",
+      "GOV-06",
+      "GOV-08",
+      "GOV-18",
+      "SEC-19",
+      "TRC-03"
+    ],
+    "audit": [
+      "TRC-01",
+      "TRC-02",
+      "TRC-04",
+      "TRC-05"
+    ]
+  }
+}
