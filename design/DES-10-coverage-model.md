@@ -100,12 +100,21 @@ was the artifact the digest names.
 So "100% captured" means **100% of what the collector reported** — stated that way in the output,
 not softened in a footnote.
 
-**The cheapest available narrowing — FR-64.** The heartbeat attests a digest of the collector's
-effective capture configuration: which upstreams it proxies, which interfaces it binds, and its
-heartbeat and anchor intervals. Adding an unobserved path then requires either a recorded
-configuration change, which is visible, or a divergence between the attested config and the
-observed one, which is also visible. It does not close the bypass gap — only a counterparty
-signature does — but it converts "quietly add a second path" into "leave a trace".
+**Self-reported configuration attestation — FR-64.** The heartbeat attests a digest of the
+capture configuration **the collector reports for itself**: upstreams proxied, interfaces bound,
+heartbeat and anchor intervals. A change to *that* configuration is therefore recorded and
+visible.
+
+**It does not detect a path created outside the collector.** A review was right to push back on
+an earlier draft that claimed otherwise. An operator can stand up an entirely separate execution
+path; the original collector goes on reporting an unchanged digest and heartbeating normally, and
+nothing diverges, because there is nothing inside Splitstick observing the new path. The claim is
+provenance of a self-report, not independent observation — and a test pins that limit by
+asserting a bypassing path produces **no** signal.
+
+It is still worth having: it makes the *declared* capture surface part of the evidence, so
+narrowing it later is a recorded change rather than a quiet one. That is a smaller claim than the
+one this document previously made, and it is the true one.
 
 **The heartbeat interval sets the resolution of every claim it supports**, which is why it is in
 the config (`FR-41`) and in the attested digest. A sixty-second heartbeat makes a fifty-second

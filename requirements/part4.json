@@ -258,9 +258,9 @@
     "type": "functional",
     "release": "1.0",
     "title": "Retries, timeouts and errors in the schema",
-    "statement": "The record schema represents a failed, timed-out or retried tool call explicitly: an outcome enum, an attempt number, and a correlation id linking attempts of one logical action. A retry is a distinct record, not an overwrite, and source_seq advances once per logical action rather than once per attempt.",
+    "statement": "The record schema represents a failed, timed-out or retried tool call explicitly: an outcome enum, an attempt number, and a correlation id grouping attempts of one logical action. source_seq advances once per observed ATTEMPT, not per logical action, because a timed-out attempt may already have caused an external side effect and must stay independently accountable. Correlation, not the counter, is what groups attempts.",
     "source": "Capture — action record",
-    "verify": "A timeout followed by a successful retry produces two records with one correlation id, source_seq advances once, and the coverage count reports one action"
+    "verify": "Interleaved retries across two correlations keep source_seq strictly increasing; an omitted retry is detected as a source_seq gap; coverage reports attempt count and logical-action count separately"
   },
   {
     "id": "FR-63",
@@ -275,28 +275,28 @@
     "id": "FR-64",
     "type": "functional",
     "release": "1.0",
-    "title": "Collector configuration attestation",
-    "statement": "Each heartbeat carries a digest of the collector’s effective capture configuration — which upstreams it proxies, which interfaces it binds, and its heartbeat and anchor intervals — so adding an unobserved path requires either a recorded configuration change or a visible divergence.",
+    "title": "Collector self-reported configuration attestation",
+    "statement": "Each heartbeat carries a digest of the capture configuration the collector reports for itself — upstreams proxied, interfaces bound, heartbeat and anchor intervals — so a change to THAT configuration is recorded and visible. It does not detect an execution path created outside the collector: such a path leaves the collector reporting an unchanged digest and nothing diverges. This is provenance of a self-report, not independent observation.",
     "source": "Coverage attestation",
-    "verify": "Adding an upstream changes the attested digest and emits a policy record; a collector bound to an undeclared interface is detectable by divergence"
+    "verify": "Changing a declared upstream alters the attested digest and emits a policy record; a test asserts that a path bypassing the collector entirely produces NO signal, so the limit is pinned by a test rather than by prose"
   },
   {
     "id": "FR-65",
     "type": "functional",
     "release": "1.0",
-    "title": "Chained key-custody declaration",
-    "statement": "The key custody class — non-exportable KMS or HSM, versus a software key — is declared in a chained, countersigned policy record, because an HSM signature and a file-key signature are byte-identical and the forward-secrecy precondition is otherwise invisible to a verifier.",
+    "title": "Operator-declared key custody",
+    "statement": "The key custody class — non-exportable KMS or HSM, versus a software key — is declared in a chained record per epoch, because an HSM signature and a file-key signature are byte-identical and a verifier cannot otherwise tell them apart. The declaration proves the operator declared it, not that the key was non-exportable or later destroyed. Custody is reported as operator-declared unless a provider attestation document is supplied alongside, which is the only path to independently supported custody.",
     "source": "Integrity — forward-secure epoch ratchet",
-    "verify": "A verifier reports the declared custody class per epoch and refuses to claim forward secrecy for an epoch declared software-keyed"
+    "verify": "A verifier prints the declared class per epoch, labels it operator-declared, and refuses to claim forward secrecy for an epoch declared software-keyed; a supplied provider attestation is reported as independently supported"
   },
   {
     "id": "FR-66",
     "type": "functional",
     "release": "1.0",
-    "title": "Compare witnesses asked against proofs present",
-    "statement": "The verifier compares the witness set recorded in the chain against the countersignatures present in the pack, and reports any witness that was asked but whose proof is absent. This is the only way an offline reader detects a dropped countersignature.",
+    "title": "Compare expected witnesses against proofs present",
+    "statement": "Each checkpoint records which witnesses were expected for it, given their tier and cadence, and the verifier compares that against the proofs in the pack. A proof that is expected and absent is reported as missing and inconclusive — it may be pending under fail-open, the witness may have been unavailable, or the receipt may have been removed, and the verifier cannot tell which from absence alone. Demonstrating removal requires an earlier pack that contained it, which is cross-pack comparison.",
     "source": "Proof — offline verification",
-    "verify": "Remove one countersignature from a pack: the verifier reports WITNESS_OMITTED naming it, while the chain and remaining proofs still verify"
+    "verify": "Remove a proof: WITNESS_MISSING is reported as inconclusive, never as deletion. A witness on a slower tier with no proof yet is reported as not-yet-expected. A pack pair where one holds the proof and the later one does not yields removal"
   },
   {
     "id": "FR-68",
@@ -306,5 +306,23 @@
     "statement": "Fail-open must not become indefinite. An unwitnessed_ceiling sets the point at which the collector raises an alert out of band, and beyond which the coverage report refuses to issue a completeness claim spanning the outage, stating the unwitnessed window instead.",
     "source": "Operations — fails open, loudly",
     "verify": "Exceed the ceiling: an alert is raised and the coverage report declines a completeness claim for that window rather than reporting it as covered"
+  },
+  {
+    "id": "FR-69",
+    "type": "functional",
+    "release": "1.0",
+    "title": "Padding is a record kind",
+    "statement": "A padding leaf is an explicit, immutable record kind with its own record_seq, source_seq null, and a commitment, so record_seq equals tree_size unconditionally. Padding leaves without corresponding records would break that invariant.",
+    "source": "Disclosure — optional batch padding",
+    "verify": "Two real records plus three padding records yield tree_size 5 and record_seq 5; a verifier counts real and padding records separately"
+  },
+  {
+    "id": "DOC-11",
+    "type": "documentation",
+    "release": "1.0",
+    "title": "Every assurance claim names its evidence",
+    "statement": "Each assurance claim in the specifications and the release notes names the evidence that supports it, classified as independent, operator-declared, or none. A claim resting only on the operator-controlled collector is worded as an assertion, never as a verified guarantee. This rule exists because the design repeatedly acquired guarantees its own threat model excludes.",
+    "source": "Threat model — detection, not prevention",
+    "verify": "Claims audit per release checks each assurance claim against the register; npm run review flags a curated set of overclaim phrasings"
   }
 ]

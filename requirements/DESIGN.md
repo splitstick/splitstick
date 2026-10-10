@@ -10,16 +10,16 @@ Regenerate with `npm run backlog`.
 | | Count |
 |---|---:|
 | Design elements | 20 |
-| Release-1.0 requirements traced to a design element | 130 |
-| Classified non-design | 60 |
-| **Total 1.0** | **190** |
+| Release-1.0 requirements traced to a design element | 131 |
+| Classified non-design | 61 |
+| **Total 1.0** | **192** |
 
 ### Non-design classifications
 
 | Kind | Count | Meaning |
 |---|---:|---|
 | policy | 33 | a stated rule and a recurring audit, with nothing to build |
-| document | 16 | prose that must exist and be accurate |
+| document | 17 | prose that must exist and be accurate |
 | process | 7 | a repeatable procedure, often enforced in CI |
 | audit | 4 | a check performed against the project itself |
 
@@ -77,7 +77,7 @@ h_i = H(h_(i-1) || leaf_i), the genesis value, sequence semantics, and what a ve
 
 ### [DES-05 — Batching and Merkle tree](../design/DES-05-batching-and-merkle.md)
 
-**Milestone:** M1 · **Requirements covered:** 5
+**Milestone:** M1 · **Requirements covered:** 6
 
 Batch boundaries, tree shape, odd-leaf handling, and root computation — the construction that lets one action be disclosed without the rest.
 
@@ -88,6 +88,7 @@ Batch boundaries, tree shape, odd-leaf handling, and root computation — the co
 | `FR-34` | Optional batch padding | ☐ |
 | `FR-53` | Roll-up anchoring | ☐ |
 | `PRIV-06` | Disclosure minimisation | ☐ |
+| `FR-69` | Padding is a record kind | ☐ |
 
 ### [DES-06 — Key hierarchy, signing and epoch ratchet](../design/DES-06-keys-and-ratchet.md)
 
@@ -105,7 +106,7 @@ What an epoch is, how the signing key evolves, how the predecessor is destroyed,
 | `SEC-17` | State the forward-secrecy precondition | ☐ |
 | `SEC-24` | Key compromise recovery | ☐ |
 | `OPS-04` | Separation-of-duties guidance | ☐ |
-| `FR-65` | Chained key-custody declaration | ☐ |
+| `FR-65` | Operator-declared key custody | ☐ |
 
 ### [DES-07 — Checkpoint format](../design/DES-07-checkpoint-format.md)
 
@@ -178,7 +179,7 @@ Heartbeat cadence and contents, the build digest, gap declaration semantics, and
 | `FR-40` | Late anchors reported as gaps | ☐ |
 | `SEC-11` | Resist collector stoppage | ☐ |
 | `DOC-10` | Document the collector-patch limit | ☐ |
-| `FR-64` | Collector configuration attestation | ☐ |
+| `FR-64` | Collector self-reported configuration attestation | ☐ |
 
 ### [DES-11 — Evidence pack format](../design/DES-11-evidence-pack-format.md)
 
@@ -207,7 +208,7 @@ The ordered checks, the verdict taxonomy including an inconclusive outcome, and 
 | `SEC-04` | One honest witness assumption | ☐ |
 | `FR-57` | Verifier states witness-set capabilities | ☐ |
 | `FR-63` | Pinned operator identity | ☐ |
-| `FR-66` | Compare witnesses asked against proofs present | ☐ |
+| `FR-66` | Compare expected witnesses against proofs present | ☐ |
 
 ### [DES-13 — Storage and erasure](../design/DES-13-storage-and-erasure.md)
 
@@ -378,7 +379,7 @@ Deliberate, not an oversight. Each is a rule, a document, a procedure or a check
 - `LEG-13` Qualified TSA configurable
 - `LEG-18` Trademark clearance
 
-### document — 16
+### document — 17
 
 - `DOC-01` Public red-team suite
 - `DOC-02` Threat model document
@@ -396,6 +397,7 @@ Deliberate, not an oversight. Each is a rule, a document, a procedure or a check
 - `GOV-16` Published review history
 - `GOV-19` State the resourcing honestly
 - `GOV-03` Open component set
+- `DOC-11` Every assurance claim names its evidence
 
 ### process — 7
 

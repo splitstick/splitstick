@@ -1,6 +1,6 @@
 # Delivery plan — Splitstick 1.0
 
-190 release-1.0 requirements sequenced into 9 milestones, gated by the attack-class
+192 release-1.0 requirements sequenced into 9 milestones, gated by the attack-class
 table in [the release notes](../docs/splitstick-1.0-release-notes.md).
 
 **Generated — do not edit by hand.** Source of truth is `requirements/milestones.json`.
@@ -30,14 +30,14 @@ Every milestone runs the complete red-team suite, not only its own classes. A ga
 |---|---|---:|---|---|
 | **M0** Foundations and long-lead | — | 15 | 1-2, parallel to M1 | Start everything whose clock runs outside engineering, and turn the red-team suite into the acceptance harness. |
 | **M1** Local integrity | AC-1, AC-2 | 29 | 3-4 | Close the two attack classes that need no third party, and measure the performance budget before the design hardens. |
-| **M2** Key custody | AC-3 | 6 | 2 | Make yesterday's record unforgeable with today's key, and state the precondition honestly. |
-| **M3a** Anchoring and sequencing | AC-4, AC-5 | 36 | 5-7 | The first second party. Close truncation and erasure, which no amount of local cryptography can reach. |
+| **M2** Key custody | AC-3 | 5 | 2 | Make yesterday's record unforgeable with today's key, and state the precondition honestly. |
+| **M3a** Anchoring and sequencing | AC-4, AC-5 | 37 | 5-7 | The first second party. Close truncation and erasure, which no amount of local cryptography can reach. |
 | **M3b** Practice statement and resilience | — | 22 | 3-4 | Say exactly what the countersignature means, and make sure losing a witness does not lose the evidence. |
 | **M4** Coverage attestation | AC-6, AC-7 | 11 | 3-4 | The differentiated claim: prove the record is complete, not merely unaltered. |
-| **M5** Disclosure and erasure | — | 16 | 3-4 | No new attack class. This is the milestone that makes the product buyable by a regulated, multi-customer organisation. |
+| **M5** Disclosure and erasure | — | 17 | 3-4 | No new attack class. This is the milestone that makes the product buyable by a regulated, multi-customer organisation. |
 | **M6** Reach and conformance | — | 19 | 4-6 | Stop depending on one upstream project, and make the format genuinely somebody else's to implement. |
-| **M7** Launch gate | — | 36 | 2 | Every promise that is a claim rather than a feature. This milestone is mostly about what we must not say. |
-| | | **190** | | |
+| **M7** Launch gate | — | 37 | 2 | Every promise that is a claim rather than a feature. This milestone is mostly about what we must not say. |
+| | | **192** | | |
 
 ## Milestones
 
@@ -107,14 +107,14 @@ Close the two attack classes that need no third party, and measure the performan
 | ☐ `FR-55` | **Counterparty reference capture** — Extract externally issued identifiers from a tool result and index them for reconciliation. The index lives in the deletable content store, never in the chain, because a transaction reference can itself be identifying. | A result containing an external reference is indexed and queryable; the index is removed by crypto-shredding |
 | ☐ `FR-56` | **Collector instance identity** — Each collector instance has a stable identity that scopes its chain and its log origin. Records carry the run they belong to as a field; the chain itself is collector-scoped, so concurrent runs interleave in one log and heartbeats need no run at all. | Two concurrent runs produce one contiguous chain with correct run tags; a heartbeat emitted with no run active is chained and anchored |
 | ☐ `FR-59` | **Action record and chain entry are separate structures** — The canonicalised, hashed ActionRecord is immutable and contains no chain metadata. prev, leaf and head live in a ChainEntry wrapper that is never canonicalised, so the digest of a record can never depend on a value derived from it. Conformance vectors publish the exact bytes hashed. | Conformance vectors: given a fixed ActionRecord, the canonical bytes, leaf and head are byte-exact. A test asserts no chain field appears inside the canonicalised subject |
-| ☐ `FR-62` | **Retries, timeouts and errors in the schema** — The record schema represents a failed, timed-out or retried tool call explicitly: an outcome enum, an attempt number, and a correlation id linking attempts of one logical action. A retry is a distinct record, not an overwrite, and source_seq advances once per logical action rather than once per attempt. | A timeout followed by a successful retry produces two records with one correlation id, source_seq advances once, and the coverage count reports one action |
+| ☐ `FR-62` | **Retries, timeouts and errors in the schema** — The record schema represents a failed, timed-out or retried tool call explicitly: an outcome enum, an attempt number, and a correlation id grouping attempts of one logical action. source_seq advances once per observed ATTEMPT, not per logical action, because a timed-out attempt may already have caused an external side effect and must stay independently accountable. Correlation, not the counter, is what groups attempts. | Interleaved retries across two correlations keep source_seq strictly increasing; an omitted retry is detected as a source_seq gap; coverage reports attempt count and logical-action count separately |
 
 ### M2 — Key custody
 
 Make yesterday's record unforgeable with today's key, and state the precondition honestly.
 
 - **Gate:** `AC-3` — Re-sign rewritten history with the current key
-- **Requirements:** 6 (FR×2  SEC×2  NFR×1  OPS×1)
+- **Requirements:** 5 (SEC×2  FR×1  NFR×1  OPS×1)
 - **Effort:** weeks 2
 - **Exit criteria:** An epoch-N key cannot produce a valid epoch-N-1 signature against a real HSM or KMS. The non-exportable custody precondition appears wherever the forward-secrecy claim does.
 
@@ -125,14 +125,13 @@ Make yesterday's record unforgeable with today's key, and state the precondition
 | ☐ `SEC-08` | **Resist re-signing history** — Re-signing rewritten history with the current key must be detectable under non-exportable custody. | Epoch ratchet test with HSM |
 | ☐ `SEC-17` | **State the forward-secrecy precondition** — Any forward-secrecy claim must state its non-exportable key custody precondition in the same place. | Documentation review |
 | ☐ `OPS-04` | **Separation-of-duties guidance** — Document the key-custody split between engineering and internal audit. | Guide published and reviewed |
-| ☐ `FR-65` | **Chained key-custody declaration** — The key custody class — non-exportable KMS or HSM, versus a software key — is declared in a chained, countersigned policy record, because an HSM signature and a file-key signature are byte-identical and the forward-secrecy precondition is otherwise invisible to a verifier. | A verifier reports the declared custody class per epoch and refuses to claim forward secrecy for an epoch declared software-keyed |
 
 ### M3a — Anchoring and sequencing
 
 The first second party. Close truncation and erasure, which no amount of local cryptography can reach.
 
 - **Gate:** `AC-4` — Truncate the record's tail; `AC-5` — Erase events and renumber into a clean stream
-- **Requirements:** 36 (FR×23  SEC×7  INT×2  NFR×1  PRIV×1  SCOPE×1  DOC×1)
+- **Requirements:** 37 (FR×24  SEC×7  INT×2  NFR×1  PRIV×1  SCOPE×1  DOC×1)
 - **Effort:** weeks 5-7
 - **Exit criteria:** Red-team D, E and F all DETECTED. A run with no configuration at all anchors to a public log the project does not operate. A rolled-back witness is detected. An auditor supplying their own acceptance policy verifies the same pack. Egress captured against real witness traffic, confirming no content leaves the host.
 
@@ -174,6 +173,7 @@ The first second party. Close truncation and erasure, which no amount of local c
 | ☐ `FR-26` | **Gap declarations with an exact span** — When the observation counter survived the failure, record a signed declaration naming the exact source_seq span that was observed but never written. It occupies one record position. Observation gaps are detected from consecutive persisted source_seq values, never by comparing source_seq with record_seq, which count different things. | Induce a write failure for 6 observed actions with the counter intact: one gap record names source_seq 4790-4795, and a mixed stream of actions, heartbeats and policy records shows no false gap |
 | ☐ `FR-27` | **Countersigned gap declarations** — Gap declarations are themselves submitted for countersignature. | Declaration carries a witness signature |
 | ☐ `FR-63` | **Pinned operator identity** — The acceptance policy names the operator identity the reader expects, and the verifier reports any pack presented under a different key or origin rather than silently accepting it. Nothing prevents an operator maintaining a second log; the guarantee is that a reader who pinned an identity is told when they are shown another. | A pack under an unpinned key yields IDENTITY_UNPINNED; a pack under the pinned key verifies; the limit is documented as detection rather than prevention |
+| ☐ `FR-65` | **Operator-declared key custody** — The key custody class — non-exportable KMS or HSM, versus a software key — is declared in a chained record per epoch, because an HSM signature and a file-key signature are byte-identical and a verifier cannot otherwise tell them apart. The declaration proves the operator declared it, not that the key was non-exportable or later destroyed. Custody is reported as operator-declared unless a provider attestation document is supplied alongside, which is the only path to independently supported custody. | A verifier prints the declared class per epoch, labels it operator-declared, and refuses to claim forward secrecy for an epoch declared software-keyed; a supplied provider attestation is reported as independently supported |
 
 ### M3b — Practice statement and resilience
 
@@ -223,21 +223,21 @@ The differentiated claim: prove the record is complete, not merely unaltered.
 | ☐ `FR-23` | **Policy changes as chain events** — Record any change to the witness set or quorum as a timestamped event inside the chain. | Red-team: policy downgrade is visible in the record |
 | ☐ `FR-24` | **Signed heartbeats** — Emit signed heartbeats into the collector-scoped chain at a configured interval, independently of whether any run is active, because the dangerous window is precisely when none is. | Stopping the collector produces a detectable gap, including during an interval with no agent run |
 | ☐ `FR-25` | **Build digest in heartbeat** — Each heartbeat carries the collector build digest, binding a run to a traceable artifact for configuration assurance and non-repudiation by an honest operator. It is not an attestation of the running process and does not detect a dishonest patch. | Digest present and resolvable to a published provenance attestation; test asserts no claim of patch detection appears in output |
-| ☐ `FR-28` | **splitstick coverage** — Produce a coverage report over a date range stating the proportion of actions the collector reported that were captured, chained and anchored, plus heartbeat continuity — never a claim about actions the collector did not report. | Report wording asserted by test; injected gaps appear exactly; a suppressed action does not appear and the report does not imply completeness |
+| ☐ `FR-28` | **splitstick coverage** — Produce a coverage report over a date range stating the proportion of actions the collector reported that were captured, chained and anchored, plus heartbeat continuity — never a claim about actions the collector did not report. Attempts and logical actions are counted separately, since one action may span several attempts. | Report wording asserted by test; injected gaps appear exactly; attempt and logical-action counts are both present and differ under retry; a suppressed action does not appear and the report does not imply completeness |
 | ☐ `FR-40` | **Late anchors reported as gaps** — Windows anchored late are reported as coverage gaps. | Coverage report flags the widened window |
 | ☐ `SEC-11` | **Resist collector stoppage** — Stopping the collector and claiming a quiet period must be detectable, by heartbeat discontinuity. Patching the collector is NOT covered: a modified build can report the original digest, and a self-reported digest is not remote attestation. | Kill the collector mid-window; the coverage report shows an undeclared gap. A separate test asserts a collector reporting a forged digest is NOT flagged, so the limit is pinned by a test rather than by prose |
 | ☐ `SEC-12` | **Resist policy downgrade** — Weakening the anchoring policy before tampering must be visible in the record. | Test weakens the witness set, then asserts a countersigned policy event appears in the chain before the next batch |
 | ☐ `DOC-05` | **Publish honest limits** — Publish the known information leaks and the attacks not covered. | Documentation review |
 | ☐ `DOC-10` | **Document the collector-patch limit** — State plainly, wherever coverage attestation is described, that a collector patched to report a valid digest while suppressing actions is not detectable without remote attestation, which this release does not provide. | Statement present in the threat model, the coverage report output, and DES-10; claims audit checks no surface implies otherwise |
-| ☐ `FR-64` | **Collector configuration attestation** — Each heartbeat carries a digest of the collector’s effective capture configuration — which upstreams it proxies, which interfaces it binds, and its heartbeat and anchor intervals — so adding an unobserved path requires either a recorded configuration change or a visible divergence. | Adding an upstream changes the attested digest and emits a policy record; a collector bound to an undeclared interface is detectable by divergence |
-| ☐ `FR-66` | **Compare witnesses asked against proofs present** — The verifier compares the witness set recorded in the chain against the countersignatures present in the pack, and reports any witness that was asked but whose proof is absent. This is the only way an offline reader detects a dropped countersignature. | Remove one countersignature from a pack: the verifier reports WITNESS_OMITTED naming it, while the chain and remaining proofs still verify |
+| ☐ `FR-64` | **Collector self-reported configuration attestation** — Each heartbeat carries a digest of the capture configuration the collector reports for itself — upstreams proxied, interfaces bound, heartbeat and anchor intervals — so a change to THAT configuration is recorded and visible. It does not detect an execution path created outside the collector: such a path leaves the collector reporting an unchanged digest and nothing diverges. This is provenance of a self-report, not independent observation. | Changing a declared upstream alters the attested digest and emits a policy record; a test asserts that a path bypassing the collector entirely produces NO signal, so the limit is pinned by a test rather than by prose |
+| ☐ `FR-66` | **Compare expected witnesses against proofs present** — Each checkpoint records which witnesses were expected for it, given their tier and cadence, and the verifier compares that against the proofs in the pack. A proof that is expected and absent is reported as missing and inconclusive — it may be pending under fail-open, the witness may have been unavailable, or the receipt may have been removed, and the verifier cannot tell which from absence alone. Demonstrating removal requires an earlier pack that contained it, which is cross-pack comparison. | Remove a proof: WITNESS_MISSING is reported as inconclusive, never as deletion. A witness on a slower tier with no proof yet is reported as not-yet-expected. A pack pair where one holds the proof and the later one does not yields removal |
 
 ### M5 — Disclosure and erasure
 
 No new attack class. This is the milestone that makes the product buyable by a regulated, multi-customer organisation.
 
 - **Gate:** none — unlocks adoption rather than closing an attack class
-- **Requirements:** 16 (PRIV×7  FR×5  NFR×3  INT×1)
+- **Requirements:** 17 (PRIV×7  FR×6  NFR×3  INT×1)
 - **Effort:** weeks 3-4
 - **Exit criteria:** Verification passes after content and key deletion. A single-event disclosure verifies in isolation against a countersigned root. A 100,000-event run verifies in under 2 seconds with no network and no credentials. Both metadata leaks documented.
 
@@ -255,10 +255,11 @@ No new attack class. This is the milestone that makes the product buyable by a r
 | ☐ `PRIV-04` | **Chain survives erasure** — The chain still verifies after content deletion. | Verify passes post-deletion |
 | ☐ `PRIV-05` | **Minimal retained artefacts** — After erasure the chain retains only: format version, collector identity, run identifier, record_seq, source_seq, timestamp, kind, consequential flag, tool name, approval decision, result ok flag, payload byte lengths, gap spans and unknown-loss intervals, and salted digests. Every other field — payloads, the agent label, the approval reviewer, the reviewed request, content salts, leaf salts and the reference index — is erasable. The byte lengths are a documented residual leak. | Automated scan after crypto-shredding asserts the residue matches the enumerated permanent set exactly, field for field, and fails on any field not in the list |
 | ☐ `PRIV-06` | **Disclosure minimisation** — A disclosure reveals the named event and nothing else about other events' contents. | Test asserts a disclosure pack contains exactly one salt and that no sibling leaf is reproducible from the pack |
-| ☐ `PRIV-07` | **Disclose the tree-size leak** — Document that an inclusion proof reveals the total count of recorded actions. | Documentation review |
+| ☐ `PRIV-07` | **Disclose the tree-size leak** — Document that an inclusion proof reveals the log tree size, and that tree size is the count of ALL records — actions, heartbeats, policy events, gap declarations and padding — not a count of agent actions. The action count is therefore not directly disclosed, which is a weaker leak than an earlier draft claimed. | Documentation review; a test asserts tree size exceeds the action count in any run containing heartbeats |
 | ☐ `PRIV-08` | **Disclose the cadence leak** — Document that anchor cadence leaks activity volume. | Documentation review |
 | ☐ `PRIV-09` | **Operator-controlled retention** — Retention is a setting on operator-controlled storage, not a vendor policy. | Configuration test |
 | ☐ `INT-03` | **Documented evidence pack format** — Publish and version the evidence pack format so third parties can write verifiers. | Spec published; independent verifier implementation validates a pack |
+| ☐ `FR-69` | **Padding is a record kind** — A padding leaf is an explicit, immutable record kind with its own record_seq, source_seq null, and a commitment, so record_seq equals tree_size unconditionally. Padding leaves without corresponding records would break that invariant. | Two real records plus three padding records yield tree_size 5 and record_seq 5; a verifier counts real and padding records separately |
 
 ### M6 — Reach and conformance
 
@@ -296,7 +297,7 @@ Stop depending on one upstream project, and make the format genuinely somebody e
 Every promise that is a claim rather than a feature. This milestone is mostly about what we must not say.
 
 - **Gate:** none — unlocks adoption rather than closing an attack class
-- **Requirements:** 36 (SCOPE×15  GOV×7  DOC×5  SEC×4  LEG×3  TRC×2)
+- **Requirements:** 37 (SCOPE×15  GOV×7  DOC×6  SEC×4  LEG×3  TRC×2)
 - **Effort:** weeks 2
 - **Exit criteria:** Claims audit clean across all sixteen scope guards. Every published figure has a passing benchmark behind it. Bounty terms published, stating plainly that recognition is non-cash while the project is unfunded. No surface anywhere claims conformity, certification, or tamper-proofing.
 
@@ -338,6 +339,7 @@ Every promise that is a claim rather than a feature. This milestone is mostly ab
 | ☐ `SCOPE-16` | **No fail-closed option** — MUST NOT provide any configuration, flag or build that makes the collector block an agent run. Fail-open is a design constraint, not a setting. | Config schema review; no enforcement path exists; rejected as a feature request by policy |
 | ☐ `GOV-17` | **Bounty: cash deferred until funded** — State publicly that a cash award opens only if the project is funded, rather than promising money that is not held. | Terms published with the condition stated; no figure advertised as available |
 | ☐ `GOV-18` | **Accept third-party attack classes** — Accept contributed attack classes by pull request, with attribution. A goal, explicitly not a launch gate. | Contribution path documented; not referenced in any release gate |
+| ☐ `DOC-11` | **Every assurance claim names its evidence** — Each assurance claim in the specifications and the release notes names the evidence that supports it, classified as independent, operator-declared, or none. A claim resting only on the operator-controlled collector is worded as an assertion, never as a verified guarantee. This rule exists because the design repeatedly acquired guarantees its own threat model excludes. | Claims audit per release checks each assurance claim against the register; npm run review flags a curated set of overclaim phrasings |
 
 ## Deferred
 
@@ -367,4 +369,4 @@ Every promise that is a claim rather than a feature. This milestone is mostly ab
 
 ---
 
-*190 requirements in 1.0 across 9 milestones; 207 total in the backlog.*
+*192 requirements in 1.0 across 9 milestones; 209 total in the backlog.*

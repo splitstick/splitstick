@@ -60,7 +60,7 @@ Each carries what a reader may conclude, because "verification failed" is useles
 `COVERAGE_GAP` | A window with no heartbeat and no declaration. |
 `COVERAGE_UNKNOWN` | A `gap_unknown` record is present. **Inconclusive, never `ok`** — the chain may be perfectly intact while the collector cannot say what was observed during the interval. An otherwise flawless run containing one of these is not proof of complete capture, and the coverage report says so. |
 `IDENTITY_UNPINNED` | The pack is signed under a key or origin the acceptance policy did not name (`FR-63`). Nothing prevents an operator keeping a second log; this is how a reader who pinned an identity is told they are being shown another. |
-`WITNESS_OMITTED` | A witness recorded in the chain as asked has no proof in the pack (`FR-66`). The only way an offline reader detects a *dropped* countersignature rather than an absent one. |
+`WITNESS_MISSING` | A witness **expected for this checkpoint** — given its tier and cadence — has no proof in the pack (`FR-66`). **Inconclusive, not a finding of deletion.** Absence is consistent with pending under fail-open, a slower roll-up tier, an unavailable witness, or a removed receipt, and nothing in the pack distinguishes them. Demonstrating removal requires an earlier pack that held the proof, which is cross-pack comparison (`DES-19`). |
 `TRUNCATED_BELOW_DISCLOSED` | A pack already disclosed holds a countersigned checkpoint above where this record ends. **Truncation, caught without a stateful witness.** |
 
 ## The capability statement — FR-57

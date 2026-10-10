@@ -93,11 +93,26 @@ if (fs.existsSync(CANON)) {
     if (!notes.includes(w)) flag('CONFIG', `the documented default is missing a canonical witness (${w})`);
 }
 
+
+// 9. the evidence rule (DOC-11): a claim resting only on the collector is an
+// assertion, not a guarantee. A curated phrase list, same approach as STALE.
+const OVERCLAIM = [
+  [/requires either a recorded config/i, 'FR-64 attests a self-report; it cannot detect a path created outside the collector'],
+  [/proves completeness|proof of complete capture(?! )/i, 'completeness cannot be proved by an operator-controlled collector'],
+  [/detects (an )?unobserved path/i, 'no mechanism here observes a path outside the collector'],
+  [/verified custody|custody is verified/i, 'custody is operator-declared unless a provider attestation is supplied'],
+  [/dropped countersignature/i, 'absence of a proof is not evidence of deletion; say missing, and inconclusive'],
+  [/tamper[- ]proof/i, 'tamper-evident, never tamper-proof'],
+];
+for (const [id, s] of specs) for (const line of s.split('\n')) for (const [re, why] of OVERCLAIM)
+  if (re.test(line) && !/not |never |cannot |does not |is not |rather than|an earlier draft|previously|path to|only when|supported only|unless a provider|say missing/i.test(line))
+    flag('OVERCLAIM', `${id}: ${why} -> "${line.trim().slice(0,70)}"`);
+
 console.log(out.length ? out.map(l => '  ' + l).join('\n') : '  no structural issues');
 
 // MANUAL findings are informational: a document requirement verified by reading a
 // document is correct, not a defect. Everything else is a gate.
-const BLOCKING = ['TRACE','BADREF','ORPHAN','LEAK','CLAIM','STALE','CONFIG'];
+const BLOCKING = ['TRACE','BADREF','ORPHAN','LEAK','CLAIM','STALE','CONFIG','OVERCLAIM'];
 const blocking = out.filter(l => BLOCKING.some(k => l.startsWith(k)));
 const manual = out.length - blocking.length;
 console.log(`\n  ${out.length} finding(s) across ${reqs.length} requirements and ${elements.length} design elements`);

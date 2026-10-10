@@ -370,9 +370,9 @@
     "type": "privacy",
     "release": "1.0",
     "title": "Disclose the tree-size leak",
-    "statement": "Document that an inclusion proof reveals the total count of recorded actions.",
+    "statement": "Document that an inclusion proof reveals the log tree size, and that tree size is the count of ALL records — actions, heartbeats, policy events, gap declarations and padding — not a count of agent actions. The action count is therefore not directly disclosed, which is a weaker leak than an earlier draft claimed.",
     "source": "Disclosure — the honest limit",
-    "verify": "Documentation review"
+    "verify": "Documentation review; a test asserts tree size exceeds the action count in any run containing heartbeats"
   },
   {
     "id": "PRIV-08",

@@ -61,7 +61,8 @@
         "FR-33",
         "FR-34",
         "FR-53",
-        "PRIV-06"
+        "PRIV-06",
+        "FR-69"
       ],
       "spec": "design/DES-05-batching-and-merkle.md"
     },
@@ -367,7 +368,8 @@
       "PRIV-08",
       "GOV-16",
       "GOV-19",
-      "GOV-03"
+      "GOV-03",
+      "DOC-11"
     ],
     "process": [
       "GOV-01",

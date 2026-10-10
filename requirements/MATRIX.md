@@ -11,32 +11,32 @@ Regenerate with `npm run requirements`.
 
 | Category | Count |
 |---|---:|
-| Functional | 67 |
+| Functional | 68 |
 | Security | 26 |
 | Legal & regulatory | 19 |
 | Governance, licensing & community | 19 |
 | Scope guards (negative) | 16 |
 | Non-functional | 13 |
-| Documentation & transparency | 10 |
+| Documentation & transparency | 11 |
 | Roadmap (post-1.0) | 10 |
 | Privacy & data protection | 9 |
 | Interoperability & standards | 7 |
 | Operational | 6 |
 | Traceability & process | 5 |
-| **Total** | **207** |
+| **Total** | **209** |
 
 ### By release
 
 | Release | Count |
 |---|---:|
-| 1.0 | 190 |
+| 1.0 | 192 |
 | 2.0 | 5 |
 | commercial | 12 |
-| **Total** | **207** |
+| **Total** | **209** |
 
 ## Matrix
 
-### Functional — 67
+### Functional — 68
 
 | ID | Requirement | Traces to | Verified by | Rel | M | Status |
 |---|---|---|---|---|---|---|
@@ -67,7 +67,7 @@ Regenerate with `npm run requirements`.
 | `FR-25` | **Build digest in heartbeat** — Each heartbeat carries the collector build digest, binding a run to a traceable artifact for configuration assurance and non-repudiation by an honest operator. It is not an attestation of the running process and does not detect a dishonest patch. | Coverage attestation — build digest | Digest present and resolvable to a published provenance attestation; test asserts no claim of patch detection appears in output | 1.0 | M4 | ☐ |
 | `FR-26` | **Gap declarations with an exact span** — When the observation counter survived the failure, record a signed declaration naming the exact source_seq span that was observed but never written. It occupies one record position. Observation gaps are detected from consecutive persisted source_seq values, never by comparing source_seq with record_seq, which count different things. | Coverage attestation — signed gap declarations | Induce a write failure for 6 observed actions with the counter intact: one gap record names source_seq 4790-4795, and a mixed stream of actions, heartbeats and policy records shows no false gap | 1.0 | M3a | ☐ |
 | `FR-27` | **Countersigned gap declarations** — Gap declarations are themselves submitted for countersignature. | Coverage attestation — signed, countersigned statement of absence | Declaration carries a witness signature | 1.0 | M3a | ☐ |
-| `FR-28` | **splitstick coverage** — Produce a coverage report over a date range stating the proportion of actions the collector reported that were captured, chained and anchored, plus heartbeat continuity — never a claim about actions the collector did not report. | Coverage attestation — splitstick coverage | Report wording asserted by test; injected gaps appear exactly; a suppressed action does not appear and the report does not imply completeness | 1.0 | M4 | ☐ |
+| `FR-28` | **splitstick coverage** — Produce a coverage report over a date range stating the proportion of actions the collector reported that were captured, chained and anchored, plus heartbeat continuity — never a claim about actions the collector did not report. Attempts and logical actions are counted separately, since one action may span several attempts. | Coverage attestation — splitstick coverage | Report wording asserted by test; injected gaps appear exactly; attempt and logical-action counts are both present and differ under retry; a suppressed action does not appear and the report does not imply completeness | 1.0 | M4 | ☐ |
 | `FR-29` | **splitstick verify** — Verify chain integrity, batch signatures and witness countersignatures from files alone. | Proof — offline verification | All red-team classes fail closed; baseline passes | 1.0 | M1 | ☐ |
 | `FR-30` | **Acceptance policy as input** — The verifier takes a caller-supplied acceptance policy naming trusted witness keys and quorum. | Proof — an input, not a hardcoded trust store | Same pack verifies under two different policies | 1.0 | M3a | ☐ |
 | `FR-31` | **Evidence pack carries all countersignatures** — Packs include every countersignature collected, not only Splitstick's. | Proof — never only ours | Automated pack assertion: after anchoring to three witnesses, the pack contains three signature lines and verification succeeds under a policy naming only the third | 1.0 | M3a | ☐ |
@@ -101,12 +101,13 @@ Regenerate with `npm run requirements`.
 | `FR-59` | **Action record and chain entry are separate structures** — The canonicalised, hashed ActionRecord is immutable and contains no chain metadata. prev, leaf and head live in a ChainEntry wrapper that is never canonicalised, so the digest of a record can never depend on a value derived from it. Conformance vectors publish the exact bytes hashed. | Integrity — chained, salted, ratcheted; Capture — action record | Conformance vectors: given a fixed ActionRecord, the canonical bytes, leaf and head are byte-exact. A test asserts no chain field appears inside the canonicalised subject | 1.0 | M1 | ☐ |
 | `FR-60` | **Unknown-loss intervals** — When the observation counter did not survive — an unrecoverable crash with the counter only in memory — declare an unknown-loss interval bounded by the last durable checkpoint and the first record after restart. Never fabricate an exact span. The two kinds of loss evidence are distinct record kinds and a verifier reports them differently. | Operations — fails open, loudly; Coverage attestation | Disk exhaustion followed by kill -9 and restart: an unknown-loss interval is written with no span, and no exact gap is invented. A verifier distinguishes it from a declared span | 1.0 | M3b | ☐ |
 | `FR-61` | **Observation counter durability** — Checkpoint the observation counter durably at each batch flush, so an unrecoverable crash loses at most the current window and the unknown-loss interval is bounded rather than open-ended. | Operations — fails open, loudly | Kill -9 mid-window: the restart reads the last checkpointed source_seq and the declared unknown interval starts there, not at zero | 1.0 | M3b | ☐ |
-| `FR-62` | **Retries, timeouts and errors in the schema** — The record schema represents a failed, timed-out or retried tool call explicitly: an outcome enum, an attempt number, and a correlation id linking attempts of one logical action. A retry is a distinct record, not an overwrite, and source_seq advances once per logical action rather than once per attempt. | Capture — action record | A timeout followed by a successful retry produces two records with one correlation id, source_seq advances once, and the coverage count reports one action | 1.0 | M1 | ☐ |
+| `FR-62` | **Retries, timeouts and errors in the schema** — The record schema represents a failed, timed-out or retried tool call explicitly: an outcome enum, an attempt number, and a correlation id grouping attempts of one logical action. source_seq advances once per observed ATTEMPT, not per logical action, because a timed-out attempt may already have caused an external side effect and must stay independently accountable. Correlation, not the counter, is what groups attempts. | Capture — action record | Interleaved retries across two correlations keep source_seq strictly increasing; an omitted retry is detected as a source_seq gap; coverage reports attempt count and logical-action count separately | 1.0 | M1 | ☐ |
 | `FR-63` | **Pinned operator identity** — The acceptance policy names the operator identity the reader expects, and the verifier reports any pack presented under a different key or origin rather than silently accepting it. Nothing prevents an operator maintaining a second log; the guarantee is that a reader who pinned an identity is told when they are shown another. | Proof — offline verification; Threat model | A pack under an unpinned key yields IDENTITY_UNPINNED; a pack under the pinned key verifies; the limit is documented as detection rather than prevention | 1.0 | M3a | ☐ |
-| `FR-64` | **Collector configuration attestation** — Each heartbeat carries a digest of the collector’s effective capture configuration — which upstreams it proxies, which interfaces it binds, and its heartbeat and anchor intervals — so adding an unobserved path requires either a recorded configuration change or a visible divergence. | Coverage attestation | Adding an upstream changes the attested digest and emits a policy record; a collector bound to an undeclared interface is detectable by divergence | 1.0 | M4 | ☐ |
-| `FR-65` | **Chained key-custody declaration** — The key custody class — non-exportable KMS or HSM, versus a software key — is declared in a chained, countersigned policy record, because an HSM signature and a file-key signature are byte-identical and the forward-secrecy precondition is otherwise invisible to a verifier. | Integrity — forward-secure epoch ratchet | A verifier reports the declared custody class per epoch and refuses to claim forward secrecy for an epoch declared software-keyed | 1.0 | M2 | ☐ |
-| `FR-66` | **Compare witnesses asked against proofs present** — The verifier compares the witness set recorded in the chain against the countersignatures present in the pack, and reports any witness that was asked but whose proof is absent. This is the only way an offline reader detects a dropped countersignature. | Proof — offline verification | Remove one countersignature from a pack: the verifier reports WITNESS_OMITTED naming it, while the chain and remaining proofs still verify | 1.0 | M4 | ☐ |
+| `FR-64` | **Collector self-reported configuration attestation** — Each heartbeat carries a digest of the capture configuration the collector reports for itself — upstreams proxied, interfaces bound, heartbeat and anchor intervals — so a change to THAT configuration is recorded and visible. It does not detect an execution path created outside the collector: such a path leaves the collector reporting an unchanged digest and nothing diverges. This is provenance of a self-report, not independent observation. | Coverage attestation | Changing a declared upstream alters the attested digest and emits a policy record; a test asserts that a path bypassing the collector entirely produces NO signal, so the limit is pinned by a test rather than by prose | 1.0 | M4 | ☐ |
+| `FR-65` | **Operator-declared key custody** — The key custody class — non-exportable KMS or HSM, versus a software key — is declared in a chained record per epoch, because an HSM signature and a file-key signature are byte-identical and a verifier cannot otherwise tell them apart. The declaration proves the operator declared it, not that the key was non-exportable or later destroyed. Custody is reported as operator-declared unless a provider attestation document is supplied alongside, which is the only path to independently supported custody. | Integrity — forward-secure epoch ratchet | A verifier prints the declared class per epoch, labels it operator-declared, and refuses to claim forward secrecy for an epoch declared software-keyed; a supplied provider attestation is reported as independently supported | 1.0 | M3a | ☐ |
+| `FR-66` | **Compare expected witnesses against proofs present** — Each checkpoint records which witnesses were expected for it, given their tier and cadence, and the verifier compares that against the proofs in the pack. A proof that is expected and absent is reported as missing and inconclusive — it may be pending under fail-open, the witness may have been unavailable, or the receipt may have been removed, and the verifier cannot tell which from absence alone. Demonstrating removal requires an earlier pack that contained it, which is cross-pack comparison. | Proof — offline verification | Remove a proof: WITNESS_MISSING is reported as inconclusive, never as deletion. A witness on a slower tier with no proof yet is reported as not-yet-expected. A pack pair where one holds the proof and the later one does not yields removal | 1.0 | M4 | ☐ |
 | `FR-68` | **Unwitnessed outage ceiling** — Fail-open must not become indefinite. An unwitnessed_ceiling sets the point at which the collector raises an alert out of band, and beyond which the coverage report refuses to issue a completeness claim spanning the outage, stating the unwitnessed window instead. | Operations — fails open, loudly | Exceed the ceiling: an alert is raised and the coverage report declines a completeness claim for that window rather than reporting it as covered | 1.0 | M3b | ☐ |
+| `FR-69` | **Padding is a record kind** — A padding leaf is an explicit, immutable record kind with its own record_seq, source_seq null, and a commitment, so record_seq equals tree_size unconditionally. Padding leaves without corresponding records would break that invariant. | Disclosure — optional batch padding | Two real records plus three padding records yield tree_size 5 and record_seq 5; a verifier counts real and padding records separately | 1.0 | M5 | ☐ |
 
 ### Non-functional — 13
 
@@ -167,7 +168,7 @@ Regenerate with `npm run requirements`.
 | `PRIV-04` | **Chain survives erasure** — The chain still verifies after content deletion. | Erasure — the chain still verifies | Verify passes post-deletion | 1.0 | M5 | ☐ |
 | `PRIV-05` | **Minimal retained artefacts** — After erasure the chain retains only: format version, collector identity, run identifier, record_seq, source_seq, timestamp, kind, consequential flag, tool name, approval decision, result ok flag, payload byte lengths, gap spans and unknown-loss intervals, and salted digests. Every other field — payloads, the agent label, the approval reviewer, the reviewed request, content salts, leaf salts and the reference index — is erasable. The byte lengths are a documented residual leak. | Erasure — what survives is a salted hash and a timestamp | Automated scan after crypto-shredding asserts the residue matches the enumerated permanent set exactly, field for field, and fails on any field not in the list | 1.0 | M5 | ☐ |
 | `PRIV-06` | **Disclosure minimisation** — A disclosure reveals the named event and nothing else about other events' contents. | Disclosure — without seeing anything else | Test asserts a disclosure pack contains exactly one salt and that no sibling leaf is reproducible from the pack | 1.0 | M5 | ☐ |
-| `PRIV-07` | **Disclose the tree-size leak** — Document that an inclusion proof reveals the total count of recorded actions. | Disclosure — the honest limit | Documentation review | 1.0 | M5 | ☐ |
+| `PRIV-07` | **Disclose the tree-size leak** — Document that an inclusion proof reveals the log tree size, and that tree size is the count of ALL records — actions, heartbeats, policy events, gap declarations and padding — not a count of agent actions. The action count is therefore not directly disclosed, which is a weaker leak than an earlier draft claimed. | Disclosure — the honest limit | Documentation review; a test asserts tree size exceeds the action count in any run containing heartbeats | 1.0 | M5 | ☐ |
 | `PRIV-08` | **Disclose the cadence leak** — Document that anchor cadence leaks activity volume. | Disclosure — anchor cadence likewise leaks | Documentation review | 1.0 | M5 | ☐ |
 | `PRIV-09` | **Operator-controlled retention** — Retention is a setting on operator-controlled storage, not a vendor policy. | Erasure — policy settings on your storage | Configuration test | 1.0 | M5 | ☐ |
 
@@ -263,7 +264,7 @@ Regenerate with `npm run requirements`.
 | `SCOPE-15` | **Hard anchor must be disableable** — The trust-minimised roll-up anchor must be switchable off in one setting, and switching it off must be recorded in the chain like any other policy change. It is on by default because it is the only free public anchor with no acceptable-use objection; it must never be mandatory, because some regulated buyers forbid public-chain anchoring outright. | Independence — optional and off by default | One setting disables it; the change appears as a chain event | 1.0 | M3a | ☐ |
 | `SCOPE-16` | **No fail-closed option** — MUST NOT provide any configuration, flag or build that makes the collector block an agent run. Fail-open is a design constraint, not a setting. | Operations — a design constraint, not a setting | Config schema review; no enforcement path exists; rejected as a feature request by policy | 1.0 | M7 | ☐ |
 
-### Documentation & transparency — 10
+### Documentation & transparency — 11
 
 | ID | Requirement | Traces to | Verified by | Rel | M | Status |
 |---|---|---|---|---|---|---|
@@ -277,6 +278,7 @@ Regenerate with `npm run requirements`.
 | `DOC-08` | **Publish bounty terms** — Publish the full bounty terms alongside the offer. | Bounty terms | Terms published before the offer goes live | 1.0 | M7 | ☐ |
 | `DOC-09` | **Reconciliation guidance** — Document reconciliation against counterparty records as a detection method for erasure and omission, with its limits stated: it requires access to the counterparty and it is a procedure an auditor performs, not a guarantee the software makes. | Durability; Threat model — residual risk | Guidance published; the limits appear wherever the method is claimed | 1.0 | M3a | ☐ |
 | `DOC-10` | **Document the collector-patch limit** — State plainly, wherever coverage attestation is described, that a collector patched to report a valid digest while suppressing actions is not detectable without remote attestation, which this release does not provide. | Coverage attestation; Threat model — residual risk | Statement present in the threat model, the coverage report output, and DES-10; claims audit checks no surface implies otherwise | 1.0 | M4 | ☐ |
+| `DOC-11` | **Every assurance claim names its evidence** — Each assurance claim in the specifications and the release notes names the evidence that supports it, classified as independent, operator-declared, or none. A claim resting only on the operator-controlled collector is worded as an assertion, never as a verified guarantee. This rule exists because the design repeatedly acquired guarantees its own threat model excludes. | Threat model — detection, not prevention | Claims audit per release checks each assurance claim against the register; npm run review flags a curated set of overclaim phrasings | 1.0 | M7 | ☐ |
 
 ### Roadmap (post-1.0) — 10
 
@@ -305,4 +307,4 @@ Regenerate with `npm run requirements`.
 
 ---
 
-*207 requirements. Status column is maintained by hand as work lands.*
+*209 requirements. Status column is maintained by hand as work lands.*

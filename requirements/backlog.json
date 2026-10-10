@@ -250,9 +250,9 @@
       "type": "functional",
       "release": "1.0",
       "title": "splitstick coverage",
-      "statement": "Produce a coverage report over a date range stating the proportion of actions the collector reported that were captured, chained and anchored, plus heartbeat continuity — never a claim about actions the collector did not report.",
+      "statement": "Produce a coverage report over a date range stating the proportion of actions the collector reported that were captured, chained and anchored, plus heartbeat continuity — never a claim about actions the collector did not report. Attempts and logical actions are counted separately, since one action may span several attempts.",
       "source": "Coverage attestation — splitstick coverage",
-      "verify": "Report wording asserted by test; injected gaps appear exactly; a suppressed action does not appear and the report does not imply completeness"
+      "verify": "Report wording asserted by test; injected gaps appear exactly; attempt and logical-action counts are both present and differ under retry; a suppressed action does not appear and the report does not imply completeness"
     },
     {
       "id": "FR-29",

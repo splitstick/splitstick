@@ -43,7 +43,7 @@ them.
    | Counter | Increments on | Equals |
    |---|---|---|
    | `record_seq` | every record **written** | the log's `tree_size` after that record, always |
-   | `source_seq` | every consequential action **observed**, written or not | nothing else |
+   | `source_seq` | every consequential **attempt** observed, written or not | nothing else |
    | `checkpoint_seq` | every published checkpoint | nothing else; it is an ordinal |
 
    **The counters must never be compared with each other.** They count different things:
@@ -56,9 +56,18 @@ them.
    of `record_seq`. If one action record carries `source_seq: 4790` and the next carries `4796`,
    then 4791–4795 were observed and never written.
 
-   Non-action records carry **`source_seq: null`** rather than repeating the last value. Null
-   states "this record is not an observation", which is checkable; a repeated value would be
-   indistinguishable from a second observation of the same action.
+   Non-action records — heartbeats, policy events, gap declarations and padding — carry
+   **`source_seq: null`** rather than repeating the last value. Null states "this record is not an
+   observation", which is checkable; a repeated value would be indistinguishable from a second
+   observation.
+
+   `source_seq` is therefore **strictly increasing across attempts**, never repeated and never
+   decreasing, which is what makes consecutive-value gap detection sound. Logical actions are
+   grouped by `correlation`, never by the counter.
+
+   And `tree_size` counts **every** record — actions, heartbeats, policy events, gap declarations
+   and padding. It is not an action count, which is why `PRIV-07`'s disclosure leak is weaker than
+   an earlier draft claimed.
 
    The C2SP `tree_size` field (DES-07) is **the record count**, not a batch count. A witness
    compares `tree_size`, which is strictly increasing.

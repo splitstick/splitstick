@@ -49,11 +49,16 @@ So this element specifies two modes and the claim differs between them:
 | **Non-exportable KMS/HSM** (NFR-09) | Key material never exists outside the module; scheduled deletion is logged by the provider. Forward security claimed, **with the custody precondition stated in the same sentence**. |
 
 **How a verifier knows which mode applied — FR-65.** It cannot tell from the signature: an HSM
-signature and a signature from a PEM file on disk are byte-identical. So the custody class is
-**declared in a chained, countersigned policy record** per epoch. Without that declaration the
-forward-secrecy precondition is invisible and the claim unverifiable, which an earlier draft
-missed by saying the verifier "reports which mode produced a signature" without saying how it
-could know.
+signature and a signature from a PEM file on disk are byte-identical. The custody class is
+therefore **declared in a chained record** per epoch, countersigned once anchoring exists — which
+is why FR-65 sits in M3a rather than M2, a dependency an earlier draft left undeclared and the
+ordering validator could not catch, because a validator only checks what you tell it.
+
+**A declaration is a declaration.** It proves the operator asserted a custody class; it does not
+prove the key was non-exportable, nor that a retired key was destroyed. The verifier therefore
+labels it **operator-declared**, and reports custody as *independently supported* only when a
+provider attestation document is supplied alongside — which is the sole path to verified custody
+in this design.
 
 A verifier prints the declared class per epoch and refuses to claim forward secrecy for any epoch
 declared software-keyed.
