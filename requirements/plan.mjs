@@ -29,10 +29,10 @@ const TY = {functional:'FR','non-functional':'NFR',security:'SEC',privacy:'PRIV'
   governance:'GOV',operational:'OPS',interoperability:'INT','scope-guard':'SCOPE',
   documentation:'DOC',roadmap:'RM',traceability:'TRC'};
 
-let md = `# Delivery plan — Tally 1.0
+let md = `# Delivery plan — Splitstick 1.0
 
 160 release-1.0 requirements sequenced into 8 milestones, gated by the attack-class
-table in [the release notes](../docs/tally-1.0-release-notes.md).
+table in [the release notes](../docs/splitstick-1.0-release-notes.md).
 
 **Generated — do not edit by hand.** Source of truth is \`requirements/milestones.json\`.
 Regenerate with \`npm run plan\`.

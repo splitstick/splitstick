@@ -1,6 +1,6 @@
 # Requirements traceability matrix
 
-Derived line by line from [docs/tally-1.0-release-notes.md (rev. 5)](../docs/tally-1.0-release-notes.md).
+Derived line by line from [docs/splitstick-1.0-release-notes.md (rev. 5)](../docs/splitstick-1.0-release-notes.md).
 
 Every requirement traces to a promise made in the release notes. 'source' names the section. Nothing here is invented: if the notes do not promise it, it is not a requirement.
 
@@ -57,7 +57,7 @@ Regenerate with `npm run requirements`.
 | `FR-15` | **transparency-dev/witness adapter** — Support transparency-dev/witness as a witness type. | Independence — transparency-dev/witness | Anchor against a local instance | 1.0 | M6 | ☐ |
 | `FR-16` | **RFC 3161 TSA adapter** — Support an RFC 3161 timestamp authority as a witness type. | Independence — an RFC 3161 TSA | Timestamp token obtained and verified | 1.0 | M6 | ☐ |
 | `FR-17` | **Operator-hosted witness adapter** — Support an operator's own internal witness endpoint. | Independence — your own internal authority | Self-hosted witness round trip | 1.0 | M6 | ☐ |
-| `FR-18` | **Tally hosted witness adapter** — Support the Tally hosted witness. | Independence — or Tally's | Hosted witness round trip | commercial | — | ☐ |
+| `FR-18` | **Splitstick hosted witness adapter** — Support the Splitstick hosted witness. | Independence — or Splitstick's | Hosted witness round trip | commercial | — | ☐ |
 | `FR-19` | **Configurable quorum** — Accept a K-of-N quorum setting governing how many countersignatures a batch requires. | Independence — set quorum: 2 | Verifier rejects a batch below quorum | 1.0 | M3a | ☐ |
 | `FR-20` | **Configurable anchor cadence** — Accept an anchor_interval setting that determines the mutability window. | Independence — cadence is yours to set | Observed anchor spacing matches configuration | 1.0 | M3a | ☐ |
 | `FR-21` | **Soft anchor tier** — Provide a fast anchor tier, default every 10 seconds. | Independence — soft anchor | Timing test | 1.0 | M3a | ☐ |
@@ -67,11 +67,11 @@ Regenerate with `npm run requirements`.
 | `FR-25` | **Build digest in heartbeat** — Each heartbeat carries the collector's build digest. | Coverage attestation — build digest | Patched binary reports an unrecognised digest | 1.0 | M4 | ☐ |
 | `FR-26` | **Signed gap declarations** — Allow the operator to record an explicit, signed declaration of a genuinely lost batch so the sequence can recover. | Coverage attestation — signed gap declarations | Sequence resumes after a declared gap without a silent reset | 1.0 | M4 | ☐ |
 | `FR-27` | **Countersigned gap declarations** — Gap declarations are themselves submitted for countersignature. | Coverage attestation — signed, countersigned statement of absence | Declaration carries a witness signature | 1.0 | M4 | ☐ |
-| `FR-28` | **tally coverage** — Produce a coverage report over a date range stating the percentage of tool calls captured and proving collector liveness throughout. | Coverage attestation — tally coverage | Report output matches injected gaps exactly | 1.0 | M4 | ☐ |
-| `FR-29` | **tally verify** — Verify chain integrity, batch signatures and witness countersignatures from files alone. | Proof — offline verification | All red-team classes fail closed; baseline passes | 1.0 | M1 | ☐ |
+| `FR-28` | **splitstick coverage** — Produce a coverage report over a date range stating the percentage of tool calls captured and proving collector liveness throughout. | Coverage attestation — splitstick coverage | Report output matches injected gaps exactly | 1.0 | M4 | ☐ |
+| `FR-29` | **splitstick verify** — Verify chain integrity, batch signatures and witness countersignatures from files alone. | Proof — offline verification | All red-team classes fail closed; baseline passes | 1.0 | M1 | ☐ |
 | `FR-30` | **Acceptance policy as input** — The verifier takes a caller-supplied acceptance policy naming trusted witness keys and quorum. | Proof — an input, not a hardcoded trust store | Same pack verifies under two different policies | 1.0 | M3b | ☐ |
-| `FR-31` | **Evidence pack carries all countersignatures** — Packs include every countersignature collected, not only Tally's. | Proof — never only ours | Pack inspection after multi-witness anchoring | 1.0 | M3b | ☐ |
-| `FR-32` | **tally disclose** — Emit a Merkle inclusion proof for a single named event. | Disclosure — tally disclose | Recipient verifies one event without the rest | 1.0 | M5 | ☐ |
+| `FR-31` | **Evidence pack carries all countersignatures** — Packs include every countersignature collected, not only Splitstick's. | Proof — never only ours | Pack inspection after multi-witness anchoring | 1.0 | M3b | ☐ |
+| `FR-32` | **splitstick disclose** — Emit a Merkle inclusion proof for a single named event. | Disclosure — splitstick disclose | Recipient verifies one event without the rest | 1.0 | M5 | ☐ |
 | `FR-33` | **Inclusion proof binds to countersigned root** — Inclusion proofs verify against a countersigned root, not a bare local digest. | Disclosure — against a countersigned root | Proof rejected when root is unwitnessed | 1.0 | M5 | ☐ |
 | `FR-34` | **Optional batch padding** — Provide optional padding of batches to obscure activity volume. | Disclosure — optional batch padding | Anchor volume decoupled from event volume when enabled | 1.0 | M5 | ☐ |
 | `FR-35` | **Content externalised from the chain** — The chain stores salted commitments and pointers only; content lives in operator-controlled mutable storage. | Erasure — no content is ever in the chain | Chain inspection contains no plaintext | 1.0 | M1 | ☐ |
@@ -80,7 +80,7 @@ Regenerate with `npm run requirements`.
 | `FR-38` | **Fail-open with marked batch** — When no witness is reachable, chain and sign locally, mark the batch unwitnessed, and queue it. | Operations — fails open, loudly | Agent completes with all witnesses unreachable | 1.0 | M3b | ☐ |
 | `FR-39` | **Late countersignature records real time** — A retroactive countersignature records the witness's actual receipt time, not the batch's claimed time. | Operations — the witness's real time | Delta between operator and witness time is present in the record | 1.0 | M3b | ☐ |
 | `FR-40` | **Late anchors reported as gaps** — Windows anchored late are reported as coverage gaps. | Operations — reported as a coverage gap | Coverage report flags the widened window | 1.0 | M4 | ☐ |
-| `FR-41` | **Configuration file** — Support tally.yaml with witnesses, quorum, on_unavailable and anchor_interval keys. | Getting started — tally.yaml | Documented example loads and takes effect | 1.0 | M1 | ☐ |
+| `FR-41` | **Configuration file** — Support splitstick.yaml with witnesses, quorum, on_unavailable and anchor_interval keys. | Getting started — splitstick.yaml | Documented example loads and takes effect | 1.0 | M1 | ☐ |
 | `FR-42` | **Operator enrolment** — Register an operator identity and public key with a witness so per-operator sequence state can be kept. | Witness Practice Statement — this enrolled operator | Enrolment then successive anchors tracked | 1.0 | M3a | ☐ |
 | `FR-43` | **Witness enforces monotonic sequence** — The witness verifies that each submitted root is the immediate successor of the last recorded for that operator. | Witness Practice Statement — immediate successor | Truncation and erasure both detected | 1.0 | M3a | ☐ |
 | `FR-44` | **Witness retains roots** — The witness keeps submitted roots in its own append-only store. | Witness Practice Statement — has retained it | Root retrievable from the witness independently | 1.0 | M3a | ☐ |
@@ -116,7 +116,7 @@ Regenerate with `npm run requirements`.
 |---|---|---|---|---|---|---|
 | `SEC-01` | **Published threat model** — Publish a threat model naming the operator as the adversary. | Threat model | Document exists and is referenced from the README | 1.0 | M0 | ☐ |
 | `SEC-02` | **Detection, not prevention** — The stated security goal is detection and attribution, not prevention. | Threat model — goal | Claims review against documentation and marketing | 1.0 | M0 | ☐ |
-| `SEC-03` | **No trust in operator or vendor** — Verification must not require trusting the operator, host, collector binary, or Tally. | Threat model — trust | Verification from bytes and public keys only | 1.0 | M3a | ☐ |
+| `SEC-03` | **No trust in operator or vendor** — Verification must not require trusting the operator, host, collector binary, or Splitstick. | Threat model — trust | Verification from bytes and public keys only | 1.0 | M3a | ☐ |
 | `SEC-04` | **One honest witness assumption** — Security holds if at least one witness in the configured set is honest; the assumption is documented. | Threat model — trust | Documented; quorum semantics tested | 1.0 | M3a | ☐ |
 | `SEC-05` | **Documented exclusions** — Publish what is out of scope: actions never attempted, a compromised model, a lying tool, full quorum collusion, a key exfiltrated before first use. | Threat model — out of scope | Document review | 1.0 | M0 | ☐ |
 | `SEC-06` | **Resist action alteration** — Altering recorded arguments, result or approval decision must be detectable. | Attack class table, row 1 | Red-team class A | 1.0 | M1 | ☐ |
@@ -127,7 +127,7 @@ Regenerate with `npm run requirements`.
 | `SEC-11` | **Resist collector suppression** — Stopping or patching the collector and claiming a quiet period must be detectable and attributable. | Attack class table, row 6 | Kill and patch tests against coverage report | 1.0 | M4 | ☐ |
 | `SEC-12` | **Resist policy downgrade** — Weakening the anchoring policy before tampering must be visible in the record. | Attack class table, row 7 | Policy-change event present and countersigned | 1.0 | M4 | ☐ |
 | `SEC-13` | **Digest pre-image resistance in practice** — Salting must prevent brute-force recovery of low-entropy action records from their digests. | Integrity — otherwise simply brute-forced | Dictionary attack against salted digests fails | 1.0 | M1 | ☐ |
-| `SEC-14` | **Operator key never leaves operator** — Tally must never hold, receive, request or log the operator signing key. | Integrity — Tally never holds it, sees it, or asks for it | Code audit plus egress inspection | 1.0 | M1 | ☐ |
+| `SEC-14` | **Operator key never leaves operator** — Splitstick must never hold, receive, request or log the operator signing key. | Integrity — Splitstick never holds it, sees it, or asks for it | Code audit plus egress inspection | 1.0 | M1 | ☐ |
 | `SEC-15` | **Witness sees roots only** — Witnesses receive salted roots and nothing else. | Independence — salted roots only | Wire capture of all witness traffic | 1.0 | M3a | ☐ |
 | `SEC-16` | **Bounded integrity claim** — Never claim tamper-proof; claim tamper-evident with attribution. | Scope — not tamper-proof | Claims review | 1.0 | M7 | ☐ |
 | `SEC-17` | **State the forward-secrecy precondition** — Any forward-secrecy claim must state its non-exportable key custody precondition in the same place. | Integrity — this holds only under non-exportable key custody | Documentation review | 1.0 | M2 | ☐ |
@@ -169,10 +169,10 @@ Regenerate with `npm run requirements`.
 | `LEG-09` | **WPS versioned and anchored** — The practice statement is itself versioned and anchored like any other record. | WPS — versioned and anchored like everything else | Statement root present in the witness log; counsel review deferred to a funded release | 1.0 | M3b | ☐ |
 | `LEG-10` | **Limitation of warranty** — Publish an explicit limitation of warranty for the witness service. | WPS — warranties are limited accordingly | Terms published and reviewed by counsel | commercial | — | ☐ |
 | `LEG-11` | **FRE 902(13)/(14) technical shape** — Produce records whose integrity and generation process can be certified by a qualified person, matching the shape those rules contemplate. | Legal posture | Counsel review; certification template produced | commercial | — | ☐ |
-| `LEG-12` | **eIDAS presumption only via qualified TSA** — Document that the Art. 41 presumption attaches only when anchored to a qualified TSA, and not via Tally's own witness. | Legal posture | Documentation review; no contrary claim anywhere | 1.0 | M6 | ☐ |
+| `LEG-12` | **eIDAS presumption only via qualified TSA** — Document that the Art. 41 presumption attaches only when anchored to a qualified TSA, and not via Splitstick's own witness. | Legal posture | Documentation review; no contrary claim anywhere | 1.0 | M6 | ☐ |
 | `LEG-13` | **Qualified TSA configurable** — A qualified TSA can be configured in the witness set by the operator. | Legal posture — the architecture is pluggable precisely so you can | Live anchor against a qualified TSA | 1.0 | M6 | ☐ |
 | `LEG-14` | **No conformity claims** — No product surface or marketing claims EU AI Act conformity. | Legal posture — nothing claims conformity | Claims audit across docs, site and UI | 1.0 | M7 | ☐ |
-| `LEG-15` | **No certification of the customer** — Never certify the customer's compliance. | Legal posture — Tally does not certify you | Claims audit | 1.0 | M7 | ☐ |
+| `LEG-15` | **No certification of the customer** — Never certify the customer's compliance. | Legal posture — Splitstick does not certify you | Claims audit | 1.0 | M7 | ☐ |
 | `LEG-16` | **Not-legal-advice disclaimer** — Carry a not-legal-advice disclaimer wherever statutes are cited. | Legal posture; footer | Documentation review | 1.0 | M7 | ☐ |
 | `LEG-17` | **Pursue qualified status** — Pursue accreditation for the hosted witness so the eIDAS presumption can attach. | What comes after 1.0 — qualified status | Accreditation process initiated and tracked | commercial | — | ☐ |
 | `LEG-18` | **Trademark clearance** — Complete a free knockout search on the public registers and on npm, GitHub and domains before the name is relied on. Registration is deferred to a funded release. | Draft banner — placeholder pending a trademark search | Search record committed to the repository | 1.0 | M0 | ☐ |

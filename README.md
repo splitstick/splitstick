@@ -1,4 +1,4 @@
-# Tally
+# Splitstick
 
 **Agent actions you can prove — including the ones that aren't there.**
 
@@ -28,7 +28,7 @@ and the suite exits non-zero whenever an observation changes in either direction
 | Path | What |
 |---|---|
 | [`redteam/`](redteam/) | The tamper suite. Reproducible, runs offline, no API key. |
-| [`docs/`](docs/) | [Draft release notes](docs/tally-1.0-release-notes.md) — the scope commitment, rev. 6 |
+| [`docs/`](docs/) | [Draft release notes](docs/splitstick-1.0-release-notes.md) — the scope commitment, rev. 6 |
 | [`requirements/`](requirements/) | [Backlog](requirements/MATRIX.md) and [delivery plan](requirements/PLAN.md) — 187 requirements, 174 in 1.0, gated by attack class |
 | [`packages/`](packages/) | Shipped code. Empty until M1. |
 | [`spec/`](spec/) | Wire format and conformance vectors. Empty until M6. |
@@ -50,7 +50,7 @@ requirement cannot exist without a promise.
 
 Unfunded: one person's time, no budget. No hosted witness, no accreditation, no certification
 mark, and recognition rather than cash for findings — all stated in the
-[release notes](docs/tally-1.0-release-notes.md) rather than left to be inferred.
+[release notes](docs/splitstick-1.0-release-notes.md) rather than left to be inferred.
 
 The software is unaffected. Everything in 1.0 is buildable at zero cost and anchors by default
 to a public transparency log this project does not operate.

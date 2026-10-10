@@ -139,7 +139,7 @@
     "type": "security",
     "release": "1.0",
     "title": "No trust in operator or vendor",
-    "statement": "Verification must not require trusting the operator, host, collector binary, or Tally.",
+    "statement": "Verification must not require trusting the operator, host, collector binary, or Splitstick.",
     "source": "Threat model — trust",
     "verify": "Verification from bytes and public keys only"
   },
@@ -238,8 +238,8 @@
     "type": "security",
     "release": "1.0",
     "title": "Operator key never leaves operator",
-    "statement": "Tally must never hold, receive, request or log the operator signing key.",
-    "source": "Integrity — Tally never holds it, sees it, or asks for it",
+    "statement": "Splitstick must never hold, receive, request or log the operator signing key.",
+    "source": "Integrity — Splitstick never holds it, sees it, or asks for it",
     "verify": "Code audit plus egress inspection"
   },
   {

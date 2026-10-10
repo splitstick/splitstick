@@ -1,7 +1,7 @@
-# Delivery plan — Tally 1.0
+# Delivery plan — Splitstick 1.0
 
 160 release-1.0 requirements sequenced into 8 milestones, gated by the attack-class
-table in [the release notes](../docs/tally-1.0-release-notes.md).
+table in [the release notes](../docs/splitstick-1.0-release-notes.md).
 
 **Generated — do not edit by hand.** Source of truth is `requirements/milestones.json`.
 Regenerate with `npm run plan`.
@@ -77,7 +77,7 @@ Close the two attack classes that need no third party, and measure the performan
 - **Gate:** `AC-1` — Alter the recorded action — arguments, result, approval decision; `AC-2` — Alter an event and repair the citing digest
 - **Requirements:** 23 (FR×11  SEC×4  NFR×3  PRIV×2  INT×2  DOC×1)
 - **Effort:** weeks 3-4
-- **Exit criteria:** Red-team A and C both DETECTED by tally verify; baseline still passes. p99 append overhead measured under 1 ms and run latency under 2% — measured, not assumed. Chain files contain no plaintext.
+- **Exit criteria:** Red-team A and C both DETECTED by splitstick verify; baseline still passes. p99 append overhead measured under 1 ms and run latency under 2% — measured, not assumed. Chain files contain no plaintext.
 
 | ID | Requirement | Verified by |
 |---|---|---|
@@ -89,15 +89,15 @@ Close the two attack classes that need no third party, and measure the performan
 | `FR-08` | **Predecessor chaining** — Every event carries a cryptographic digest of its predecessor. | Red-team attacks B, C, F fail closed |
 | `FR-09` | **Per-leaf salting** — Every leaf is salted with a per-leaf random nonce before hashing. | Unit test: identical content yields distinct digests |
 | `FR-10` | **Batch signing with operator key** — Sign each batch root with the operator-supplied key. | Signature verifies under operator public key |
-| `FR-29` | **tally verify** — Verify chain integrity, batch signatures and witness countersignatures from files alone. | All red-team classes fail closed; baseline passes |
+| `FR-29` | **splitstick verify** — Verify chain integrity, batch signatures and witness countersignatures from files alone. | All red-team classes fail closed; baseline passes |
 | `FR-35` | **Content externalised from the chain** — The chain stores salted commitments and pointers only; content lives in operator-controlled mutable storage. | Chain inspection contains no plaintext |
-| `FR-41` | **Configuration file** — Support tally.yaml with witnesses, quorum, on_unavailable and anchor_interval keys. | Documented example loads and takes effect |
+| `FR-41` | **Configuration file** — Support splitstick.yaml with witnesses, quorum, on_unavailable and anchor_interval keys. | Documented example loads and takes effect |
 | `NFR-01` | **Append overhead** — p99 append overhead below 1 ms per event. | Benchmark harness, p99 over 1e6 events |
 | `NFR-02` | **Run latency budget** — Added end-to-end agent run latency below 2%. | A/B benchmark with and without the collector |
 | `SEC-06` | **Resist action alteration** — Altering recorded arguments, result or approval decision must be detectable. | Red-team class A |
 | `SEC-07` | **Resist consistent rewrite** — Altering an event and repairing its citing digest must be detectable. | Red-team class C |
 | `SEC-13` | **Digest pre-image resistance in practice** — Salting must prevent brute-force recovery of low-entropy action records from their digests. | Dictionary attack against salted digests fails |
-| `SEC-14` | **Operator key never leaves operator** — Tally must never hold, receive, request or log the operator signing key. | Code audit plus egress inspection |
+| `SEC-14` | **Operator key never leaves operator** — Splitstick must never hold, receive, request or log the operator signing key. | Code audit plus egress inspection |
 | `PRIV-01` | **Zero content egress** — No content bytes leave the operator's host under any configuration. | Full egress capture during a representative run |
 | `PRIV-02` | **No content in the chain** — The chain contains no plaintext content. | Automated scan of chain files for plaintext |
 | `INT-04` | **Additive OMA integration** — Integrate with OMA without a fork, patch or upstream pull request. | Install against unmodified upstream at the supported version |
@@ -145,7 +145,7 @@ The first second party. Close truncation and erasure, which no amount of local c
 | `FR-44` | **Witness retains roots** — The witness keeps submitted roots in its own append-only store. | Root retrievable from the witness independently |
 | `FR-45` | **Witness stamps its own clock** — The countersignature carries the witness's own time, not the operator's. | Operator-supplied time cannot influence the countersignature |
 | `NFR-03` | **Default mutability window** — Default anchor interval of 10 seconds. | Default config inspection plus timing test |
-| `SEC-03` | **No trust in operator or vendor** — Verification must not require trusting the operator, host, collector binary, or Tally. | Verification from bytes and public keys only |
+| `SEC-03` | **No trust in operator or vendor** — Verification must not require trusting the operator, host, collector binary, or Splitstick. | Verification from bytes and public keys only |
 | `SEC-04` | **One honest witness assumption** — Security holds if at least one witness in the configured set is honest; the assumption is documented. | Documented; quorum semantics tested |
 | `SEC-09` | **Resist truncation** — Truncating the record's tail must be detectable. | Red-team class D |
 | `SEC-10` | **Resist erasure and renumbering** — Erasing events and renumbering into a clean stream must be detectable. | Red-team class F |
@@ -169,7 +169,7 @@ Say exactly what the countersignature means, and make sure losing a witness does
 | ID | Requirement | Verified by |
 |---|---|---|
 | `FR-30` | **Acceptance policy as input** — The verifier takes a caller-supplied acceptance policy naming trusted witness keys and quorum. | Same pack verifies under two different policies |
-| `FR-31` | **Evidence pack carries all countersignatures** — Packs include every countersignature collected, not only Tally's. | Pack inspection after multi-witness anchoring |
+| `FR-31` | **Evidence pack carries all countersignatures** — Packs include every countersignature collected, not only Splitstick's. | Pack inspection after multi-witness anchoring |
 | `FR-38` | **Fail-open with marked batch** — When no witness is reachable, chain and sign locally, mark the batch unwitnessed, and queue it. | Agent completes with all witnesses unreachable |
 | `FR-39` | **Late countersignature records real time** — A retroactive countersignature records the witness's actual receipt time, not the batch's claimed time. | Delta between operator and witness time is present in the record |
 | `NFR-12` | **Never degrade availability** — The collector must never be able to stop or block an agent run. | Chaos test: witness outage, disk full, slow witness |
@@ -204,7 +204,7 @@ The differentiated claim: prove the record is complete, not merely unaltered.
 | `FR-25` | **Build digest in heartbeat** — Each heartbeat carries the collector's build digest. | Patched binary reports an unrecognised digest |
 | `FR-26` | **Signed gap declarations** — Allow the operator to record an explicit, signed declaration of a genuinely lost batch so the sequence can recover. | Sequence resumes after a declared gap without a silent reset |
 | `FR-27` | **Countersigned gap declarations** — Gap declarations are themselves submitted for countersignature. | Declaration carries a witness signature |
-| `FR-28` | **tally coverage** — Produce a coverage report over a date range stating the percentage of tool calls captured and proving collector liveness throughout. | Report output matches injected gaps exactly |
+| `FR-28` | **splitstick coverage** — Produce a coverage report over a date range stating the percentage of tool calls captured and proving collector liveness throughout. | Report output matches injected gaps exactly |
 | `FR-40` | **Late anchors reported as gaps** — Windows anchored late are reported as coverage gaps. | Coverage report flags the widened window |
 | `SEC-11` | **Resist collector suppression** — Stopping or patching the collector and claiming a quiet period must be detectable and attributable. | Kill and patch tests against coverage report |
 | `SEC-12` | **Resist policy downgrade** — Weakening the anchoring policy before tampering must be visible in the record. | Policy-change event present and countersigned |
@@ -221,7 +221,7 @@ No new attack class. This is the milestone that makes the product buyable by a r
 
 | ID | Requirement | Verified by |
 |---|---|---|
-| `FR-32` | **tally disclose** — Emit a Merkle inclusion proof for a single named event. | Recipient verifies one event without the rest |
+| `FR-32` | **splitstick disclose** — Emit a Merkle inclusion proof for a single named event. | Recipient verifies one event without the rest |
 | `FR-33` | **Inclusion proof binds to countersigned root** — Inclusion proofs verify against a countersigned root, not a bare local digest. | Proof rejected when root is unwitnessed |
 | `FR-34` | **Optional batch padding** — Provide optional padding of batches to obscure activity volume. | Anchor volume decoupled from event volume when enabled |
 | `FR-36` | **Crypto-shredding** — Deleting content and its key leaves the chain verifiable and the commitment permanently unlinkable. | Verify passes after content+key deletion |
@@ -269,7 +269,7 @@ Stop depending on one upstream project, and make the format genuinely somebody e
 | `OPS-03` | **Self-hosted witness deployment guide** — Document running the witness under internal audit with keys in their custody. | Guide published; followed end to end in a clean environment |
 | `OPS-05` | **Zero-egress mode** — Support and verify a deployment with no account, no enrolment with us, and no traffic leaving the perimeter. | Egress capture in a fully self-hosted deployment |
 | `LEG-13` | **Qualified TSA configurable** — A qualified TSA can be configured in the witness set by the operator. | Live anchor against a qualified TSA |
-| `LEG-12` | **eIDAS presumption only via qualified TSA** — Document that the Art. 41 presumption attaches only when anchored to a qualified TSA, and not via Tally's own witness. | Documentation review; no contrary claim anywhere |
+| `LEG-12` | **eIDAS presumption only via qualified TSA** — Document that the Art. 41 presumption attaches only when anchored to a qualified TSA, and not via Splitstick's own witness. | Documentation review; no contrary claim anywhere |
 | `FR-49` | **Documented CLI contract** — Provide the entry points and flags printed in Getting started: collect-oma, mcp-proxy (--upstream, --out), verify (--policy), coverage (--from, --to) and disclose (--event, --out). | CLI contract test executes every documented invocation verbatim |
 
 ### M7 — Launch gate
@@ -333,7 +333,7 @@ Every promise that is a claim rather than a feature. This milestone is mostly ab
 
 **commercial — 12**
 
-- `FR-18` Tally hosted witness adapter
+- `FR-18` Splitstick hosted witness adapter
 - `LEG-10` Limitation of warranty
 - `LEG-11` FRE 902(13)/(14) technical shape
 - `LEG-17` Pursue qualified status

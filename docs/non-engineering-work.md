@@ -45,7 +45,7 @@ generally **may not itself supply the goods or services being certified** — in
 is a ground for cancellation, and the EU certification mark carries an equivalent
 restriction.
 
-So Tally the company cannot sell Tally and also own "Tally" as the certification mark for
+So Splitstick the company cannot sell Splitstick and also own "Splitstick" as the certification mark for
 conformant witnesses. Options, in descending order of how much they preserve the strategy:
 
 1. **A separate mark held by a neutral entity** — a foundation or association that does not

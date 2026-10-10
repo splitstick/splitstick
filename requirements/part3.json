@@ -103,7 +103,7 @@
     "type": "legal",
     "release": "1.0",
     "title": "eIDAS presumption only via qualified TSA",
-    "statement": "Document that the Art. 41 presumption attaches only when anchored to a qualified TSA, and not via Tally's own witness.",
+    "statement": "Document that the Art. 41 presumption attaches only when anchored to a qualified TSA, and not via Splitstick's own witness.",
     "source": "Legal posture",
     "verify": "Documentation review; no contrary claim anywhere"
   },
@@ -131,7 +131,7 @@
     "release": "1.0",
     "title": "No certification of the customer",
     "statement": "Never certify the customer's compliance.",
-    "source": "Legal posture — Tally does not certify you",
+    "source": "Legal posture — Splitstick does not certify you",
     "verify": "Claims audit"
   },
   {

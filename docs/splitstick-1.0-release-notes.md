@@ -1,6 +1,6 @@
-# Tally 1.0 — draft release notes
+# Splitstick 1.0 — draft release notes
 
-`v1.0.0` · Apache-2.0 · rev. 7
+`v1.0.0` · Apache-2.0 · rev. 8
 
 **Agent actions you can prove — including the ones that aren't there.**
 
@@ -49,7 +49,7 @@ with one EUR 2,000,000 transfer in it, most of our alterations passed the runtim
 including changing the amount to EUR 25 and deleting the transfer entirely. The suite is public and
 runs in two commands, so you need not take our word for the finding either.
 
-Tally closes that gap without asking you to change your agent code, hand over a key, or send us your
+Splitstick closes that gap without asking you to change your agent code, hand over a key, or send us your
 data.
 
 ## Threat model
@@ -61,10 +61,10 @@ about is an uncomfortable one to name.
 |---|---|
 | **Adversary** | **The operator.** A party with root on the host, possession of the signing key, write access to the record, and a motive to change what it says after the fact. Everyone else — the external attacker, the buggy library, the corrupted disk — is a strictly easier case already handled by existing verifiers. |
 | **Goal** | Not prevention. **Detection and attribution.** A party who controls the machine can always lie; the question is whether lying leaves a trace someone else can find. |
-| **Trust** | No trust in the operator, the host, the collector binary, or Tally. Verification requires only bytes and public keys. We assume at least one witness in the configured set is honest. |
+| **Trust** | No trust in the operator, the host, the collector binary, or Splitstick. Verification requires only bytes and public keys. We assume at least one witness in the configured set is honest. |
 | **Out of scope** | An action the agent never attempted. A compromised model. A tool that lies about what it did. Collusion across every witness in the quorum. A key exfiltrated before first use. |
 
-## What Tally adds, by attack class
+## What Splitstick adds, by attack class
 
 | Attack class | Mechanism that closes it | Local or external? |
 |---|---|---|
@@ -78,20 +78,20 @@ about is an uncomfortable one to name.
 
 Truncation and erasure are **mathematically impossible to detect from inside the record**: whoever
 controls the file controls where it ends, and a chain over a truncated prefix is still internally
-valid. Those rows are why Tally is not merely a library.
+valid. Those rows are why Splitstick is not merely a library.
 
 We deliberately publish no "*N* of *N* attacks defeated" score. We wrote the attacks, so passing them
 proves little. Instead the suite is open, contributions are invited, and we pay **EUR 5,000 per novel
-tamper class** that survives a default Tally configuration. A number someone else can move is worth
+tamper class** that survives a default Splitstick configuration. A number someone else can move is worth
 more than one we award ourselves.
 
 ## What ships in 1.0
 
 ### Capture — two collectors
 
-- **`@tally/collect-oma`** — a drop-in journal and approval-store backend for OMA, via documented
+- **`@splitstick/collect-oma`** — a drop-in journal and approval-store backend for OMA, via documented
   interfaces. **Not a fork**: no patch, no pull request, nothing upstream has to accept.
-- **`@tally/mcp-proxy`** — sits between any agent and its MCP servers. Works with anything that
+- **`@splitstick/mcp-proxy`** — sits between any agent and its MCP servers. Works with anything that
   speaks MCP, including runtimes that ship no journal at all.
 - Both digest the **action record** — tool name, arguments, result, approval decision — not only the
   conversation the model saw. Our red team found this gap in a shipped verifier, and it was in
@@ -107,7 +107,7 @@ more than one we award ourselves.
   destroyed, so yesterday's entries cannot be re-signed with today's key. *This holds only under
   non-exportable key custody* — an HSM or KMS with attested rotation. Key destruction is not
   externally verifiable, so we state the precondition rather than the stronger claim.
-- Batches are signed with **your** key. Tally never holds it, sees it, or asks for it.
+- Batches are signed with **your** key. Splitstick never holds it, sees it, or asks for it.
 
 ### Independence — tiered, pluggable anchoring
 
@@ -136,7 +136,7 @@ external dependency for their audit trail, and they do not need to.
   holds the signing key. Neither function can rewrite history alone.
 - That is ordinary **separation of duties** — a control such organisations already operate, already
   document, and already have an owner for.
-- So **Tally runs without trusting us at all**: no account, no enrolment, no traffic leaving your
+- So **Splitstick runs without trusting us at all**: no account, no enrolment, no traffic leaving your
   perimeter. Our hosted witness is one option among several, and declining it costs you nothing in
   the open-source release.
 
@@ -153,15 +153,15 @@ that **everything was logged** — and silence is indistinguishable from "nothin
   signed, countersigned statement of absence. Strict sequence contiguity without this is a
   denial-of-service on yourself: one lost batch and the stream never recovers.
 - An unexplained absence and a declared one are different objects — in engineering and, where
-  adverse-inference doctrines apply, in litigation. Tally converts the first into the second.
-- `tally coverage` produces the claim that answers an auditor: *"100% of tool calls captured between
+  adverse-inference doctrines apply, in litigation. Splitstick converts the first into the second.
+- `splitstick coverage` produces the claim that answers an auditor: *"100% of tool calls captured between
   T1 and T2, with proof the collector was alive for every second of it."*
 
 ### Disclosure — prove one action, reveal one action
 
 - An auditor investigating one transaction should not receive your entire log — and if the log spans
   customers, you cannot lawfully hand it over.
-- `tally disclose <event>` emits a **Merkle inclusion proof** against a countersigned root. The
+- `splitstick disclose <event>` emits a **Merkle inclusion proof** against a countersigned root. The
   recipient verifies that this action is in the record, at that position, at that time, without
   seeing anything else.
 - Salted leaves mean the sibling hashes in the proof reveal nothing about their contents.
@@ -174,7 +174,7 @@ that **everything was logged** — and silence is indistinguishable from "nothin
 ### Erasure — append-only, and still GDPR-compatible
 
 A permanent tamper-evident log of agent actions appears to collide head-on with the right to
-erasure. It is the first objection a data-protection officer raises, and it is usually fatal. Tally
+erasure. It is the first objection a data-protection officer raises, and it is usually fatal. Splitstick
 is built so the collision does not occur.
 
 - **No content is ever in the chain.** The chain holds salted commitments and pointers. Content
@@ -219,7 +219,7 @@ consequential failure mode in the design, and it is addressed rather than assume
 
 ### Proof — offline verification
 
-- `tally verify` needs **no network, no credentials, no account** — only bytes and public keys. It
+- `splitstick verify` needs **no network, no credentials, no account** — only bytes and public keys. It
   will still work in 2031.
 - The acceptance policy is an **input, not a hardcoded trust store**. An auditor who accepts only
   qualified trust service providers supplies their own list and verifies the same pack.
@@ -239,7 +239,7 @@ consequential failure mode in the design, and it is addressed rather than assume
 
 Certificate authorities publish a Certification Practice Statement because an attestation whose
 meaning is vague is an attestation worth nothing — and an unbounded one is a liability nobody should
-accept. Tally's witness ships with the equivalent, and it is deliberately narrow.
+accept. Splitstick's witness ships with the equivalent, and it is deliberately narrow.
 
 **A countersignature asserts**
 
@@ -262,14 +262,14 @@ published practice statement, which is versioned and anchored like everything el
 
 ## Legal posture
 
-Earlier drafts of these notes said Tally makes a record "admissible." That was wrong, and counsel
+Earlier drafts of these notes said Splitstick makes a record "admissible." That was wrong, and counsel
 would have caught it. **Admissibility is a judicial determination, not a product feature.** No
 software can confer it, and claiming otherwise is the kind of overstatement that costs a trust vendor
 its credibility exactly once.
 
 What is accurate, and still valuable:
 
-- Tally produces records whose integrity and process of generation can be certified by a qualified
+- Splitstick produces records whose integrity and process of generation can be certified by a qualified
   person — the technical shape contemplated by **US FRE 902(13) and 902(14)** for self-authenticating
   electronic records and hash-identified copies.
 - Where a batch is anchored to a **qualified** timestamp authority, the **eIDAS Art. 41 presumption**
@@ -281,7 +281,7 @@ What is accurate, and still valuable:
   monotonic, hash-chained sequence. That is a materially different conversation, and it is the honest
   version of the value proposition.
 
-Tally does not certify you. Nothing in this release claims EU AI Act conformity, and these notes are
+Splitstick does not certify you. Nothing in this release claims EU AI Act conformity, and these notes are
 not legal advice.
 
 ## Scope
@@ -297,7 +297,7 @@ not legal advice.
 
 **What 1.0 deliberately is not**
 
-- **Not a policy engine.** Tally records; it does not block, gate or filter. Guardrails are a
+- **Not a policy engine.** Splitstick records; it does not block, gate or filter. Guardrails are a
   different product with a different failure mode.
 - **Not tamper-*proof*.** Tamper-*evident*. An operator who controls the host can still lie — not
   without leaving an attributable trace. That is the bar the regulation sets and the only one anyone
@@ -339,7 +339,7 @@ alongside the offer so that both sides know the shape of it before anyone starts
 | Term | |
 |---|---|
 | **One class, one payout** | The unit is a **tamper class**, not an instance. Twelve variations on truncation are one finding. We would rather pay well for a new idea than repeatedly for the same one. |
-| **Default configuration** | The attack must survive the shipped default: witnesses `[tally, rekor]`, `quorum: 1`, `anchor_interval: 10s`, `on_unavailable: mark_gap`. A tamper that only works once the operator has weakened their own policy is already a recorded chain event, by design. |
+| **Default configuration** | The attack must survive the shipped default: witnesses `[splitstick, rekor]`, `quorum: 1`, `anchor_interval: 10s`, `on_unavailable: mark_gap`. A tamper that only works once the operator has weakened their own policy is already a recorded chain event, by design. |
 | **The threat model is the scope** | The out-of-scope list published above is binding in both directions. A key exfiltrated before first use, collusion across the entire quorum, or a tool that lies about what it did are excluded — and we do not get to add exclusions after the fact. |
 | **Recognition, not cash** | While the project is unfunded, a novel class earns attribution, credit in the suite and a named finding. A cash award opens only if the project is funded. We would rather say that than advertise money we do not hold. |
 | **First reporter, 90 days** | First complete report wins. Coordinated disclosure after 90 days or on fix, whichever is sooner. We publish the finding either way, including when we have no mitigation. |
@@ -351,9 +351,9 @@ power over our own evidence are exactly the places to give it away.
 ## Getting started
 
 ```yaml
-# tally.yaml — the witness surface. Defaults shown; every line is yours to change.
+# splitstick.yaml — the witness surface. Defaults shown; every line is yours to change.
 witnesses:
-  - { id: tally, url: "https://witness.tally.dev", key: "<shipped pubkey>" }
+  - { id: splitstick, url: "https://witness.splitstick.dev", key: "<shipped pubkey>" }
   - { id: rekor, type: rekor }
 #  - { id: corp,  url: "https://tsa.audit.internal", key: "..." }   # your own
 #  - { id: qtsp,  type: rfc3161, url: "https://qts.provider.eu" }   # qualified
@@ -364,17 +364,17 @@ anchor_interval: 10s
 
 ```bash
 # Existing OMA runtime — one dependency, one config change
-npm i @tally/collect-oma
+npm i @splitstick/collect-oma
 
 # Any other stack — put the proxy in front of your MCP servers
-npx @tally/mcp-proxy --upstream http://localhost:8931 --out ./tally
+npx @splitstick/mcp-proxy --upstream http://localhost:8931 --out ./splitstick
 
 # Verify, with no network and no credentials
-npx @tally/verify ./tally --policy ./acceptance.json
-npx @tally/coverage ./tally --from 2027-01-01 --to 2027-03-31
+npx @splitstick/verify ./splitstick --policy ./acceptance.json
+npx @splitstick/coverage ./splitstick --from 2027-01-01 --to 2027-03-31
 
 # Hand an auditor one action, and nothing else
-npx @tally/disclose ./tally --event 8f2c91 --out invoice-4471.pack
+npx @splitstick/disclose ./splitstick --event 8f2c91 --out invoice-4471.pack
 ```
 
 Requires Node.js 20+ and a KMS or HSM offering non-exportable keys for the forward-secure ratchet.
@@ -436,7 +436,7 @@ is published rather than discarded, on the same principle as everything else her
 | 3 | CUT | Verifiable delay function; zero-knowledge compliance proofs; TEE-as-guarantee; the "*N* of *N* attacks defeated" metric. |
 | 3 | REWROTE | "Admissible" → burden shifting with the statutes named. Forward secrecy now states its HSM precondition. Hashes salted after a brute-force objection. Strict sequence contiguity softened with signed gap declarations. |
 | 3 | ADDED | Crypto-shredding for erasure compatibility, after the GDPR Art. 17 objection; adversarial bounty in place of the self-scored metric; hard anchor defaulted off. |
-| 4 | CHANGED | Default witness set is now `[tally, rekor]` rather than Tally alone, so the shipped configuration is independent of us on day one. |
+| 4 | CHANGED | Default witness set is now `[splitstick, rekor]` rather than Splitstick alone, so the shipped configuration is independent of us on day one. |
 | 4 | ADDED | Self-hosted witness under internal audit as a named deployment pattern; witness list published as open data, with inclusion ungated. |
 | 5 | ADDED | Bounty terms, after it was pointed out that an uncapped offer judged by its own payer is neither a commitment nor credible. Novelty is now decided by an external arbiter. |
 | 6 | ADDED | Build provenance, signed releases and an SBOM, after a coverage review found that an attested build digest means nothing if the build cannot be traced to its source. |
@@ -444,6 +444,7 @@ is published rather than discarded, on the same principle as everything else her
 | 6 | ADDED | The witness time source is now named in the practice statement, since the countersignature asserts a time and nothing previously said where that time came from. |
 | 7 | SCOPED | Re-scoped as an unfunded open-source release after a feasibility review found that 40% of requirements were non-engineering and most existed only because the notes were written as a commercial launch. Nothing technical was cut. |
 | 7 | CHANGED | Default witness set is now `[rekor]` alone — no vendor in the shipped configuration, which is both the strongest independence claim and free. |
+| 8 | RENAMED | Tally became Splitstick. A knockout search found "Tally" registered to Tally Solutions for accounting software, the npm and GitHub namespaces taken, and the word descriptive of what an audit tool does. Splitstick is arbitrary in class 9, free everywhere that matters, and names the two-party property rather than the counting. Recorded in docs/name-search.md. |
 | 7 | REMOVED | The hosted witness, the certification mark, accreditation and the cash bounty. All four are now stated as funded-release items rather than implied capabilities. |
 
 ## Credit
@@ -451,14 +452,14 @@ is published rather than discarded, on the same principle as everything else her
 > "It proves lineage and content, not that the file was never edited."
 > — open-multi-agent/open-multi-agent, README
 
-Tally exists because OMA built the right primitive and then documented exactly where it stopped. Its
+Splitstick exists because OMA built the right primitive and then documented exactly where it stopped. Its
 `verifyRun()` catches drift, which is what it was built to catch, and its docs say so in a section
 titled "What it does not prove." Projects that oversell do not write that section.
 
 OMA's constraint is principled rather than an oversight: external anchoring is incompatible with "no
 telemetry, no hosted control plane, your keys." It cannot close this gap without becoming a different
 project. We are the layer that can, and we are a plugin rather than a fork precisely so that stays
-true. **OMA gives you a record you can inspect. Tally gives you one that holds up when you are the
+true. **OMA gives you a record you can inspect. Splitstick gives you one that holds up when you are the
 party being questioned.**
 
 Built on Sigstore, Rekor, Trillian and the C2SP specifications, and on Schneier and Kelsey's 1999
@@ -469,5 +470,5 @@ work on forward-secure audit logs — none of which we wrote, all of which we de
 *Draft release notes for an unbuilt product, written to lock scope before implementation begins.
 Figures are targets to be met and verified, not results. The red-team findings referenced throughout
 are real and reproducible against `@open-multi-agent/core@1.21.1`; everything described as shipping
-in Tally 1.0 is not yet built. Statutory references are included to make the product's posture
+in Splitstick 1.0 is not yet built. Statutory references are included to make the product's posture
 precise and are not legal advice.*

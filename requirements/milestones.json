@@ -73,7 +73,7 @@
         "AC-2"
       ],
       "weeks": "3-4",
-      "exit": "Red-team A and C both DETECTED by tally verify; baseline still passes. p99 append overhead measured under 1 ms and run latency under 2% — measured, not assumed. Chain files contain no plaintext.",
+      "exit": "Red-team A and C both DETECTED by splitstick verify; baseline still passes. p99 append overhead measured under 1 ms and run latency under 2% — measured, not assumed. Chain files contain no plaintext.",
       "ids": [
         "FR-01",
         "FR-02",

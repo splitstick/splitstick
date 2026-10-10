@@ -1,4 +1,4 @@
-# Tally red team
+# Splitstick red team
 
 Reproducible tamper tests against AI agent run records.
 

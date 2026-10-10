@@ -1,6 +1,6 @@
 # packages
 
-Tally's shipped code. Empty until M1.
+Splitstick's shipped code. Empty until M1.
 
 | Package | Milestone | Purpose |
 |---|---|---|

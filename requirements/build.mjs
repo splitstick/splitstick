@@ -38,7 +38,7 @@ const TYPE_LABEL = {
 const esc = (s) => String(s).replace(/\|/g,'\\|');
 let md = `# Requirements traceability matrix
 
-Derived line by line from [${base.source}](../docs/tally-1.0-release-notes.md).
+Derived line by line from [${base.source}](../docs/splitstick-1.0-release-notes.md).
 
 ${base.note}
 

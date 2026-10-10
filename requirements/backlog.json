@@ -1,5 +1,5 @@
 {
-  "source": "docs/tally-1.0-release-notes.md (rev. 5)",
+  "source": "docs/splitstick-1.0-release-notes.md (rev. 5)",
   "note": "Every requirement traces to a promise made in the release notes. 'source' names the section. Nothing here is invented: if the notes do not promise it, it is not a requirement.",
   "requirements": [
     {
@@ -159,9 +159,9 @@
       "id": "FR-18",
       "type": "functional",
       "release": "commercial",
-      "title": "Tally hosted witness adapter",
-      "statement": "Support the Tally hosted witness.",
-      "source": "Independence — or Tally's",
+      "title": "Splitstick hosted witness adapter",
+      "statement": "Support the Splitstick hosted witness.",
+      "source": "Independence — or Splitstick's",
       "verify": "Hosted witness round trip"
     },
     {
@@ -249,16 +249,16 @@
       "id": "FR-28",
       "type": "functional",
       "release": "1.0",
-      "title": "tally coverage",
+      "title": "splitstick coverage",
       "statement": "Produce a coverage report over a date range stating the percentage of tool calls captured and proving collector liveness throughout.",
-      "source": "Coverage attestation — tally coverage",
+      "source": "Coverage attestation — splitstick coverage",
       "verify": "Report output matches injected gaps exactly"
     },
     {
       "id": "FR-29",
       "type": "functional",
       "release": "1.0",
-      "title": "tally verify",
+      "title": "splitstick verify",
       "statement": "Verify chain integrity, batch signatures and witness countersignatures from files alone.",
       "source": "Proof — offline verification",
       "verify": "All red-team classes fail closed; baseline passes"
@@ -277,7 +277,7 @@
       "type": "functional",
       "release": "1.0",
       "title": "Evidence pack carries all countersignatures",
-      "statement": "Packs include every countersignature collected, not only Tally's.",
+      "statement": "Packs include every countersignature collected, not only Splitstick's.",
       "source": "Proof — never only ours",
       "verify": "Pack inspection after multi-witness anchoring"
     },
@@ -285,9 +285,9 @@
       "id": "FR-32",
       "type": "functional",
       "release": "1.0",
-      "title": "tally disclose",
+      "title": "splitstick disclose",
       "statement": "Emit a Merkle inclusion proof for a single named event.",
-      "source": "Disclosure — tally disclose",
+      "source": "Disclosure — splitstick disclose",
       "verify": "Recipient verifies one event without the rest"
     },
     {
@@ -367,8 +367,8 @@
       "type": "functional",
       "release": "1.0",
       "title": "Configuration file",
-      "statement": "Support tally.yaml with witnesses, quorum, on_unavailable and anchor_interval keys.",
-      "source": "Getting started — tally.yaml",
+      "statement": "Support splitstick.yaml with witnesses, quorum, on_unavailable and anchor_interval keys.",
+      "source": "Getting started — splitstick.yaml",
       "verify": "Documented example loads and takes effect"
     },
     {
