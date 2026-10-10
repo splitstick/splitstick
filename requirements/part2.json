@@ -352,9 +352,9 @@
     "type": "privacy",
     "release": "1.0",
     "title": "Minimal retained artefacts",
-    "statement": "After erasure the chain retains only: format version, collector identity, run identifier, record_seq, source_seq, timestamp, kind, consequential flag, tool name, approval decision, result ok flag, payload byte lengths, gap spans and unknown-loss intervals, and salted digests. Every other field — payloads, the agent label, the approval reviewer, the reviewed request, content salts, leaf salts and the reference index — is erasable. The byte lengths are a documented residual leak.",
+    "statement": "After erasure the chain retains only the version-1 permanent set: v, collector, run, record_seq, source_seq, ts, kind, consequential, tool, outcome, attempt, correlation, approval.decision, result.ok, args.bytes, result.bytes, a padding record pad nonce, gap spans, unknown-loss intervals, and salted digests, leaf digests and chain heads. Every other field is erasable: payloads, the agent label, the approval reviewer, the reviewed request, content salts, leaf salts and the reference index. The byte lengths and the correlation relationship are documented residual leaks with no mitigation in 1.0.",
     "source": "Erasure — what survives is a salted hash and a timestamp",
-    "verify": "Automated scan after crypto-shredding asserts the residue matches the enumerated permanent set exactly, field for field, and fails on any field not in the list"
+    "verify": "Automated scan after crypto-shredding asserts the residue matches the enumerated permanent set exactly, field for field, across every record kind including padding; the list is derived from the version-1 schema so a schema change fails the test rather than silently passing"
   },
   {
     "id": "PRIV-06",

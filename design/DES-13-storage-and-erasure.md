@@ -64,6 +64,7 @@ blanket claim was doing too much work:
 | `tool` — a function name, not a person | the `agent` label |
 | `approval.decision` — approve or deny identifies nobody | `approval.reviewer` |
 | `outcome`, `attempt` — an enum and a small integer | |
+| `pad` — a padding record's random nonce | |
 | `correlation` — **required to be an opaque random identifier**, never derived from a payload, a user or a session | |
 | `result.ok` — a boolean outcome | `approval.request` |
 | `args.bytes`, `result.bytes` — payload lengths | content salts, leaf salts |
@@ -84,7 +85,13 @@ identifying information, and a retained field that carries anything is a retaine
 **The byte lengths are a deliberate, documented leak.** `args.bytes` and `result.bytes` survive
 erasure and reveal payload size, which narrows a guess about content. They are retained because a
 verifier needs them to detect a truncated content store, and the trade is stated here rather than
-discovered later. An operator for whom size is sensitive can pad (`FR-34`).
+discovered later.
+
+**There is no mitigation for this in 1.0, and `FR-34` is not one.** Batch padding adds dummy
+leaves to obscure *how many* records exist; it does nothing about `args.bytes`, which reveals how
+large one payload was. A reviewer caught an earlier draft citing it as the remedy. Concealing
+individual lengths would need the content itself padded before encryption, which is not in this
+release. The leak is documented and unmitigated — which is the honest pair of words.
 
 The `agent` label and any reviewer are stored as salted content digests precisely because either
 could name a person. `tool` is retained because `transfer_funds` identifies a function. Whether
