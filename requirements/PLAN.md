@@ -1,6 +1,6 @@
 # Delivery plan — Splitstick 1.0
 
-192 release-1.0 requirements sequenced into 9 milestones, gated by the attack-class
+193 release-1.0 requirements sequenced into 9 milestones, gated by the attack-class
 table in [the release notes](../docs/splitstick-1.0-release-notes.md).
 
 **Generated — do not edit by hand.** Source of truth is `requirements/milestones.json`.
@@ -31,13 +31,13 @@ Every milestone runs the complete red-team suite, not only its own classes. A ga
 | **M0** Foundations and long-lead | — | 15 | 1-2, parallel to M1 | Start everything whose clock runs outside engineering, and turn the red-team suite into the acceptance harness. |
 | **M1** Local integrity | AC-1, AC-2 | 29 | 3-4 | Close the two attack classes that need no third party, and measure the performance budget before the design hardens. |
 | **M2** Key custody | AC-3 | 5 | 2 | Make yesterday's record unforgeable with today's key, and state the precondition honestly. |
-| **M3a** Anchoring and sequencing | AC-4, AC-5 | 37 | 5-7 | The first second party. Close truncation and erasure, which no amount of local cryptography can reach. |
+| **M3a** Anchoring and sequencing | AC-4, AC-5 | 38 | 5-7 | The first second party. Close truncation and erasure, which no amount of local cryptography can reach. |
 | **M3b** Practice statement and resilience | — | 22 | 3-4 | Say exactly what the countersignature means, and make sure losing a witness does not lose the evidence. |
 | **M4** Coverage attestation | AC-6, AC-7 | 11 | 3-4 | The differentiated claim: prove the record is complete, not merely unaltered. |
 | **M5** Disclosure and erasure | — | 17 | 3-4 | No new attack class. This is the milestone that makes the product buyable by a regulated, multi-customer organisation. |
 | **M6** Reach and conformance | — | 19 | 4-6 | Stop depending on one upstream project, and make the format genuinely somebody else's to implement. |
 | **M7** Launch gate | — | 37 | 2 | Every promise that is a claim rather than a feature. This milestone is mostly about what we must not say. |
-| | | **192** | | |
+| | | **193** | | |
 
 ## Milestones
 
@@ -107,7 +107,7 @@ Close the two attack classes that need no third party, and measure the performan
 | ☐ `FR-55` | **Counterparty reference capture** — Extract externally issued identifiers from a tool result and index them for reconciliation. The index lives in the deletable content store, never in the chain, because a transaction reference can itself be identifying. | A result containing an external reference is indexed and queryable; the index is removed by crypto-shredding |
 | ☐ `FR-56` | **Collector instance identity** — Each collector instance has a stable identity that scopes its chain and its log origin. Records carry the run they belong to as a field; the chain itself is collector-scoped, so concurrent runs interleave in one log and heartbeats need no run at all. | Two concurrent runs produce one contiguous chain with correct run tags; a heartbeat emitted with no run active is chained and anchored |
 | ☐ `FR-59` | **Action record and chain entry are separate structures** — The canonicalised, hashed ActionRecord is immutable and contains no chain metadata. prev, leaf and head live in a ChainEntry wrapper that is never canonicalised, so the digest of a record can never depend on a value derived from it. Conformance vectors publish the exact bytes hashed. | Conformance vectors: given a fixed ActionRecord, the canonical bytes, leaf and head are byte-exact. A test asserts no chain field appears inside the canonicalised subject |
-| ☐ `FR-62` | **Retries, timeouts and errors in the schema** — The record schema represents a failed, timed-out or retried tool call explicitly: an outcome enum, an attempt number, and a correlation id grouping attempts of one logical action. source_seq advances once per observed ATTEMPT, not per logical action, because a timed-out attempt may already have caused an external side effect and must stay independently accountable. Correlation, not the counter, is what groups attempts. | Interleaved retries across two correlations keep source_seq strictly increasing; an omitted retry is detected as a source_seq gap; coverage reports attempt count and logical-action count separately |
+| ☐ `FR-62` | **Retries, timeouts and errors in the schema** — The record schema represents a failed, timed-out or retried tool call explicitly: an outcome enum, an attempt number, and a correlation id grouping attempts of one logical action. source_seq advances once per observed ATTEMPT, not per logical action, because a timed-out attempt may already have caused an external side effect and must stay independently accountable. Correlation, not the counter, is what groups attempts. The correlation identifier is opaque and randomly generated, never derived from a payload, user or session, because it is retained after erasure. | Interleaved retries across two correlations keep source_seq strictly increasing; an omitted retry is detected as a source_seq gap; coverage reports attempt count and logical-action count separately |
 
 ### M2 — Key custody
 
@@ -131,7 +131,7 @@ Make yesterday's record unforgeable with today's key, and state the precondition
 The first second party. Close truncation and erasure, which no amount of local cryptography can reach.
 
 - **Gate:** `AC-4` — Truncate the record's tail; `AC-5` — Erase events and renumber into a clean stream
-- **Requirements:** 37 (FR×24  SEC×7  INT×2  NFR×1  PRIV×1  SCOPE×1  DOC×1)
+- **Requirements:** 38 (FR×25  SEC×7  INT×2  NFR×1  PRIV×1  SCOPE×1  DOC×1)
 - **Effort:** weeks 5-7
 - **Exit criteria:** Red-team D, E and F all DETECTED. A run with no configuration at all anchors to a public log the project does not operate. A rolled-back witness is detected. An auditor supplying their own acceptance policy verifies the same pack. Egress captured against real witness traffic, confirming no content leaves the host.
 
@@ -174,6 +174,7 @@ The first second party. Close truncation and erasure, which no amount of local c
 | ☐ `FR-27` | **Countersigned gap declarations** — Gap declarations are themselves submitted for countersignature. | Declaration carries a witness signature |
 | ☐ `FR-63` | **Pinned operator identity** — The acceptance policy names the operator identity the reader expects, and the verifier reports any pack presented under a different key or origin rather than silently accepting it. Nothing prevents an operator maintaining a second log; the guarantee is that a reader who pinned an identity is told when they are shown another. | A pack under an unpinned key yields IDENTITY_UNPINNED; a pack under the pinned key verifies; the limit is documented as detection rather than prevention |
 | ☐ `FR-65` | **Operator-declared key custody** — The key custody class — non-exportable KMS or HSM, versus a software key — is declared in a chained record per epoch, because an HSM signature and a file-key signature are byte-identical and a verifier cannot otherwise tell them apart. The declaration proves the operator declared it, not that the key was non-exportable or later destroyed. Custody is reported as operator-declared unless a provider attestation document is supplied alongside, which is the only path to independently supported custody. | A verifier prints the declared class per epoch, labels it operator-declared, and refuses to claim forward secrecy for an epoch declared software-keyed; a supplied provider attestation is reported as independently supported |
+| ☐ `FR-70` | **Validate a provider custody attestation** — Before reporting custody as independently supported, validate the attestation: issuer chains to a provider root named in the acceptance policy, document signature valid over the bytes presented, attested key is the one that signed this epoch, attestation period covers the epoch, and the document actually asserts non-exportability. Even all five together do not establish historical key destruction, which remains operator-declared. | Five negative tests, one per check, each rejecting the attestation; a valid attestation yields independently-supported custody; destruction is still reported as operator-declared |
 
 ### M3b — Practice statement and resilience
 
@@ -259,7 +260,7 @@ No new attack class. This is the milestone that makes the product buyable by a r
 | ☐ `PRIV-08` | **Disclose the cadence leak** — Document that anchor cadence leaks activity volume. | Documentation review |
 | ☐ `PRIV-09` | **Operator-controlled retention** — Retention is a setting on operator-controlled storage, not a vendor policy. | Configuration test |
 | ☐ `INT-03` | **Documented evidence pack format** — Publish and version the evidence pack format so third parties can write verifiers. | Spec published; independent verifier implementation validates a pack |
-| ☐ `FR-69` | **Padding is a record kind** — A padding leaf is an explicit, immutable record kind with its own record_seq, source_seq null, and a commitment, so record_seq equals tree_size unconditionally. Padding leaves without corresponding records would break that invariant. | Two real records plus three padding records yield tree_size 5 and record_seq 5; a verifier counts real and padding records separately |
+| ☐ `FR-69` | **Padding is a record kind** — A padding leaf is an explicit record kind in the version-1 enum, with its own record_seq, source_seq null, no tool or payload fields, and a random nonce so no two padding records share a leaf. Padding leaves without records would break record_seq equals tree_size. | Two real records plus three padding records yield tree_size 5 and record_seq 5; a verifier counts real and padding records separately; a mixed real-and-padding log verifies end to end |
 
 ### M6 — Reach and conformance
 
@@ -369,4 +370,4 @@ Every promise that is a claim rather than a feature. This milestone is mostly ab
 
 ---
 
-*192 requirements in 1.0 across 9 milestones; 209 total in the backlog.*
+*193 requirements in 1.0 across 9 milestones; 210 total in the backlog.*

@@ -258,7 +258,7 @@
     "type": "functional",
     "release": "1.0",
     "title": "Retries, timeouts and errors in the schema",
-    "statement": "The record schema represents a failed, timed-out or retried tool call explicitly: an outcome enum, an attempt number, and a correlation id grouping attempts of one logical action. source_seq advances once per observed ATTEMPT, not per logical action, because a timed-out attempt may already have caused an external side effect and must stay independently accountable. Correlation, not the counter, is what groups attempts.",
+    "statement": "The record schema represents a failed, timed-out or retried tool call explicitly: an outcome enum, an attempt number, and a correlation id grouping attempts of one logical action. source_seq advances once per observed ATTEMPT, not per logical action, because a timed-out attempt may already have caused an external side effect and must stay independently accountable. Correlation, not the counter, is what groups attempts. The correlation identifier is opaque and randomly generated, never derived from a payload, user or session, because it is retained after erasure.",
     "source": "Capture — action record",
     "verify": "Interleaved retries across two correlations keep source_seq strictly increasing; an omitted retry is detected as a source_seq gap; coverage reports attempt count and logical-action count separately"
   },
@@ -312,9 +312,9 @@
     "type": "functional",
     "release": "1.0",
     "title": "Padding is a record kind",
-    "statement": "A padding leaf is an explicit, immutable record kind with its own record_seq, source_seq null, and a commitment, so record_seq equals tree_size unconditionally. Padding leaves without corresponding records would break that invariant.",
+    "statement": "A padding leaf is an explicit record kind in the version-1 enum, with its own record_seq, source_seq null, no tool or payload fields, and a random nonce so no two padding records share a leaf. Padding leaves without records would break record_seq equals tree_size.",
     "source": "Disclosure — optional batch padding",
-    "verify": "Two real records plus three padding records yield tree_size 5 and record_seq 5; a verifier counts real and padding records separately"
+    "verify": "Two real records plus three padding records yield tree_size 5 and record_seq 5; a verifier counts real and padding records separately; a mixed real-and-padding log verifies end to end"
   },
   {
     "id": "DOC-11",
@@ -324,5 +324,14 @@
     "statement": "Each assurance claim in the specifications and the release notes names the evidence that supports it, classified as independent, operator-declared, or none. A claim resting only on the operator-controlled collector is worded as an assertion, never as a verified guarantee. This rule exists because the design repeatedly acquired guarantees its own threat model excludes.",
     "source": "Threat model — detection, not prevention",
     "verify": "Claims audit per release checks each assurance claim against the register; npm run review flags a curated set of overclaim phrasings"
+  },
+  {
+    "id": "FR-70",
+    "type": "functional",
+    "release": "1.0",
+    "title": "Validate a provider custody attestation",
+    "statement": "Before reporting custody as independently supported, validate the attestation: issuer chains to a provider root named in the acceptance policy, document signature valid over the bytes presented, attested key is the one that signed this epoch, attestation period covers the epoch, and the document actually asserts non-exportability. Even all five together do not establish historical key destruction, which remains operator-declared.",
+    "source": "Integrity — forward-secure epoch ratchet",
+    "verify": "Five negative tests, one per check, each rejecting the attestation; a valid attestation yields independently-supported custody; destruction is still reported as operator-declared"
   }
 ]

@@ -11,7 +11,7 @@ Regenerate with `npm run requirements`.
 
 | Category | Count |
 |---|---:|
-| Functional | 68 |
+| Functional | 69 |
 | Security | 26 |
 | Legal & regulatory | 19 |
 | Governance, licensing & community | 19 |
@@ -23,20 +23,20 @@ Regenerate with `npm run requirements`.
 | Interoperability & standards | 7 |
 | Operational | 6 |
 | Traceability & process | 5 |
-| **Total** | **209** |
+| **Total** | **210** |
 
 ### By release
 
 | Release | Count |
 |---|---:|
-| 1.0 | 192 |
+| 1.0 | 193 |
 | 2.0 | 5 |
 | commercial | 12 |
-| **Total** | **209** |
+| **Total** | **210** |
 
 ## Matrix
 
-### Functional — 68
+### Functional — 69
 
 | ID | Requirement | Traces to | Verified by | Rel | M | Status |
 |---|---|---|---|---|---|---|
@@ -101,13 +101,14 @@ Regenerate with `npm run requirements`.
 | `FR-59` | **Action record and chain entry are separate structures** — The canonicalised, hashed ActionRecord is immutable and contains no chain metadata. prev, leaf and head live in a ChainEntry wrapper that is never canonicalised, so the digest of a record can never depend on a value derived from it. Conformance vectors publish the exact bytes hashed. | Integrity — chained, salted, ratcheted; Capture — action record | Conformance vectors: given a fixed ActionRecord, the canonical bytes, leaf and head are byte-exact. A test asserts no chain field appears inside the canonicalised subject | 1.0 | M1 | ☐ |
 | `FR-60` | **Unknown-loss intervals** — When the observation counter did not survive — an unrecoverable crash with the counter only in memory — declare an unknown-loss interval bounded by the last durable checkpoint and the first record after restart. Never fabricate an exact span. The two kinds of loss evidence are distinct record kinds and a verifier reports them differently. | Operations — fails open, loudly; Coverage attestation | Disk exhaustion followed by kill -9 and restart: an unknown-loss interval is written with no span, and no exact gap is invented. A verifier distinguishes it from a declared span | 1.0 | M3b | ☐ |
 | `FR-61` | **Observation counter durability** — Checkpoint the observation counter durably at each batch flush, so an unrecoverable crash loses at most the current window and the unknown-loss interval is bounded rather than open-ended. | Operations — fails open, loudly | Kill -9 mid-window: the restart reads the last checkpointed source_seq and the declared unknown interval starts there, not at zero | 1.0 | M3b | ☐ |
-| `FR-62` | **Retries, timeouts and errors in the schema** — The record schema represents a failed, timed-out or retried tool call explicitly: an outcome enum, an attempt number, and a correlation id grouping attempts of one logical action. source_seq advances once per observed ATTEMPT, not per logical action, because a timed-out attempt may already have caused an external side effect and must stay independently accountable. Correlation, not the counter, is what groups attempts. | Capture — action record | Interleaved retries across two correlations keep source_seq strictly increasing; an omitted retry is detected as a source_seq gap; coverage reports attempt count and logical-action count separately | 1.0 | M1 | ☐ |
+| `FR-62` | **Retries, timeouts and errors in the schema** — The record schema represents a failed, timed-out or retried tool call explicitly: an outcome enum, an attempt number, and a correlation id grouping attempts of one logical action. source_seq advances once per observed ATTEMPT, not per logical action, because a timed-out attempt may already have caused an external side effect and must stay independently accountable. Correlation, not the counter, is what groups attempts. The correlation identifier is opaque and randomly generated, never derived from a payload, user or session, because it is retained after erasure. | Capture — action record | Interleaved retries across two correlations keep source_seq strictly increasing; an omitted retry is detected as a source_seq gap; coverage reports attempt count and logical-action count separately | 1.0 | M1 | ☐ |
 | `FR-63` | **Pinned operator identity** — The acceptance policy names the operator identity the reader expects, and the verifier reports any pack presented under a different key or origin rather than silently accepting it. Nothing prevents an operator maintaining a second log; the guarantee is that a reader who pinned an identity is told when they are shown another. | Proof — offline verification; Threat model | A pack under an unpinned key yields IDENTITY_UNPINNED; a pack under the pinned key verifies; the limit is documented as detection rather than prevention | 1.0 | M3a | ☐ |
 | `FR-64` | **Collector self-reported configuration attestation** — Each heartbeat carries a digest of the capture configuration the collector reports for itself — upstreams proxied, interfaces bound, heartbeat and anchor intervals — so a change to THAT configuration is recorded and visible. It does not detect an execution path created outside the collector: such a path leaves the collector reporting an unchanged digest and nothing diverges. This is provenance of a self-report, not independent observation. | Coverage attestation | Changing a declared upstream alters the attested digest and emits a policy record; a test asserts that a path bypassing the collector entirely produces NO signal, so the limit is pinned by a test rather than by prose | 1.0 | M4 | ☐ |
 | `FR-65` | **Operator-declared key custody** — The key custody class — non-exportable KMS or HSM, versus a software key — is declared in a chained record per epoch, because an HSM signature and a file-key signature are byte-identical and a verifier cannot otherwise tell them apart. The declaration proves the operator declared it, not that the key was non-exportable or later destroyed. Custody is reported as operator-declared unless a provider attestation document is supplied alongside, which is the only path to independently supported custody. | Integrity — forward-secure epoch ratchet | A verifier prints the declared class per epoch, labels it operator-declared, and refuses to claim forward secrecy for an epoch declared software-keyed; a supplied provider attestation is reported as independently supported | 1.0 | M3a | ☐ |
 | `FR-66` | **Compare expected witnesses against proofs present** — Each checkpoint records which witnesses were expected for it, given their tier and cadence, and the verifier compares that against the proofs in the pack. A proof that is expected and absent is reported as missing and inconclusive — it may be pending under fail-open, the witness may have been unavailable, or the receipt may have been removed, and the verifier cannot tell which from absence alone. Demonstrating removal requires an earlier pack that contained it, which is cross-pack comparison. | Proof — offline verification | Remove a proof: WITNESS_MISSING is reported as inconclusive, never as deletion. A witness on a slower tier with no proof yet is reported as not-yet-expected. A pack pair where one holds the proof and the later one does not yields removal | 1.0 | M4 | ☐ |
 | `FR-68` | **Unwitnessed outage ceiling** — Fail-open must not become indefinite. An unwitnessed_ceiling sets the point at which the collector raises an alert out of band, and beyond which the coverage report refuses to issue a completeness claim spanning the outage, stating the unwitnessed window instead. | Operations — fails open, loudly | Exceed the ceiling: an alert is raised and the coverage report declines a completeness claim for that window rather than reporting it as covered | 1.0 | M3b | ☐ |
-| `FR-69` | **Padding is a record kind** — A padding leaf is an explicit, immutable record kind with its own record_seq, source_seq null, and a commitment, so record_seq equals tree_size unconditionally. Padding leaves without corresponding records would break that invariant. | Disclosure — optional batch padding | Two real records plus three padding records yield tree_size 5 and record_seq 5; a verifier counts real and padding records separately | 1.0 | M5 | ☐ |
+| `FR-69` | **Padding is a record kind** — A padding leaf is an explicit record kind in the version-1 enum, with its own record_seq, source_seq null, no tool or payload fields, and a random nonce so no two padding records share a leaf. Padding leaves without records would break record_seq equals tree_size. | Disclosure — optional batch padding | Two real records plus three padding records yield tree_size 5 and record_seq 5; a verifier counts real and padding records separately; a mixed real-and-padding log verifies end to end | 1.0 | M5 | ☐ |
+| `FR-70` | **Validate a provider custody attestation** — Before reporting custody as independently supported, validate the attestation: issuer chains to a provider root named in the acceptance policy, document signature valid over the bytes presented, attested key is the one that signed this epoch, attestation period covers the epoch, and the document actually asserts non-exportability. Even all five together do not establish historical key destruction, which remains operator-declared. | Integrity — forward-secure epoch ratchet | Five negative tests, one per check, each rejecting the attestation; a valid attestation yields independently-supported custody; destruction is still reported as operator-declared | 1.0 | M3a | ☐ |
 
 ### Non-functional — 13
 
@@ -307,4 +308,4 @@ Regenerate with `npm run requirements`.
 
 ---
 
-*209 requirements. Status column is maintained by hand as work lands.*
+*210 requirements. Status column is maintained by hand as work lands.*

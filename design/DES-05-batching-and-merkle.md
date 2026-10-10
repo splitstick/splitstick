@@ -63,7 +63,8 @@ path to the roll-up root, and every countersignature over both. The recipient re
 matches.
 
 **What is revealed, exactly:** the disclosed record; the sibling *digests* along both paths; and
-the **tree sizes**, hence the total number of recorded actions.
+the **tree sizes** — which count **every record**: actions, heartbeats, policy events, gap
+declarations and padding. Not a count of agent actions.
 
 **What is not:** the content of any sibling, because their salts are never disclosed (DES-03).
 

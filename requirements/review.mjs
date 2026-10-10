@@ -103,8 +103,14 @@ const OVERCLAIM = [
   [/verified custody|custody is verified/i, 'custody is operator-declared unless a provider attestation is supplied'],
   [/dropped countersignature/i, 'absence of a proof is not evidence of deletion; say missing, and inconclusive'],
   [/tamper[- ]proof/i, 'tamper-evident, never tamper-proof'],
+  [/makes a modified build report an unrecognised/i, 'a dishonest collector reports whatever it likes; a self-reported digest is not attestation'],
 ];
-for (const [id, s] of specs) for (const line of s.split('\n')) for (const [re, why] of OVERCLAIM)
+// DOC-11 applies to every surface a reader sees, not only the design specs. The
+// first version of this check scanned specs alone, which is exactly how the threat
+// model kept an overclaim through a passing CI run.
+const CLAIMED = new Map(specs);
+for (const p of PROSE) if (fs.existsSync(p)) CLAIMED.set(p, fs.readFileSync(p,'utf8'));
+for (const [id, s] of CLAIMED) for (const line of s.split('\n')) for (const [re, why] of OVERCLAIM)
   if (re.test(line) && !/not |never |cannot |does not |is not |rather than|an earlier draft|previously|path to|only when|supported only|unless a provider|say missing/i.test(line))
     flag('OVERCLAIM', `${id}: ${why} -> "${line.trim().slice(0,70)}"`);
 

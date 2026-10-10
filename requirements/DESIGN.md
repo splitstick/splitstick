@@ -10,9 +10,9 @@ Regenerate with `npm run backlog`.
 | | Count |
 |---|---:|
 | Design elements | 20 |
-| Release-1.0 requirements traced to a design element | 131 |
+| Release-1.0 requirements traced to a design element | 132 |
 | Classified non-design | 61 |
-| **Total 1.0** | **192** |
+| **Total 1.0** | **193** |
 
 ### Non-design classifications
 
@@ -92,7 +92,7 @@ Batch boundaries, tree shape, odd-leaf handling, and root computation — the co
 
 ### [DES-06 — Key hierarchy, signing and epoch ratchet](../design/DES-06-keys-and-ratchet.md)
 
-**Milestone:** M1 · **Requirements covered:** 9
+**Milestone:** M1 · **Requirements covered:** 10
 
 What an epoch is, how the signing key evolves, how the predecessor is destroyed, the KMS and HSM integration surface, and recovery after compromise.
 
@@ -107,6 +107,7 @@ What an epoch is, how the signing key evolves, how the predecessor is destroyed,
 | `SEC-24` | Key compromise recovery | ☐ |
 | `OPS-04` | Separation-of-duties guidance | ☐ |
 | `FR-65` | Operator-declared key custody | ☐ |
+| `FR-70` | Validate a provider custody attestation | ☐ |
 
 ### [DES-07 — Checkpoint format](../design/DES-07-checkpoint-format.md)
 

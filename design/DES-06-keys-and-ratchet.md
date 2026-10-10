@@ -63,6 +63,25 @@ in this design.
 A verifier prints the declared class per epoch and refuses to claim forward secrecy for any epoch
 declared software-keyed.
 
+### Validating a provider attestation — FR-70
+
+The *presence* of an attestation document establishes nothing. Before custody may be reported as
+independently supported, a verifier must check all five:
+
+1. **Issuer** — the document chains to a provider root in the acceptance policy, not merely to
+   some valid CA.
+2. **Document signature** — valid over the exact bytes presented.
+3. **Key identity** — the attested key is the one that signed this epoch's checkpoints, not
+   another key in the same account.
+4. **Epoch applicability** — the attestation covers the period the epoch spans. An attestation
+   issued after the fact says nothing about earlier signatures.
+5. **Custody properties** — it actually asserts non-exportability, rather than mere existence of
+   a managed key.
+
+And even all five together **do not establish historical destruction**. Non-exportability says a
+key could not leave the module; it does not say a retired key was deleted. Destruction remains
+operator-declared in every configuration this design supports, and the verifier labels it so.
+
 ## Key compromise — SEC-24, M3b
 
 There is no cryptographic recovery from a compromised signing key. Records it produced are

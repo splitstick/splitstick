@@ -63,6 +63,8 @@ blanket claim was doing too much work:
 | `v`, `collector`, `run`, `record_seq`, `source_seq`, `ts`, `kind`, `consequential` | every payload |
 | `tool` — a function name, not a person | the `agent` label |
 | `approval.decision` — approve or deny identifies nobody | `approval.reviewer` |
+| `outcome`, `attempt` — an enum and a small integer | |
+| `correlation` — **required to be an opaque random identifier**, never derived from a payload, a user or a session | |
 | `result.ok` — a boolean outcome | `approval.request` |
 | `args.bytes`, `result.bytes` — payload lengths | content salts, leaf salts |
 | salted content digests, leaf digests, chain heads | the reference index |
@@ -71,6 +73,13 @@ blanket claim was doing too much work:
 This table is the whole inventory, not a sample. An external review found an earlier version
 omitting `approval.decision`, `approval.request_hash`, `result.ok` and the byte lengths — and a
 partial inventory is worse than none, because it reads as exhaustive.
+
+**`correlation` is retained, so it must carry nothing.** It survives erasure and links the
+attempts of one action, which means it also reveals that those records belong together. That
+relationship is the point and cannot be erased without breaking retry accounting. So the
+identifier itself is required to be opaque and randomly generated — never a request id, a user
+id, a session id, or anything derived from a payload. A reviewer noted it could otherwise carry
+identifying information, and a retained field that carries anything is a retained disclosure.
 
 **The byte lengths are a deliberate, documented leak.** `args.bytes` and `result.bytes` survive
 erasure and reveal payload size, which narrows a guess about content. They are retained because a

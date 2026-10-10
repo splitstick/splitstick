@@ -80,7 +80,8 @@
         "SEC-17",
         "SEC-24",
         "OPS-04",
-        "FR-65"
+        "FR-65",
+        "FR-70"
       ],
       "spec": "design/DES-06-keys-and-ratchet.md"
     },

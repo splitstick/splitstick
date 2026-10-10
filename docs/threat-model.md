@@ -92,7 +92,11 @@ structural fix is bilateral receipts, where the counterparty co-signs; that is 2
 and until then the record rests partly on the operator's word.
 
 **Collector integrity.** The collector is open source and runs in the operator's environment, so
-it can be patched. Build provenance (`SEC-22`) makes a modified build report an unrecognised
+it can be patched, and **a patch is not detectable**. A modified collector controls what it
+reports and can emit the original digest while suppressing actions; a self-reported digest is not
+remote attestation, and this release provides none. Build provenance (`SEC-22`) binds a *declared*
+digest to a source commit, so an honestly reporting build is traceable and a misconfiguration is
+caught. What it cannot do is make a dishonest build report an unrecognised
 digest, and a stopped one report nothing. Detectable and attributable — not prevented.
 
 **Forward secrecy depends on hardware.** The epoch ratchet only holds if the retired key is
