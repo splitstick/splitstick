@@ -126,7 +126,7 @@ more than one we award ourselves.
 - **Roll-up anchor**, *on by default and switchable off in one setting*: a slow, trust-minimised
   backstop no company can withdraw. On because it is the only free public anchor with no
   acceptable-use objection; never mandatory, because public-chain anchoring is forbidden outright
-  at some regulated buyers. Turning it off is itself recorded as a chain event. Off by default because its confirmation latency cannot serve a ten-second window,
+  at some regulated buyers. Turning it off is itself recorded as a chain event. It serves the roll-up tier rather than the ten-second tier because its confirmation latency cannot serve the latter,
   and because many regulated buyers hold blanket policies against it.
 - Set `quorum: 2` for records meant to be adverse to you. The active set and quorum are written into
   the chain, so weakening them is a timestamped event rather than a silent config edit.

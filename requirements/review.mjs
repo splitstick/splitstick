@@ -94,4 +94,12 @@ if (fs.existsSync(CANON)) {
 }
 
 console.log(out.length ? out.map(l => '  ' + l).join('\n') : '  no structural issues');
+
+// MANUAL findings are informational: a document requirement verified by reading a
+// document is correct, not a defect. Everything else is a gate.
+const BLOCKING = ['TRACE','BADREF','ORPHAN','LEAK','CLAIM','STALE','CONFIG'];
+const blocking = out.filter(l => BLOCKING.some(k => l.startsWith(k)));
+const manual = out.length - blocking.length;
 console.log(`\n  ${out.length} finding(s) across ${reqs.length} requirements and ${elements.length} design elements`);
+console.log(`  ${blocking.length} blocking, ${manual} informational (human-verified by design)`);
+if (blocking.length) { console.error('\nREVIEW FAILED: ' + blocking.length + ' blocking finding(s)'); process.exit(1); }

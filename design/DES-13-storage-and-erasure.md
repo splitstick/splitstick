@@ -15,7 +15,6 @@ splitstick/
   content/<cid>.salt       per-content salt.  DELETABLE
   keys/<cid>.key           per-content encryption keys.  DELETABLE
   content/refs.idx         counterparty reference index.  DELETABLE          [DES-19]
-  content/refs.idx         counterparty reference index.  DELETABLE          [DES-19]
   queue/                   unwitnessed batches awaiting a witness (DES-15)
 ```
 

@@ -61,8 +61,27 @@ does.
 3. The condition is surfaced out of band — non-zero exit status on the collector process, a line
    on stderr, and a metric — because an unreportable failure that is also silent is the worst
    available outcome.
-4. On the next successful write, a gap declaration covering the lost window is emitted and
-   anchored.
+4. On the next successful write, loss evidence is emitted and anchored — and **which kind depends
+   on whether the observation counter survived.**
+
+### Two kinds of loss evidence — FR-26, FR-60, FR-61
+
+An external review pointed out that an unrecoverable crash can take the in-memory `source_seq`
+with it, leaving the collector unable to know how many actions were observed but never written.
+The next successful write must not invent a range.
+
+| | Written when | Contains |
+|---|---|---|
+| **`gap`** (FR-26) | the counter survived | the exact `source_seq` span |
+| **`gap_unknown`** (FR-60) | the counter did not | a bounded time interval and **no span** |
+
+`FR-61` bounds the second case: the observation counter is checkpointed durably at each batch
+flush, so a crash loses at most the current window and the unknown interval runs from the last
+checkpoint to the first record after restart — not from zero, and not open-ended.
+
+A verifier reports the two differently and never treats an unknown interval as an exact one. This
+is the honest version: a system that fabricates a precise span after losing the counter that
+would have measured it is asserting something it cannot know.
 
 What must never happen is a claim of durability over that window. The coverage report shows it as
 an **undeclared** gap until step 4 converts it to a declared one, and an undeclared gap is exactly

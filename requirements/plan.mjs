@@ -54,7 +54,7 @@ const TY = {functional:'FR','non-functional':'NFR',security:'SEC',privacy:'PRIV'
 
 let md = `# Delivery plan — Splitstick 1.0
 
-160 release-1.0 requirements sequenced into 8 milestones, gated by the attack-class
+${r10.length} release-1.0 requirements sequenced into ${milestones.length} milestones, gated by the attack-class
 table in [the release notes](../docs/splitstick-1.0-release-notes.md).
 
 **Generated — do not edit by hand.** Source of truth is \`requirements/milestones.json\`.

@@ -37,8 +37,8 @@ them.
 
 1. `record_seq` starts at 1 per collector and increments by exactly 1. The only legitimate
    discontinuity is a `gap` record (DES-10), which is itself chained.
-2. There are exactly **two counters** in the system, and conflating them is the most likely
-   source of an interop bug:
+2. There are exactly **three counters**, and conflating them is the most likely source of an
+   interop bug:
 
    | Counter | Increments on | Equals |
    |---|---|---|
@@ -46,10 +46,19 @@ them.
    | `source_seq` | every consequential action **observed**, written or not | nothing else |
    | `checkpoint_seq` | every published checkpoint | nothing else; it is an ordinal |
 
-   `source_seq` advances past `record_seq` exactly when a write is lost, and the difference is
-   what a gap declaration records (`DES-10`). Keeping them separate is what lets
-   `record_seq == tree_size` hold unconditionally — a single gap record cannot occupy six
-   positions and contribute one leaf.
+   **The counters must never be compared with each other.** They count different things:
+   `record_seq` includes heartbeats, policy changes and gap declarations, while `source_seq`
+   counts only observed consequential actions. After 5 tool calls and 100 heartbeats they read
+   `source_seq: 5` and `record_seq: 105` with nothing lost at all — an external review caught an
+   earlier draft doing exactly this arithmetic and concluding a gap.
+
+   **Observation gaps are detected from consecutive persisted `source_seq` values**, independently
+   of `record_seq`. If one action record carries `source_seq: 4790` and the next carries `4796`,
+   then 4791–4795 were observed and never written.
+
+   Non-action records carry **`source_seq: null`** rather than repeating the last value. Null
+   states "this record is not an observation", which is checkable; a repeated value would be
+   indistinguishable from a second observation of the same action.
 
    The C2SP `tree_size` field (DES-07) is **the record count**, not a batch count. A witness
    compares `tree_size`, which is strictly increasing.

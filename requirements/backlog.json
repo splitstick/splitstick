@@ -231,10 +231,10 @@
       "id": "FR-26",
       "type": "functional",
       "release": "1.0",
-      "title": "Signed gap declarations",
-      "statement": "Record an explicit, signed declaration that consequential actions were observed but not written. It occupies exactly one record position, so record_seq stays equal to tree_size, and describes the lost span in source_seq — the collector's count of observed actions, which advances even when a write fails.",
+      "title": "Gap declarations with an exact span",
+      "statement": "When the observation counter survived the failure, record a signed declaration naming the exact source_seq span that was observed but never written. It occupies one record position. Observation gaps are detected from consecutive persisted source_seq values, never by comparing source_seq with record_seq, which count different things.",
       "source": "Coverage attestation — signed gap declarations",
-      "verify": "Induce a write failure for 6 observed actions: one gap record is written, record_seq remains contiguous, tree_size equals record_seq, and the declaration names source_seq 4790-4795"
+      "verify": "Induce a write failure for 6 observed actions with the counter intact: one gap record names source_seq 4790-4795, and a mixed stream of actions, heartbeats and policy records shows no false gap"
     },
     {
       "id": "FR-27",

@@ -19,7 +19,7 @@ record while `DES-02` said every field contributes.
   "collector": "treasury-host-1",          // scopes the chain and the log origin  FR-56
   "run": "bf10bc73-2c1b-442c-b3b2-c044678e03b6",   // null on a heartbeat
   "record_seq": 4812,                      // position in the COLLECTOR's log, from 1
-  "source_seq": 4817,                      // observed consequential actions, incl. ones never written
+  "source_seq": 4817,                      // observed actions; null on heartbeat, policy, gap
   "ts": "2026-10-10T10:40:36.907Z",        // collector clock, RFC 3339, always UTC, ms precision
   "kind": "tool_call",                     // tool_call | approval | heartbeat | gap | policy
   "tool": "transfer_funds",               // a function name, not a person — retained
@@ -62,7 +62,7 @@ into a chain that is never deleted.
 | `ts` | Collector clock. **Self-asserted and worth nothing on its own** — the trustworthy time comes from the witness in DES-07. Recorded anyway so drift is visible. |
 | `kind` | Closed enum. An unknown `kind` makes a record unverifiable, not ignorable. |
 | `args`, `result` | Arbitrary JSON, canonicalised by DES-02. Size-capped; over the cap, content moves to the store (DES-13) and the field holds a pointer. |
-| `approval` | `null`, or `{ "decision": "approve"\|"deny", "reviewer": "<as supplied>", "request_hash": "<hex>" }`. |
+| `approval` | `null`, or `{ "decision": "approve"\|"deny", "reviewer": { "cid": "sha256:…" }, "request_hash": "<hex>" }`. The reviewer is a salted content commitment, not plaintext — it can name a person, so `DES-13` requires it erasable alongside the `agent` label. |
 | `consequential` | Taken from the tool's own declaration. Never inferred from names or arguments. |
 
 ### What is deliberately absent

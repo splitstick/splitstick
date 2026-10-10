@@ -234,5 +234,41 @@
     "statement": "The canonicalised, hashed ActionRecord is immutable and contains no chain metadata. prev, leaf and head live in a ChainEntry wrapper that is never canonicalised, so the digest of a record can never depend on a value derived from it. Conformance vectors publish the exact bytes hashed.",
     "source": "Integrity — chained, salted, ratcheted; Capture — action record",
     "verify": "Conformance vectors: given a fixed ActionRecord, the canonical bytes, leaf and head are byte-exact. A test asserts no chain field appears inside the canonicalised subject"
+  },
+  {
+    "id": "FR-60",
+    "type": "functional",
+    "release": "1.0",
+    "title": "Unknown-loss intervals",
+    "statement": "When the observation counter did not survive — an unrecoverable crash with the counter only in memory — declare an unknown-loss interval bounded by the last durable checkpoint and the first record after restart. Never fabricate an exact span. The two kinds of loss evidence are distinct record kinds and a verifier reports them differently.",
+    "source": "Operations — fails open, loudly; Coverage attestation",
+    "verify": "Disk exhaustion followed by kill -9 and restart: an unknown-loss interval is written with no span, and no exact gap is invented. A verifier distinguishes it from a declared span"
+  },
+  {
+    "id": "FR-61",
+    "type": "functional",
+    "release": "1.0",
+    "title": "Observation counter durability",
+    "statement": "Checkpoint the observation counter durably at each batch flush, so an unrecoverable crash loses at most the current window and the unknown-loss interval is bounded rather than open-ended.",
+    "source": "Operations — fails open, loudly",
+    "verify": "Kill -9 mid-window: the restart reads the last checkpointed source_seq and the declared unknown interval starts there, not at zero"
+  },
+  {
+    "id": "FR-60",
+    "type": "functional",
+    "release": "1.0",
+    "title": "Unknown-loss intervals",
+    "statement": "When the observation counter did not survive — an unrecoverable crash with the counter only in memory — declare an unknown-loss interval bounded by the last durable checkpoint and the first record after restart. Never fabricate an exact span. The two kinds of loss evidence are distinct record kinds and a verifier reports them differently.",
+    "source": "Operations — fails open, loudly; Coverage attestation",
+    "verify": "Disk exhaustion followed by kill -9 and restart: an unknown-loss interval is written with no span, and no exact gap is invented. A verifier distinguishes it from a declared span"
+  },
+  {
+    "id": "FR-61",
+    "type": "functional",
+    "release": "1.0",
+    "title": "Observation counter durability",
+    "statement": "Checkpoint the observation counter durably at each batch flush, so an unrecoverable crash loses at most the current window and the unknown-loss interval is bounded rather than open-ended.",
+    "source": "Operations — fails open, loudly",
+    "verify": "Kill -9 mid-window: the restart reads the last checkpointed source_seq and the declared unknown interval starts there, not at zero"
   }
 ]

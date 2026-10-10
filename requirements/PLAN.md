@@ -1,6 +1,6 @@
 # Delivery plan — Splitstick 1.0
 
-160 release-1.0 requirements sequenced into 8 milestones, gated by the attack-class
+184 release-1.0 requirements sequenced into 9 milestones, gated by the attack-class
 table in [the release notes](../docs/splitstick-1.0-release-notes.md).
 
 **Generated — do not edit by hand.** Source of truth is `requirements/milestones.json`.
@@ -32,12 +32,12 @@ Every milestone runs the complete red-team suite, not only its own classes. A ga
 | **M1** Local integrity | AC-1, AC-2 | 28 | 3-4 | Close the two attack classes that need no third party, and measure the performance budget before the design hardens. |
 | **M2** Key custody | AC-3 | 5 | 2 | Make yesterday's record unforgeable with today's key, and state the precondition honestly. |
 | **M3a** Anchoring and sequencing | AC-4, AC-5 | 35 | 5-7 | The first second party. Close truncation and erasure, which no amount of local cryptography can reach. |
-| **M3b** Practice statement and resilience | — | 19 | 3-4 | Say exactly what the countersignature means, and make sure losing a witness does not lose the evidence. |
+| **M3b** Practice statement and resilience | — | 21 | 3-4 | Say exactly what the countersignature means, and make sure losing a witness does not lose the evidence. |
 | **M4** Coverage attestation | AC-6, AC-7 | 9 | 3-4 | The differentiated claim: prove the record is complete, not merely unaltered. |
 | **M5** Disclosure and erasure | — | 16 | 3-4 | No new attack class. This is the milestone that makes the product buyable by a regulated, multi-customer organisation. |
 | **M6** Reach and conformance | — | 19 | 4-6 | Stop depending on one upstream project, and make the format genuinely somebody else's to implement. |
 | **M7** Launch gate | — | 36 | 2 | Every promise that is a claim rather than a feature. This milestone is mostly about what we must not say. |
-| | | **182** | | |
+| | | **184** | | |
 
 ## Milestones
 
@@ -169,7 +169,7 @@ The first second party. Close truncation and erasure, which no amount of local c
 | ☐ `SEC-26` | **Resist truncation below a disclosed height** — A record truncated below a sequence already disclosed in a countersigned pack must be detectable by comparing the two, without any stateful witness. | Red-team class I: truncate below a disclosed height; cross-pack comparison fails closed |
 | ☐ `DOC-09` | **Reconciliation guidance** — Document reconciliation against counterparty records as a detection method for erasure and omission, with its limits stated: it requires access to the counterparty and it is a procedure an auditor performs, not a guarantee the software makes. | Guidance published; the limits appear wherever the method is claimed |
 | ☐ `FR-57` | **Verifier states witness-set capabilities** — The verifier prints what the configured or observed witness set can and cannot establish — in particular whether any witness maintains operator sequence state, and therefore whether truncation above the last disclosed height is detectable at all. | Test asserts a stateless witness set yields an explicit "truncation not detectable above <height>" line, and a stateful one does not |
-| ☐ `FR-26` | **Signed gap declarations** — Record an explicit, signed declaration that consequential actions were observed but not written. It occupies exactly one record position, so record_seq stays equal to tree_size, and describes the lost span in source_seq — the collector's count of observed actions, which advances even when a write fails. | Induce a write failure for 6 observed actions: one gap record is written, record_seq remains contiguous, tree_size equals record_seq, and the declaration names source_seq 4790-4795 |
+| ☐ `FR-26` | **Gap declarations with an exact span** — When the observation counter survived the failure, record a signed declaration naming the exact source_seq span that was observed but never written. It occupies one record position. Observation gaps are detected from consecutive persisted source_seq values, never by comparing source_seq with record_seq, which count different things. | Induce a write failure for 6 observed actions with the counter intact: one gap record names source_seq 4790-4795, and a mixed stream of actions, heartbeats and policy records shows no false gap |
 | ☐ `FR-27` | **Countersigned gap declarations** — Gap declarations are themselves submitted for countersignature. | Declaration carries a witness signature |
 
 ### M3b — Practice statement and resilience
@@ -177,7 +177,7 @@ The first second party. Close truncation and erasure, which no amount of local c
 Say exactly what the countersignature means, and make sure losing a witness does not lose the evidence.
 
 - **Gate:** none — unlocks adoption rather than closing an attack class
-- **Requirements:** 19 (LEG×10  FR×4  NFR×2  OPS×2  SEC×1)
+- **Requirements:** 21 (LEG×10  FR×6  NFR×2  OPS×2  SEC×1)
 - **Effort:** weeks 3-4
 - **Exit criteria:** Practice statement published, versioned and itself anchored, naming its time discipline. An agent run completes normally with every witness unreachable. Restore drill meets the stated recovery point objective. Countersignatures from a retired witness key still verify. Operator key compromise recoverable as a declared, countersigned discontinuity.
 
@@ -202,6 +202,8 @@ Say exactly what the countersignature means, and make sure losing a witness does
 | ☐ `LEG-19` | **WPS states the time discipline** — The practice statement names the witness's time source and the limits of the time assertion. | Statement text reviewed against SEC-25 implementation |
 | ☐ `SEC-24` | **Key compromise recovery** — Document and support recovery from operator key compromise: a declared, countersigned discontinuity rather than a silent re-key. | Compromise drill: discontinuity is recorded, countersigned and visible to the verifier |
 | ☐ `FR-58` | **Reserved slot for gap declarations** — Pre-allocate storage sufficient to write a gap declaration, so the declaration can be written even when the store is otherwise exhausted. If even that fails, the condition is surfaced out of band and the next successful write declares the lost window. | Disk-exhaustion test: the agent completes, a gap declaration is written from the reserve, and the lost window appears in the coverage report |
+| ☐ `FR-60` | **Unknown-loss intervals** — When the observation counter did not survive — an unrecoverable crash with the counter only in memory — declare an unknown-loss interval bounded by the last durable checkpoint and the first record after restart. Never fabricate an exact span. The two kinds of loss evidence are distinct record kinds and a verifier reports them differently. | Disk exhaustion followed by kill -9 and restart: an unknown-loss interval is written with no span, and no exact gap is invented. A verifier distinguishes it from a declared span |
+| ☐ `FR-61` | **Observation counter durability** — Checkpoint the observation counter durably at each batch flush, so an unrecoverable crash loses at most the current window and the unknown-loss interval is bounded rather than open-ended. | Kill -9 mid-window: the restart reads the last checkpointed source_seq and the declared unknown interval starts there, not at zero |
 
 ### M4 — Coverage attestation
 
@@ -359,4 +361,4 @@ Every promise that is a claim rather than a feature. This milestone is mostly ab
 
 ---
 
-*182 requirements in 1.0 across 9 milestones; 199 total in the backlog.*
+*184 requirements in 1.0 across 9 milestones; 201 total in the backlog.*

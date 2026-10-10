@@ -229,7 +229,9 @@
         "OPS-02",
         "OPS-06",
         "SCOPE-16",
-        "FR-58"
+        "FR-58",
+        "FR-60",
+        "FR-61"
       ],
       "spec": "design/DES-15-failure-and-availability.md"
     },

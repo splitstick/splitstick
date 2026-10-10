@@ -10,9 +10,9 @@ Regenerate with `npm run backlog`.
 | | Count |
 |---|---:|
 | Design elements | 20 |
-| Release-1.0 requirements traced to a design element | 122 |
+| Release-1.0 requirements traced to a design element | 124 |
 | Classified non-design | 60 |
-| **Total 1.0** | **182** |
+| **Total 1.0** | **184** |
 
 ### Non-design classifications
 
@@ -144,7 +144,7 @@ Submission and response, enrolment, per-operator sequence enforcement, countersi
 | `INT-02` | Verify third-party countersignatures | ☐ |
 | `SEC-15` | Witness sees roots only | ☐ |
 | `PRIV-01` | Zero content egress | ☐ |
-| `FR-26` | Signed gap declarations | ☐ |
+| `FR-26` | Gap declarations with an exact span | ☐ |
 | `FR-27` | Countersigned gap declarations | ☐ |
 
 ### [DES-09 — Policy files](../design/DES-09-policy-files.md)
@@ -242,7 +242,7 @@ The shared capture core, the OMA backend, the MCP proxy, and where the capture b
 
 ### [DES-15 — Failure and availability model](../design/DES-15-failure-and-availability.md)
 
-**Milestone:** M3b · **Requirements covered:** 8
+**Milestone:** M3b · **Requirements covered:** 10
 
 Fail-open behaviour, the durable queue, retry and backoff, late countersignature handling, and the guarantee that the collector can never block a run.
 
@@ -256,6 +256,8 @@ Fail-open behaviour, the durable queue, retry and backoff, late countersignature
 | `OPS-06` | Witness store durability | ☐ |
 | `SCOPE-16` | No fail-closed option | ☐ |
 | `FR-58` | Reserved slot for gap declarations | ☐ |
+| `FR-60` | Unknown-loss intervals | ☐ |
+| `FR-61` | Observation counter durability | ☐ |
 
 ### [DES-16 — Format versioning and algorithm agility](../design/DES-16-format-versioning.md)
 

@@ -11,7 +11,7 @@ Regenerate with `npm run requirements`.
 
 | Category | Count |
 |---|---:|
-| Functional | 59 |
+| Functional | 61 |
 | Security | 26 |
 | Legal & regulatory | 19 |
 | Governance, licensing & community | 19 |
@@ -23,20 +23,20 @@ Regenerate with `npm run requirements`.
 | Interoperability & standards | 7 |
 | Operational | 6 |
 | Traceability & process | 5 |
-| **Total** | **199** |
+| **Total** | **201** |
 
 ### By release
 
 | Release | Count |
 |---|---:|
-| 1.0 | 182 |
+| 1.0 | 184 |
 | 2.0 | 5 |
 | commercial | 12 |
-| **Total** | **199** |
+| **Total** | **201** |
 
 ## Matrix
 
-### Functional — 59
+### Functional — 61
 
 | ID | Requirement | Traces to | Verified by | Rel | M | Status |
 |---|---|---|---|---|---|---|
@@ -65,7 +65,7 @@ Regenerate with `npm run requirements`.
 | `FR-23` | **Policy changes as chain events** — Record any change to the witness set or quorum as a timestamped event inside the chain. | Independence — written into the chain | Red-team: policy downgrade is visible in the record | 1.0 | M4 | ☐ |
 | `FR-24` | **Signed heartbeats** — Emit signed heartbeats into the collector-scoped chain at a configured interval, independently of whether any run is active, because the dangerous window is precisely when none is. | Coverage attestation — signed heartbeats | Stopping the collector produces a detectable gap, including during an interval with no agent run | 1.0 | M4 | ☐ |
 | `FR-25` | **Build digest in heartbeat** — Each heartbeat carries the collector build digest, binding a run to a traceable artifact for configuration assurance and non-repudiation by an honest operator. It is not an attestation of the running process and does not detect a dishonest patch. | Coverage attestation — build digest | Digest present and resolvable to a published provenance attestation; test asserts no claim of patch detection appears in output | 1.0 | M4 | ☐ |
-| `FR-26` | **Signed gap declarations** — Record an explicit, signed declaration that consequential actions were observed but not written. It occupies exactly one record position, so record_seq stays equal to tree_size, and describes the lost span in source_seq — the collector's count of observed actions, which advances even when a write fails. | Coverage attestation — signed gap declarations | Induce a write failure for 6 observed actions: one gap record is written, record_seq remains contiguous, tree_size equals record_seq, and the declaration names source_seq 4790-4795 | 1.0 | M3a | ☐ |
+| `FR-26` | **Gap declarations with an exact span** — When the observation counter survived the failure, record a signed declaration naming the exact source_seq span that was observed but never written. It occupies one record position. Observation gaps are detected from consecutive persisted source_seq values, never by comparing source_seq with record_seq, which count different things. | Coverage attestation — signed gap declarations | Induce a write failure for 6 observed actions with the counter intact: one gap record names source_seq 4790-4795, and a mixed stream of actions, heartbeats and policy records shows no false gap | 1.0 | M3a | ☐ |
 | `FR-27` | **Countersigned gap declarations** — Gap declarations are themselves submitted for countersignature. | Coverage attestation — signed, countersigned statement of absence | Declaration carries a witness signature | 1.0 | M3a | ☐ |
 | `FR-28` | **splitstick coverage** — Produce a coverage report over a date range stating the proportion of actions the collector reported that were captured, chained and anchored, plus heartbeat continuity — never a claim about actions the collector did not report. | Coverage attestation — splitstick coverage | Report wording asserted by test; injected gaps appear exactly; a suppressed action does not appear and the report does not imply completeness | 1.0 | M4 | ☐ |
 | `FR-29` | **splitstick verify** — Verify chain integrity, batch signatures and witness countersignatures from files alone. | Proof — offline verification | All red-team classes fail closed; baseline passes | 1.0 | M1 | ☐ |
@@ -99,6 +99,8 @@ Regenerate with `npm run requirements`.
 | `FR-57` | **Verifier states witness-set capabilities** — The verifier prints what the configured or observed witness set can and cannot establish — in particular whether any witness maintains operator sequence state, and therefore whether truncation above the last disclosed height is detectable at all. | Proof — offline verification; Independence | Test asserts a stateless witness set yields an explicit "truncation not detectable above <height>" line, and a stateful one does not | 1.0 | M3a | ☐ |
 | `FR-58` | **Reserved slot for gap declarations** — Pre-allocate storage sufficient to write a gap declaration, so the declaration can be written even when the store is otherwise exhausted. If even that fails, the condition is surfaced out of band and the next successful write declares the lost window. | Operations — fails open, loudly | Disk-exhaustion test: the agent completes, a gap declaration is written from the reserve, and the lost window appears in the coverage report | 1.0 | M3b | ☐ |
 | `FR-59` | **Action record and chain entry are separate structures** — The canonicalised, hashed ActionRecord is immutable and contains no chain metadata. prev, leaf and head live in a ChainEntry wrapper that is never canonicalised, so the digest of a record can never depend on a value derived from it. Conformance vectors publish the exact bytes hashed. | Integrity — chained, salted, ratcheted; Capture — action record | Conformance vectors: given a fixed ActionRecord, the canonical bytes, leaf and head are byte-exact. A test asserts no chain field appears inside the canonicalised subject | 1.0 | M1 | ☐ |
+| `FR-60` | **Unknown-loss intervals** — When the observation counter did not survive — an unrecoverable crash with the counter only in memory — declare an unknown-loss interval bounded by the last durable checkpoint and the first record after restart. Never fabricate an exact span. The two kinds of loss evidence are distinct record kinds and a verifier reports them differently. | Operations — fails open, loudly; Coverage attestation | Disk exhaustion followed by kill -9 and restart: an unknown-loss interval is written with no span, and no exact gap is invented. A verifier distinguishes it from a declared span | 1.0 | M3b | ☐ |
+| `FR-61` | **Observation counter durability** — Checkpoint the observation counter durably at each batch flush, so an unrecoverable crash loses at most the current window and the unknown-loss interval is bounded rather than open-ended. | Operations — fails open, loudly | Kill -9 mid-window: the restart reads the last checkpointed source_seq and the declared unknown interval starts there, not at zero | 1.0 | M3b | ☐ |
 
 ### Non-functional — 13
 
@@ -297,4 +299,4 @@ Regenerate with `npm run requirements`.
 
 ---
 
-*199 requirements. Status column is maintained by hand as work lands.*
+*201 requirements. Status column is maintained by hand as work lands.*
