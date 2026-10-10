@@ -301,10 +301,12 @@
     "id": "GOV-15",
     "type": "governance",
     "release": "1.0",
-    "title": "Bounty: external arbiter",
-    "statement": "Novelty is decided by an arbiter named in the repository, drawn from the transparency-log community and not employed by the project. The role is informal and unpaid while the project is unfunded.",
-    "source": "Bounty terms",
-    "verify": "Arbiter named in the repository, or the absence stated plainly"
+    "title": "Bounty: no adjudication while unfunded",
+    "statement": "Publish every reported finding and credit every reporter, whether or not the project considers the class novel. With nothing withheld there is nothing to adjudicate, so no arbiter is required. An independent arbiter becomes necessary only if a cash award is ever introduced.",
+    "source": "Bounty terms; Resourcing",
+    "verify": "Terms published stating that all findings are published and all reporters credited, with no novelty test",
+    "status": "done",
+    "evidence": "bounty terms in the notes, rev. 9"
   },
   {
     "id": "GOV-16",

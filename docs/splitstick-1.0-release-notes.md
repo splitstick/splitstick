@@ -1,6 +1,6 @@
 # Splitstick 1.0 — draft release notes
 
-`v1.0.0` · Apache-2.0 · rev. 8
+`v1.0.0` · Apache-2.0 · rev. 9
 
 **Agent actions you can prove — including the ones that aren't there.**
 
@@ -343,10 +343,11 @@ alongside the offer so that both sides know the shape of it before anyone starts
 | **The threat model is the scope** | The out-of-scope list published above is binding in both directions. A key exfiltrated before first use, collusion across the entire quorum, or a tool that lies about what it did are excluded — and we do not get to add exclusions after the fact. |
 | **Recognition, not cash** | While the project is unfunded, a novel class earns attribution, credit in the suite and a named finding. A cash award opens only if the project is funded. We would rather say that than advertise money we do not hold. |
 | **First reporter, 90 days** | First complete report wins. Coordinated disclosure after 90 days or on fix, whichever is sooner. We publish the finding either way, including when we have no mitigation. |
-| **An arbiter who is not us** | Whether a finding is novel is decided by an arbiter named in the repository, drawn from the transparency-log community and not employed by us. **We cannot be both the payer and the judge of a security claim and keep the credibility we are paying for.** Disputes go to them, not to our inbox. |
+| **Nothing is withheld, so nothing is judged** | Every reported finding is published and every reporter credited, whether or not we consider the class novel. We cannot be both the payer and the judge of a security claim and keep the credibility we are paying for — so while recognition is the award, we remove the judgement rather than outsource it. An independent arbiter becomes necessary the day a cash award does. |
 
-That last term is the same decision as the open witness list, applied again: the places where we hold
-power over our own evidence are exactly the places to give it away.
+That last term is the same decision as the open witness list, applied again — except cheaper. The
+places where we hold power over our own evidence are exactly the places to give it away, and the
+cheapest way to give away a judgement is to stop making one.
 
 ## Getting started
 
@@ -444,6 +445,7 @@ is published rather than discarded, on the same principle as everything else her
 | 6 | ADDED | The witness time source is now named in the practice statement, since the countersignature asserts a time and nothing previously said where that time came from. |
 | 7 | SCOPED | Re-scoped as an unfunded open-source release after a feasibility review found that 40% of requirements were non-engineering and most existed only because the notes were written as a commercial launch. Nothing technical was cut. |
 | 7 | CHANGED | Default witness set is now `[rekor]` alone — no vendor in the shipped configuration, which is both the strongest independence claim and free. |
+| 9 | SIMPLIFIED | Dropped the external arbiter. Once the award became recognition rather than cash, the stakes of adjudication collapsed — nobody disputes attribution the way they dispute money. Publishing every finding and crediting every reporter removes the judgement entirely, which is more credible than appointing a referee and needs no one to agree to serve. The arbiter returns if cash ever does. |
 | 8 | RENAMED | Tally became Splitstick. A knockout search found "Tally" registered to Tally Solutions for accounting software, the npm and GitHub namespaces taken, and the word descriptive of what an audit tool does. Splitstick is arbitrary in class 9, free everywhere that matters, and names the two-party property rather than the counting. Recorded in docs/name-search.md. |
 | 7 | REMOVED | The hosted witness, the certification mark, accreditation and the cash bounty. All four are now stated as funded-release items rather than implied capabilities. |
 
