@@ -29,6 +29,7 @@ and the suite exits non-zero whenever an observation changes in either direction
 |---|---|
 | [`redteam/`](redteam/) | The tamper suite. Reproducible, runs offline, no API key. |
 | [`docs/`](docs/) | [Threat model](docs/threat-model.md) · [draft release notes](docs/splitstick-1.0-release-notes.md) — the scope commitment, rev. 8 |
+| [`design/`](design/) | 18 design elements, one spec each — [index and traceability](requirements/DESIGN.md) |
 | [`requirements/`](requirements/) | [Backlog](requirements/MATRIX.md) and [delivery plan](requirements/PLAN.md) — 187 requirements, 174 in 1.0, gated by attack class |
 | [`packages/`](packages/) | Shipped code. Empty until M1. |
 | [`spec/`](spec/) | Wire format and conformance vectors. Empty until M6. |

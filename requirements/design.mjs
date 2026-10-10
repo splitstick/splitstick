@@ -25,6 +25,10 @@ for (const id of r10) {
 }
 // a design element must not depend on a requirement from a later milestone than its own
 const order = JSON.parse(fs.readFileSync('requirements/depends.json','utf8')).order;
+for (const e of elements) {
+  if (!e.spec) errs.push(`${e.id}: no spec file declared`);
+  else if (!fs.existsSync(e.spec)) errs.push(`${e.id}: spec file missing at ${e.spec}`);
+}
 for (const e of elements) for (const id of e.covers) {
   if (!msOf.has(id)) continue;
   if (order.indexOf(msOf.get(id)) < order.indexOf(e.milestone))
@@ -62,7 +66,7 @@ Regenerate with \`npm run backlog\`.
 
 `;
 for (const e of elements) {
-  md += `### ${e.id} — ${e.title}\n\n`;
+  md += `### [${e.id} — ${e.title}](../${e.spec})\n\n`;
   md += `**Milestone:** ${e.milestone} · **Requirements covered:** ${e.covers.length}\n\n`;
   md += `${e.decides}\n\n`;
   md += `| Requirement | | Status |\n|---|---|---|\n`;
@@ -79,4 +83,4 @@ for (const [k, ids] of Object.entries(nondesign)) {
 }
 fs.writeFileSync('requirements/DESIGN.md', md);
 console.log(`design validated: ${elements.length} elements, ${covered.size} requirements traced, ${classed.size} classified, 0 errors`);
-for (const e of elements) console.log(`  ${e.id}  ${e.milestone.padEnd(4)} ${String(e.covers.length).padStart(2)} reqs  ${e.title}`);
+for (const e of elements) console.log(`  ${e.id}  ${e.milestone.padEnd(4)} ${String(e.covers.length).padStart(2)} reqs  ${String(fs.statSync(e.spec).size).padStart(5)}B  ${e.title}`);

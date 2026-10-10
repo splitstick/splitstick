@@ -1,0 +1,69 @@
+# DES-15 — Failure and availability model
+
+**Milestone:** M3b · **Covers:** FR-38, FR-39, NFR-12, NFR-13, OPS-02, OPS-06, SCOPE-16
+
+## Decision
+
+**The collector can never stop an agent run.** Not configurably, not in a strict mode, not as an
+opt-in. This is the single constraint that decides whether anyone installs it: an audit layer
+capable of taking down production is an audit layer that eventually does, at which point it is
+removed and never reinstalled.
+
+### Fail-open with a marked gap — FR-38
+
+When no witness is reachable:
+
+1. The batch is chained and signed **locally**. Integrity is unaffected; only the countersignature
+   is missing.
+2. It is marked `unwitnessed` and written to `queue/`.
+3. The run proceeds. The agent never learns there was a problem.
+
+### Late countersignature records real time — FR-39
+
+When a witness returns, the queue drains. The witness stamps **its actual receipt time**, not the
+batch's claimed time, so the gap between `ts` and `received_at` is visible in the record and
+reported by DES-10 as a coverage gap.
+
+A batch anchored eleven minutes late had an eleven-minute mutability window. That is weaker
+evidence, and the design's job is to make it *visibly* weaker rather than to hide it. **Honestly
+weaker beats silently absent** — the alternative is a record that looks uniformly strong and
+isn't.
+
+### SCOPE-16 — no fail-closed option exists
+
+`on_unavailable` accepts exactly one value, `mark_gap`. There is no code path that blocks, and a
+pull request adding one will be declined even if it works. The scope guard exists because the
+request is reasonable-sounding — *"some customers need strict mode"* — and granting it would
+reintroduce the failure mode the design is built to exclude.
+
+Enforced by review and by a config-schema test, not merely by intention.
+
+## Queue durability — NFR-13, OPS-02
+
+| Property | Rule |
+|---|---|
+Durability | Queue entries are `fsync`ed before the run continues. A `kill -9` loses nothing already acknowledged. |
+Ordering | Drained in sequence order, because a stateful witness requires contiguity (DES-08). |
+Retry | Exponential backoff, 1 s to 5 min, indefinitely. Never a dead-letter drop: a batch abandoned silently is exactly the evidence gap this project exists to detect. |
+Bounded growth | At a configurable ceiling, emit a `gap` declaration (DES-10) rather than grow without limit or discard quietly. |
+
+## Witness store durability — OPS-06
+
+For an operator running their own witness (FR-17): **a witness that loses its roots destroys the
+corroboration it exists to provide.** This is the most consequential failure mode in the whole
+design, and it is addressed rather than assumed away.
+
+- Replicated storage, with a documented recovery point objective.
+- A restore drill that proves the objective, as a release gate — an untested backup is a belief.
+- Published tree heads (FR-50) so a restore that silently rolls back is detectable by anyone
+  watching.
+
+Mitigated structurally as well as operationally: at `quorum: 2`, losing one witness degrades the
+evidence rather than destroying it. The default includes a public anchor for exactly this reason.
+
+## Chaos obligations — NFR-12
+
+Tested, not asserted. The suite runs an agent to completion under: every witness unreachable;
+a witness returning 500s; a witness hanging past timeout; disk full on the queue; `kill -9`
+mid-batch; and a clock stepped backwards. In every case the run completes and the record states
+what happened.

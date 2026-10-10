@@ -25,7 +25,7 @@ Regenerate with `npm run backlog`.
 
 ## Design elements
 
-### DES-01 — Action record schema
+### [DES-01 — Action record schema](../design/DES-01-action-record-schema.md)
 
 **Milestone:** M1 · **Requirements covered:** 3
 
@@ -37,7 +37,7 @@ Which fields constitute an action record, their types, and what is deliberately 
 | `FR-06` | Digest tool result | ☐ |
 | `FR-07` | Digest approval decisions | ☐ |
 
-### DES-02 — Canonical encoding
+### [DES-02 — Canonical encoding](../design/DES-02-canonical-encoding.md)
 
 **Milestone:** M1 · **Requirements covered:** 2
 
@@ -48,7 +48,7 @@ Deterministic serialisation: recursive key ordering, array order preserved, numb
 | `FR-52` | Canonicalisation completeness | ☐ |
 | `SEC-07` | Resist consistent rewrite | ☐ |
 
-### DES-03 — Leaf and salt construction
+### [DES-03 — Leaf and salt construction](../design/DES-03-leaf-and-salt.md)
 
 **Milestone:** M1 · **Requirements covered:** 2
 
@@ -59,7 +59,7 @@ Salt length and source, leaf = H(salt || canonical), and where salts are stored 
 | `FR-09` | Per-leaf salting | ☐ |
 | `SEC-13` | Digest pre-image resistance in practice | ☐ |
 
-### DES-04 — Chain construction
+### [DES-04 — Chain construction](../design/DES-04-chain-construction.md)
 
 **Milestone:** M1 · **Requirements covered:** 4
 
@@ -72,7 +72,7 @@ h_i = H(h_(i-1) || leaf_i), the genesis value, sequence semantics, and what a ve
 | `SEC-09` | Resist truncation | ☐ |
 | `SEC-10` | Resist erasure and renumbering | ☐ |
 
-### DES-05 — Batching and Merkle tree
+### [DES-05 — Batching and Merkle tree](../design/DES-05-batching-and-merkle.md)
 
 **Milestone:** M1 · **Requirements covered:** 5
 
@@ -86,7 +86,7 @@ Batch boundaries, tree shape, odd-leaf handling, and root computation — the co
 | `FR-53` | Roll-up anchoring | ☐ |
 | `PRIV-06` | Disclosure minimisation | ☐ |
 
-### DES-06 — Key hierarchy, signing and epoch ratchet
+### [DES-06 — Key hierarchy, signing and epoch ratchet](../design/DES-06-keys-and-ratchet.md)
 
 **Milestone:** M1 · **Requirements covered:** 8
 
@@ -103,7 +103,7 @@ What an epoch is, how the signing key evolves, how the predecessor is destroyed,
 | `SEC-24` | Key compromise recovery | ☐ |
 | `OPS-04` | Separation-of-duties guidance | ☐ |
 
-### DES-07 — Checkpoint format
+### [DES-07 — Checkpoint format](../design/DES-07-checkpoint-format.md)
 
 **Milestone:** M3a · **Requirements covered:** 4
 
@@ -116,7 +116,7 @@ The C2SP tlog-witness conformant checkpoint, its signed preimage, and how the op
 | `INT-01` | C2SP conformance | ☐ |
 | `SEC-25` | Witness time source | ☐ |
 
-### DES-08 — Witness protocol
+### [DES-08 — Witness protocol](../design/DES-08-witness-protocol.md)
 
 **Milestone:** M3a · **Requirements covered:** 18
 
@@ -143,7 +143,7 @@ Submission and response, enrolment, per-operator sequence enforcement, countersi
 | `SEC-15` | Witness sees roots only | ☐ |
 | `PRIV-01` | Zero content egress | ☐ |
 
-### DES-09 — Policy files
+### [DES-09 — Policy files](../design/DES-09-policy-files.md)
 
 **Milestone:** M1 · **Requirements covered:** 6
 
@@ -158,7 +158,7 @@ Two separate schemas: the collector's witness set, and the verifier's acceptance
 | `SCOPE-15` | Hard anchor must be disableable | ☐ |
 | `NFR-03` | Default mutability window | ☐ |
 
-### DES-10 — Coverage model
+### [DES-10 — Coverage model](../design/DES-10-coverage-model.md)
 
 **Milestone:** M4 · **Requirements covered:** 7
 
@@ -174,7 +174,7 @@ Heartbeat cadence and contents, the build digest, gap declaration semantics, and
 | `FR-40` | Late anchors reported as gaps | ☐ |
 | `SEC-11` | Resist collector suppression | ☐ |
 
-### DES-11 — Evidence pack format
+### [DES-11 — Evidence pack format](../design/DES-11-evidence-pack-format.md)
 
 **Milestone:** M3a · **Requirements covered:** 2
 
@@ -185,7 +185,7 @@ The artifact an auditor receives: records, salts, inclusion paths, every counter
 | `FR-31` | Evidence pack carries all countersignatures | ☐ |
 | `INT-03` | Documented evidence pack format | ☐ |
 
-### DES-12 — Verification algorithm
+### [DES-12 — Verification algorithm](../design/DES-12-verification-algorithm.md)
 
 **Milestone:** M1 · **Requirements covered:** 6
 
@@ -200,7 +200,7 @@ The ordered checks, the verdict taxonomy including an inconclusive outcome, and 
 | `SEC-03` | No trust in operator or vendor | ☐ |
 | `SEC-04` | One honest witness assumption | ☐ |
 
-### DES-13 — Storage and erasure
+### [DES-13 — Storage and erasure](../design/DES-13-storage-and-erasure.md)
 
 **Milestone:** M1 · **Requirements covered:** 8
 
@@ -217,7 +217,7 @@ The content store, pointer scheme, crypto-shredding procedure, and how retention
 | `PRIV-05` | Minimal retained artefacts | ☐ |
 | `PRIV-09` | Operator-controlled retention | ☐ |
 
-### DES-14 — Collector architecture
+### [DES-14 — Collector architecture](../design/DES-14-collector-architecture.md)
 
 **Milestone:** M1 · **Requirements covered:** 10
 
@@ -236,7 +236,7 @@ The shared capture core, the OMA backend, the MCP proxy, and where the capture b
 | `FR-47` | Witness list as data | ☐ |
 | `INT-06` | Reuse rather than reimplement | ☐ |
 
-### DES-15 — Failure and availability model
+### [DES-15 — Failure and availability model](../design/DES-15-failure-and-availability.md)
 
 **Milestone:** M3b · **Requirements covered:** 7
 
@@ -252,7 +252,7 @@ Fail-open behaviour, the durable queue, retry and backoff, late countersignature
 | `OPS-06` | Witness store durability | ☐ |
 | `SCOPE-16` | No fail-closed option | ☐ |
 
-### DES-16 — Format versioning and algorithm agility
+### [DES-16 — Format versioning and algorithm agility](../design/DES-16-format-versioning.md)
 
 **Milestone:** M1 · **Requirements covered:** 4
 
@@ -265,7 +265,7 @@ Version negotiation in the record and pack, and the migration path when a hash o
 | `NFR-10` | OMA version compatibility | ☐ |
 | `NFR-11` | MCP transport coverage | ☐ |
 
-### DES-17 — Release and provenance pipeline
+### [DES-17 — Release and provenance pipeline](../design/DES-17-release-and-provenance.md)
 
 **Milestone:** M1 · **Requirements covered:** 5
 
@@ -279,7 +279,7 @@ Build reproducibility, provenance attestation, release signing, SBOM generation,
 | `NFR-02` | Run latency budget | ☐ |
 | `FR-49` | Documented CLI contract | ☐ |
 
-### DES-18 — Witness practice statement structure
+### [DES-18 — Witness practice statement structure](../design/DES-18-practice-statement-structure.md)
 
 **Milestone:** M3b · **Requirements covered:** 12
 

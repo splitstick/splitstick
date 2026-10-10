@@ -10,7 +10,8 @@
         "FR-05",
         "FR-06",
         "FR-07"
-      ]
+      ],
+      "spec": "design/DES-01-action-record-schema.md"
     },
     {
       "id": "DES-02",
@@ -20,7 +21,8 @@
       "covers": [
         "FR-52",
         "SEC-07"
-      ]
+      ],
+      "spec": "design/DES-02-canonical-encoding.md"
     },
     {
       "id": "DES-03",
@@ -30,7 +32,8 @@
       "covers": [
         "FR-09",
         "SEC-13"
-      ]
+      ],
+      "spec": "design/DES-03-leaf-and-salt.md"
     },
     {
       "id": "DES-04",
@@ -42,7 +45,8 @@
         "SEC-06",
         "SEC-09",
         "SEC-10"
-      ]
+      ],
+      "spec": "design/DES-04-chain-construction.md"
     },
     {
       "id": "DES-05",
@@ -55,7 +59,8 @@
         "FR-34",
         "FR-53",
         "PRIV-06"
-      ]
+      ],
+      "spec": "design/DES-05-batching-and-merkle.md"
     },
     {
       "id": "DES-06",
@@ -71,7 +76,8 @@
         "SEC-17",
         "SEC-24",
         "OPS-04"
-      ]
+      ],
+      "spec": "design/DES-06-keys-and-ratchet.md"
     },
     {
       "id": "DES-07",
@@ -83,7 +89,8 @@
         "FR-45",
         "INT-01",
         "SEC-25"
-      ]
+      ],
+      "spec": "design/DES-07-checkpoint-format.md"
     },
     {
       "id": "DES-08",
@@ -109,7 +116,8 @@
         "INT-02",
         "SEC-15",
         "PRIV-01"
-      ]
+      ],
+      "spec": "design/DES-08-witness-protocol.md"
     },
     {
       "id": "DES-09",
@@ -123,7 +131,8 @@
         "SEC-12",
         "SCOPE-15",
         "NFR-03"
-      ]
+      ],
+      "spec": "design/DES-09-policy-files.md"
     },
     {
       "id": "DES-10",
@@ -138,7 +147,8 @@
         "FR-28",
         "FR-40",
         "SEC-11"
-      ]
+      ],
+      "spec": "design/DES-10-coverage-model.md"
     },
     {
       "id": "DES-11",
@@ -148,7 +158,8 @@
       "covers": [
         "FR-31",
         "INT-03"
-      ]
+      ],
+      "spec": "design/DES-11-evidence-pack-format.md"
     },
     {
       "id": "DES-12",
@@ -162,7 +173,8 @@
         "NFR-06",
         "SEC-03",
         "SEC-04"
-      ]
+      ],
+      "spec": "design/DES-12-verification-algorithm.md"
     },
     {
       "id": "DES-13",
@@ -178,7 +190,8 @@
         "PRIV-04",
         "PRIV-05",
         "PRIV-09"
-      ]
+      ],
+      "spec": "design/DES-13-storage-and-erasure.md"
     },
     {
       "id": "DES-14",
@@ -196,7 +209,8 @@
         "FR-46",
         "FR-47",
         "INT-06"
-      ]
+      ],
+      "spec": "design/DES-14-collector-architecture.md"
     },
     {
       "id": "DES-15",
@@ -211,7 +225,8 @@
         "OPS-02",
         "OPS-06",
         "SCOPE-16"
-      ]
+      ],
+      "spec": "design/DES-15-failure-and-availability.md"
     },
     {
       "id": "DES-16",
@@ -223,7 +238,8 @@
         "NFR-08",
         "NFR-10",
         "NFR-11"
-      ]
+      ],
+      "spec": "design/DES-16-format-versioning.md"
     },
     {
       "id": "DES-17",
@@ -236,7 +252,8 @@
         "NFR-01",
         "NFR-02",
         "FR-49"
-      ]
+      ],
+      "spec": "design/DES-17-release-and-provenance.md"
     },
     {
       "id": "DES-18",
@@ -256,7 +273,8 @@
         "LEG-19",
         "OPS-03",
         "OPS-05"
-      ]
+      ],
+      "spec": "design/DES-18-practice-statement-structure.md"
     }
   ],
   "nondesign": {
