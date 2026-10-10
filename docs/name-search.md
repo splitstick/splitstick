@@ -84,7 +84,7 @@ Nothing in class 9 (software) or class 42 (SaaS).
 | `github.com/splitstick`, `/split-stick`, `/splitstickhq` | **free** |
 | `splitstick.dev`, `splitstick.io` | no nameservers — likely unregistered |
 | `splitstick.org` | **registered** (parked at Namecheap) |
-| `splitstick.com` | **inconclusive** — the query timed out here; check at a registrar |
+| `splitstick.com` | **registered, parked for sale** — resolved 10 Oct 2026 |
 
 One dormant repository exists at `benvoemel-a11y/SplitStick`: zero stars, no description, no
 bearing on an organisation name.
@@ -99,9 +99,28 @@ if you start selling actual split sticks.
 It also carries the explanation: the tally stick was split so that neither half alone was the
 evidence. That is the architecture in one word.
 
+### The .com is reseller inventory, not a competitor
+
+Resolved 10 October 2026 by WHOIS:
+
+```
+Name Server: NS.BUYDOMAINS.COM
+Name Server: THIS-DOMAIN-FOR-SALE.COM
+Creation Date: 2016-02-08      Registrar: GoDaddy
+```
+
+Held by a domain reseller since 2016 with no service behind it. **Speculative holding is not use
+in commerce**, so it creates no trademark exposure and signals no competing product — nobody is
+using "Splitstick" for anything. The `.com` is purchasable later if a funding event ever makes it
+worth the asking price; it is not needed now and its absence is cosmetic.
+
+`.dev` confirmed available and registered for the project. `.io` and `.sh` were also free at the
+time of the search.
+
 ### Before relying on it
 
-1. Confirm `.com` and `.dev` availability at a registrar — the DNS check here was inconclusive.
+1. ~~Confirm `.com` and `.dev` availability~~ — done. `.dev` taken for the project, `.com` is
+   reseller inventory and deliberately not pursued.
 2. Claim the free things now: npm scope `@splitstick`, the GitHub organisation, one domain.
 3. File in classes 9 and 42 when there is budget. Deferred, not abandoned.
 
