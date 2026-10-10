@@ -1,0 +1,61 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  # TRC-03 — the red-team suite as a regression canary in both directions: it
+  # fails if a gap we closed reopens, and if a gap upstream closed is still
+  # recorded here as open.
+  canary:
+    name: red-team canary
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm ci
+      - name: Tamper suite
+        run: npm test
+      - name: Requirements traceability
+        run: npm run backlog
+      - name: Generated files are up to date
+        run: git diff --exit-code -- requirements/MATRIX.md requirements/PLAN.md
+
+  # GOV-02 — DCO. Pull requests only: commits predating adoption are unsigned,
+  # and their sole author affirms them in CONTRIBUTING.md rather than rewriting
+  # history that is already pushed.
+  dco:
+    name: DCO sign-off
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check Signed-off-by on every commit in the pull request
+        env:
+          BASE: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=200 origin "$BASE"
+          fail=0
+          for sha in $(git rev-list --no-merges "origin/$BASE..HEAD"); do
+            author="$(git show -s --format='%an <%ae>' "$sha")"
+            if git show -s --format='%B' "$sha" | grep -qiF "Signed-off-by: $author"; then
+              echo "ok   $sha  $author"
+            else
+              echo "FAIL $sha  missing or mismatched sign-off for: $author"
+              fail=1
+            fi
+          done
+          if [ "$fail" -ne 0 ]; then
+            echo
+            echo "Every commit needs a Signed-off-by line matching its author."
+            echo "Add it with 'git commit -s', or repair the branch with:"
+            echo "  git rebase --signoff origin/$BASE"
+            exit 1
+          fi
