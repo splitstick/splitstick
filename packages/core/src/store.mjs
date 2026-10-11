@@ -27,6 +27,7 @@
 import { mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync, openSync, writeSync, closeSync } from 'node:fs';
 import { join } from 'node:path';
 import { ContentStore } from './content.mjs';
+import { WriteLock } from './writelock.mjs';
 
 export class Store {
   /** @type {number|null} */
@@ -52,7 +53,12 @@ export class Store {
     mkdirSync(this.checkpointDir, { recursive: true });
     this.chainPath = join(root, 'chain', `${collector}.jsonl`);
     this.saltsPath = join(root, 'salts', `${collector}.jsonl`);
-    this.content = new ContentStore(root, collector);
+    // One lock per collector, covering the journals AND the content store.
+    // Holding it only inside ContentStore.putGroup() left every record that
+    // externalises nothing — heartbeat, gap, policy, padding — unprotected, so
+    // two writers sharing a collector identity both chained from genesis.
+    this.lock = new WriteLock(join(root, '.locks', `${collector}.lock`));
+    this.content = new ContentStore(root, collector, this.lock);
 
   }
 
@@ -64,6 +70,7 @@ export class Store {
    */
   append(e) {
     if (e.salt === null) throw new TypeError('a record is written with its salt; erasure comes later');
+    this.lock.claim();
     if (this.#chainFd === null) this.#chainFd = openSync(this.chainPath, 'a', 0o600);
     if (this.#saltsFd === null) this.#saltsFd = openSync(this.saltsPath, 'a', 0o600);
 
@@ -109,20 +116,45 @@ export class Store {
     for (const fd of [this.#chainFd, this.#saltsFd]) if (fd !== null) closeSync(fd);
     this.#chainFd = null;
     this.#saltsFd = null;
-    this.content.close();
+    this.content.close();     // releases the shared lock
+    this.lock.release();
   }
 
-  /** @returns {Map<number, Buffer>} */
-  #readSalts() {
+  /**
+   * Read the salt journal, tolerating damage.
+   *
+   * This used to parse every line eagerly, so one incomplete line threw out of
+   * readChainDetailed, out of tip(), and out of the Collector constructor —
+   * after a torn salt write the store could not be opened at all and the
+   * verifier crashed on it. Since the salt is now the first of the two writes,
+   * that was also the likelier half to be torn.
+   * @returns {{ salts: Map<number, Buffer>, torn: boolean, malformed: number[] }}
+   */
+  #readSaltsDetailed() {
     /** @type {Map<number, Buffer>} */
-    const m = new Map();
-    if (!existsSync(this.saltsPath)) return m;
-    for (const line of readFileSync(this.saltsPath, 'utf8').split('\n')) {
-      if (!line) continue;
-      const { record_seq, salt } = JSON.parse(line);
-      m.set(record_seq, Buffer.from(salt, 'hex'));
-    }
-    return m;
+    const salts = new Map();
+    /** @type {number[]} */
+    const malformed = [];
+    let torn = false;
+    if (!existsSync(this.saltsPath)) return { salts, torn, malformed };
+
+    const raw = readFileSync(this.saltsPath, 'utf8');
+    const lines = raw.split('\n');
+    const complete = lines.length > 0 && lines[lines.length - 1] === '';
+    const body = lines.filter(Boolean);
+    body.forEach((line, i) => {
+      try {
+        const { record_seq, salt } = JSON.parse(line);
+        if (!Number.isInteger(record_seq) || typeof salt !== 'string') {
+          throw new SyntaxError('a salt line is a record_seq and a hex salt');
+        }
+        salts.set(record_seq, Buffer.from(salt, 'hex'));
+      } catch {
+        if (i === body.length - 1 && !complete) torn = true;
+        else malformed.push(i + 1);
+      }
+    });
+    return { salts, torn, malformed };
   }
 
   /**
@@ -145,11 +177,16 @@ export class Store {
    *   entries: import('./chain.mjs').ChainEntry[],
    *   torn: boolean,
    *   malformed: { line: number, reason: string }[],
+   *   salts_torn: boolean,
+   *   salts_malformed: number[],
    * }}
    */
   readChainDetailed() {
-    if (!existsSync(this.chainPath)) return { entries: [], torn: false, malformed: [] };
-    const salts = this.#readSalts();
+    const sj = this.#readSaltsDetailed();
+    if (!existsSync(this.chainPath)) {
+      return { entries: [], torn: false, malformed: [], salts_torn: sj.torn, salts_malformed: sj.malformed };
+    }
+    const salts = sj.salts;
     const raw = readFileSync(this.chainPath, 'utf8');
     const lines = raw.split('\n');
     // A trailing newline means the final record was fully written.
@@ -185,7 +222,33 @@ export class Store {
       }
     });
 
-    return { entries, torn, malformed };
+    return { entries, torn, malformed, salts_torn: sj.torn, salts_malformed: sj.malformed };
+  }
+
+  /**
+   * Remove an incomplete trailing line from either journal.
+   *
+   * Only bytes after the last newline are touched, so a committed record is
+   * never removed: a line with no terminator was never committed. A broken line
+   * anywhere else is left alone — that is not a crash artifact, and repairing
+   * it would destroy the evidence of whatever did it.
+   * @returns {{ chain: number, salts: number }} bytes removed from each
+   */
+  repairTornTail() {
+    const trim = (/** @type {string} */ path) => {
+      if (!existsSync(path)) return 0;
+      const raw = readFileSync(path, 'utf8');
+      if (raw === '' || raw.endsWith('\n')) return 0;
+      const cut = raw.lastIndexOf('\n') + 1;      // 0 when the whole file is one torn line
+      const removed = raw.length - cut;
+      writeFileSync(path, raw.slice(0, cut), { mode: 0o600 });
+      return removed;
+    };
+    // Reopen on next use: the descriptors point past the bytes just removed.
+    for (const fd of [this.#chainFd, this.#saltsFd]) if (fd !== null) closeSync(fd);
+    this.#chainFd = null;
+    this.#saltsFd = null;
+    return { chain: trim(this.chainPath), salts: trim(this.saltsPath) };
   }
 
   /** @returns {string[]} every collector with a chain in this store */
@@ -235,7 +298,7 @@ export class Store {
       // rewrite of the key journal.
       this.content.shredAll(cids);
     }
-    const left = [...this.#readSalts()].filter(([seq]) => seq !== record_seq);
+    const left = [...this.#readSaltsDetailed().salts].filter(([seq]) => seq !== record_seq);
     if (this.#saltsFd !== null) { closeSync(this.#saltsFd); this.#saltsFd = null; }
     writeFileSync(this.saltsPath,
       left.map(([record_seq, salt]) => JSON.stringify({ record_seq, salt: salt.toString('hex') })).join('\n')

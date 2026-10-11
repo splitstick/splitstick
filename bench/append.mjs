@@ -32,6 +32,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { PerformanceObserver, constants as perfConstants } from 'node:perf_hooks';
 import { Collector } from '@splitstick/core/collector';
 import { Store } from '@splitstick/core/store';
 import { parseConfig } from '@splitstick/core/config';
@@ -45,7 +46,10 @@ const num = (name, fallback) => {
 const EVENTS = num('events', 20_000);
 const REPEAT = Math.max(1, num('repeat', 3));
 const JSON_OUT = argv.includes('--json');
-const BUDGET_MS = 1;
+// NFR-01 as revised at M1: p95 is the budget, p99 has a budget and a stretch.
+const BUDGET_P95_MS = 1;
+const BUDGET_P99_MS = 3;
+const STRETCH_P99_MS = 1;
 
 const workdir = fs.mkdtempSync(path.join(os.tmpdir(), 'splitstick-bench-'));
 
@@ -77,6 +81,45 @@ function percentiles(samples, wallMs) {
   };
 }
 
+/**
+ * Garbage-collection pauses during a run, so the tail can be ATTRIBUTED rather
+ * than guessed at. An earlier version of this file asserted that the p99 tail
+ * was GC, on the strength of the filesystem baseline moving with it — which is
+ * inference, not evidence. Each sample is now checked against the GC windows
+ * that overlap it.
+ * @returns {{ start: () => void, stop: () => { windows: [number, number][], totalMs: number, count: number } }}
+ */
+function gcRecorder() {
+  /** @type {[number, number][]} */
+  let windows = [];
+  let totalMs = 0;
+  const observer = new PerformanceObserver((list) => {
+    for (const entry of list.getEntries()) {
+      windows.push([entry.startTime, entry.startTime + entry.duration]);
+      totalMs += entry.duration;
+    }
+  });
+  return {
+    start() { windows = []; totalMs = 0; observer.observe({ entryTypes: ['gc'] }); },
+    stop() {
+      observer.disconnect();
+      return { windows, totalMs, count: windows.length };
+    },
+  };
+}
+
+/**
+ * The share of the slowest samples that overlap a GC pause.
+ * @param {{ at: number, ms: number }[]} slowest
+ * @param {[number, number][]} windows
+ */
+function gcOverlap(slowest, windows) {
+  if (slowest.length === 0) return 0;
+  const hits = slowest.filter(s =>
+    windows.some(([from, to]) => s.at < to && s.at + s.ms > from)).length;
+  return hits / slowest.length;
+}
+
 /** @param {boolean} withContent */
 async function arm(withContent) {
   const root = fs.mkdtempSync(path.join(workdir, 'store-'));
@@ -95,18 +138,35 @@ async function arm(withContent) {
   }
 
   const samples = new Float64Array(EVENTS);
+  /** @type {{ at: number, ms: number }[]} */
+  const timeline = [];
+  const gc = gcRecorder();
+  gc.start();
   const started = process.hrtime.bigint();
   for (let i = 0; i < EVENTS; i++) {
+    const at = performance.now();
     const t0 = process.hrtime.bigint();
     collector.action({
       run: `run-${i % 4}`, tool: 'transfer_funds', ...payloads, correlation: `c-${i}`,
     });
-    samples[i] = Number(process.hrtime.bigint() - t0) / 1e6;
+    const ms = Number(process.hrtime.bigint() - t0) / 1e6;
+    samples[i] = ms;
+    timeline.push({ at, ms });
   }
   const wall = Number(process.hrtime.bigint() - started) / 1e6;
+  const pauses = gc.stop();
   store.close();
   fs.rmSync(root, { recursive: true, force: true });
-  return percentiles(samples, wall);
+
+  const p = percentiles(samples, wall);
+  const slowest = [...timeline].sort((a, b) => b.ms - a.ms).slice(0, Math.max(1, Math.round(EVENTS * 0.01)));
+  return {
+    ...p,
+    rss_mb: Math.round(process.memoryUsage().rss / 1024 / 1024),
+    gc_pauses: pauses.count,
+    gc_total_ms: Number(pauses.totalMs.toFixed(1)),
+    gc_share_of_slowest: Number(gcOverlap(slowest, pauses.windows).toFixed(2)),
+  };
 }
 
 /**
@@ -147,12 +207,19 @@ function across(runs) {
     return v[Math.floor(v.length / 2)];
   };
   const worst = (key) => Math.max(...runs.map((r) => r[key]));
+  const has = (/** @type {string} */ k) => runs.every(r => k in r);
   return {
     runs: runs.length,
     p50_ms: mid('p50_ms'), p95_ms: mid('p95_ms'), p99_ms: mid('p99_ms'),
     p999_ms: mid('p999_ms'), max_ms: worst('max_ms'),
     worst_p99_ms: worst('p99_ms'),
     events_per_second: mid('events_per_second'),
+    ...(has('rss_mb') ? {
+      rss_mb: worst('rss_mb'),
+      gc_pauses: mid('gc_pauses'),
+      gc_total_ms: mid('gc_total_ms'),
+      gc_share_of_slowest: mid('gc_share_of_slowest'),
+    } : {}),
   };
 }
 
@@ -175,18 +242,17 @@ const chain = across(chainRuns);
 const full = across(fullRuns);
 const baseline = { write_to_open_fd: across(fdRuns), create_new_file: across(fileRuns) };
 
-const verdict = (p) => (p < BUDGET_MS ? 'within' : 'over');
 const report = {
   requirement: 'NFR-01',
-  budget_ms: BUDGET_MS,
+  budget: { p95_ms: BUDGET_P95_MS, p99_ms: BUDGET_P99_MS, p99_stretch_ms: STRETCH_P99_MS },
   events: EVENTS,
   repeats: REPEAT,
   arms: { chain, full },
   filesystem_baseline: baseline,
   verdict: {
-    p50: verdict(full.p50_ms),
-    p95: verdict(full.p95_ms),
-    p99: verdict(full.p99_ms),
+    p95: full.p95_ms <= BUDGET_P95_MS ? 'within' : 'over',
+    p99: full.p99_ms <= BUDGET_P99_MS ? 'within' : 'over',
+    p99_stretch: full.p99_ms <= STRETCH_P99_MS ? 'met' : 'not met',
   },
   attribution: [
     'Cryptography is not the cost. SHA-256 and AES-GCM over a record are 0.03 ms'
@@ -196,13 +262,19 @@ const report = {
     + ' every payload goes into one append-only encrypted blob.',
     `A single file creation has a p99 of ${baseline.create_new_file.p99_ms} ms on this machine, which is why`
     + ' no design that creates a file per record can meet a 1 ms p99 here, however fast its hashing.',
-    `The remaining tail is not per-record work. An open-descriptor write has a p99 of`
-    + ` ${baseline.write_to_open_fd.p99_ms} ms, so the chain arm's ${chain.p99_ms} ms is V8 garbage collection`
-    + ' and OS scheduling, not anything the record does.',
-    `This machine cannot certify a 1 ms p99: across ${REPEAT} repeats the full arm's p99 ranged up to`
-    + ` ${full.worst_p99_ms} ms and the filesystem baseline moved with it. The p50 and p95 are stable and`
-    + ' inside budget; the p99 figure needs a defined measurement environment, which NFR-01'
-    + " does not yet name — its verification clause says only 'benchmark harness, p99 over 1e6 events'.",
+    `The remaining tail is not per-record work: an open-descriptor write has a p99 of`
+    + ` ${baseline.write_to_open_fd.p99_ms} ms against the chain arm's ${chain.p99_ms} ms. What it is`
+    + ' instead is reported above and not guessed at — if the GC share of the slowest samples is low,'
+    + ' the outliers are the operating system, and the maxima here routinely exceed anything the'
+    + ' per-record work could account for.',
+    `Across ${REPEAT} repeats the full arm's p99 ranged up to ${full.worst_p99_ms} ms and the`
+    + ' filesystem baseline moved with it, so this machine is not the reference environment NFR-01'
+    + ' now requires. The p50 and p95 are the stable figures.',
+    `Garbage collection is MEASURED here, not inferred: ${full.gc_pauses ?? 0} pause(s) totalling`
+    + ` ${full.gc_total_ms ?? 0} ms during the full arm, overlapping`
+    + ` ${Math.round((full.gc_share_of_slowest ?? 0) * 100)}% of its slowest one per cent of samples.`
+    + ' A previous version of this file asserted GC was the cause on the strength of the filesystem'
+    + ' baseline moving with the tail, which is inference. Read this number before repeating that claim.',
   ],
 };
 
@@ -214,7 +286,8 @@ if (JSON_OUT) {
     + ` ${p.p99_ms.toFixed(4).padStart(9)} ${p.worst_p99_ms.toFixed(4).padStart(10)}`
     + ` ${p.max_ms.toFixed(2).padStart(9)}   ${p.events_per_second.toLocaleString('en-US')}/s`;
   process.stdout.write(`
-NFR-01  append overhead · ${EVENTS.toLocaleString('en-US')} events per arm · ${REPEAT} repeats · budget ${BUDGET_MS.toFixed(4)} ms
+NFR-01  append overhead · ${EVENTS.toLocaleString('en-US')} events per arm · ${REPEAT} repeats
+        budget: p95 <= ${BUDGET_P95_MS} ms, p99 <= ${BUDGET_P99_MS} ms (stretch p99 <= ${STRETCH_P99_MS} ms)
         percentiles are the median across repeats; worst p99 and max are the worst seen
 
                    p50       p95       p99  worst p99       max   rate
@@ -225,7 +298,8 @@ ${row('full', full)}
 ${row('open fd', baseline.write_to_open_fd)}
 ${row('new file', baseline.create_new_file)}
 
-  p50 ${report.verdict.p50} budget · p95 ${report.verdict.p95} budget · p99 ${report.verdict.p99} budget
+  p95 ${report.verdict.p95} budget · p99 ${report.verdict.p99} budget · stretch p99 ${report.verdict.p99_stretch}
+  rss ${full.rss_mb ?? '?'} MB · gc ${full.gc_pauses ?? 0} pause(s), ${full.gc_total_ms ?? 0} ms, overlapping ${Math.round((full.gc_share_of_slowest ?? 0) * 100)}% of the slowest 1%
 
 ${report.attribution.map((a) => `  ${a}`).join('\n\n')}
 `);

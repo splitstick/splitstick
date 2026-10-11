@@ -16,12 +16,13 @@
     "review": "node requirements/review.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
     "test:unit": "node --test packages/*/test/*.test.mjs",
-    "bench": "node bench/append.mjs && node bench/run-latency.mjs",
+    "bench": "npm run bench:append:quick && npm run bench:latency",
     "verify": "node packages/verify/src/cli.mjs",
     "redteam:splitstick": "node redteam/splitstick.mjs",
-    "bench:append": "node bench/append.mjs",
+    "bench:append": "node bench/append.mjs --events 1000000 --repeat 3",
     "bench:latency": "node bench/run-latency.mjs",
-    "sbom": "npm sbom --sbom-format cyclonedx --sbom-type library --omit dev"
+    "sbom": "npm sbom --sbom-format cyclonedx --sbom-type library --omit dev",
+    "bench:append:quick": "node bench/append.mjs --events 20000 --repeat 3"
   },
   "dependencies": {
     "@open-multi-agent/core": "1.21.1",

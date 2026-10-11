@@ -73,6 +73,7 @@
 import { createHash, randomBytes, createCipheriv, createDecipheriv } from 'node:crypto';
 import { mkdirSync, writeFileSync, readFileSync, rmSync, existsSync, statSync, openSync, writeSync, closeSync, readSync } from 'node:fs';
 import { join } from 'node:path';
+import { WriteLock } from './writelock.mjs';
 
 /** 0x05 — content commitment. Distinct from 0x00, 0x01, 0x02 and 0x04. */
 export const CONTENT_DOMAIN = 0x05;
@@ -82,34 +83,7 @@ const KEY_BYTES = 32;      // AES-256
 const IV_BYTES = 12;       // GCM nominal
 const TAG_BYTES = 16;
 
-/**
- * A second writer tried to open a store that already has one.
- *
- * DES-13 requires one writer per collector. With a file per content object a
- * violation was harmless; with one shared blob both writers cache the append
- * offset, start in the same place, and the second overwrites the first — whose
- * payload becomes unrecoverable. So the invariant is now enforced rather than
- * assumed, because the failure it prevents is silent data loss.
- */
-/**
- * Lock paths held by a ContentStore in THIS process.
- *
- * The file lock alone cannot separate "another instance in this program" from
- * "my own lock, left behind by a crash with the same pid" — and the first of
- * those is by far the likelier mistake, since it is what happens when two
- * Stores are constructed on one root. The registry answers it exactly.
- * @type {Set<string>}
- */
-const HELD_IN_PROCESS = new Set();
-
-export class StoreBusy extends Error {
-  /** @param {string} path @param {number} pid */
-  constructor(path, pid) {
-    super(`another writer holds ${path} (pid ${pid}); DES-13 allows one writer per collector`);
-    this.name = 'StoreBusy';
-    this.pid = pid;
-  }
-}
+export { StoreBusy } from './writelock.mjs';
 
 export class ContentMissing extends Error {
   /** @param {string} cid @param {{ cause?: unknown }} [opts] */
@@ -205,18 +179,16 @@ export class ContentStore {
   #blobFd = null;
   /** Append offset — the blob's length. */
   #end = 0;
-  #holdsLock = false;
 
   /**
    * @param {string} root the store root from splitstick.yaml
    * @param {string} [collector] the collector instance this content belongs to
-   *
-   * The write lock is per collector rather than per root. A root-wide lock was
-   * safe but meant two simultaneously active collectors could not both write
-   * payloads, which contradicted the multi-collector reads the verifier
-   * already supports.
+   * @param {import('./writelock.mjs').WriteLock} [lock] the collector's single
+   *   write lock, shared with the chain and salt journals. Held inside this
+   *   class alone it covered only records that externalise a payload, so a
+   *   heartbeat, a gap, a policy change or a padding leaf took no lock at all.
    */
-  constructor(root, collector = 'default') {
+  constructor(root, collector = 'default', lock) {
     this.root = root;
     this.collector = collector;
     this.contentDir = join(root, 'content', collector);
@@ -226,66 +198,12 @@ export class ContentStore {
     this.refsPath = join(this.contentDir, 'refs.idx');
     this.keysPath = join(this.keysDir, 'content.jsonl');
     this.blobPath = join(this.contentDir, 'content.blob');
-    this.lockPath = join(this.contentDir, '.writer.lock');
+    this.lock = lock ?? new WriteLock(join(root, '.locks', `${collector}.lock`));
     this.#end = existsSync(this.blobPath) ? statSync(this.blobPath).size : 0;
   }
 
-  /**
-   * Claim the single write lock, once, on the first write. Reads never take it:
-   * a verifier opening a live store must not be refused, and cannot corrupt it.
-   *
-   * The lock is advisory and process-scoped — it is exclusive file creation
-   * plus a pid, which is enough for the case that actually happens (two stores
-   * in one program, or a second collector started by mistake) and makes no
-   * claim about a shared filesystem. A lock naming a process that is gone is
-   * taken over rather than left to wedge the store forever, since otherwise a
-   * crash would need manual recovery to resume collecting.
-   */
-  #claim() {
-    if (this.#holdsLock) return;
-    if (HELD_IN_PROCESS.has(this.lockPath)) throw new StoreBusy(this.lockPath, process.pid);
-    for (let attempt = 0; attempt < 2; attempt++) {
-      try {
-        const fd = openSync(this.lockPath, 'wx', 0o600);
-        writeSync(fd, JSON.stringify({ pid: process.pid, at: new Date().toISOString() }));
-        closeSync(fd);
-        this.#holdsLock = true;
-        HELD_IN_PROCESS.add(this.lockPath);
-        return;
-      } catch (err) {
-        if (/** @type {{code?: string}} */ (err).code !== 'EEXIST') throw err;
-        const pid = this.#lockHolder();
-        // A live holder elsewhere is a real conflict. Our own pid with nothing
-        // in the registry is a lock this process left behind before it was
-        // restarted, which is stale and ours to take.
-        if (pid !== null && pid !== process.pid && this.#alive(pid)) {
-          throw new StoreBusy(this.lockPath, pid);
-        }
-        rmSync(this.lockPath, { force: true });
-      }
-    }
-    throw new StoreBusy(this.lockPath, -1);
-  }
-
-  /** @returns {number|null} */
-  #lockHolder() {
-    try {
-      const pid = JSON.parse(readFileSync(this.lockPath, 'utf8')).pid;
-      return Number.isInteger(pid) ? pid : null;
-    } catch {
-      return null;   // unreadable or truncated: treat as stale
-    }
-  }
-
-  /** @param {number} pid */
-  #alive(pid) {
-    try {
-      process.kill(pid, 0);
-      return true;
-    } catch (err) {
-      return /** @type {{code?: string}} */ (err).code === 'EPERM';   // exists, not ours
-    }
-  }
+  /** Claim the collector's single write lock — shared with the journals. */
+  #claim() { this.lock.claim(); }
 
   /** @param {string} cid */
   #base(cid) {
@@ -558,11 +476,7 @@ export class ContentStore {
     this.#refsFd = null;
     this.#keysFd = null;
     this.#blobFd = null;
-    if (this.#holdsLock) {
-      if (this.#lockHolder() === process.pid) rmSync(this.lockPath, { force: true });
-      HELD_IN_PROCESS.delete(this.lockPath);
-      this.#holdsLock = false;
-    }
+    this.lock.release();
   }
 
   /** @returns {{ ref: string, cid: string }[]} */

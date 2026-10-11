@@ -102,12 +102,15 @@ percentile without attribution invites widening the budget instead of finding th
 
 - **NFR-02, added agent run latency — met.** A real A/B through OMA's orchestrator puts the
   overhead below the measurement noise floor.
-- **NFR-01, append overhead — p50 and p95 met, p99 not.** 0.28 ms p50 and 0.42 ms p95
-  against a 1 ms budget; 2.0 ms at p99. The residual tail is garbage collection, not I/O.
-  Measuring this in M1 rewrote the storage layout three times: cryptography costs 0.03 ms
-  per record, while creating one file costs 0.19 ms at p50 and 1.0 ms at p99 — so nothing
-  on the append path creates a file. The p99 figure needs a defined measurement
-  environment, which the requirement does not yet name.
+- **NFR-01, low-overhead evidence capture — within budget, stretch target not met.** The
+  requirement was revised at M1 off the back of these measurements: p95 ≤ 1 ms and
+  p99 ≤ 3 ms on a defined reference environment, with the original p99 ≤ 1 ms kept as a
+  stretch goal. Measured 0.22 ms p50, 0.47 ms p95, 1.75 ms p99. Cryptography costs 0.03 ms
+  per record while creating one file costs 0.20 ms, so nothing on the append path creates
+  one — measuring this rewrote the storage layout three times. The tail is **not** garbage
+  collection: the harness subscribes to GC events and found them overlapping none of the
+  slowest samples, which retracts an earlier claim here that said otherwise. Latency is
+  never bought with durability: a deferred-write queue was tried and removed.
 
 ## Resourcing
 

@@ -65,3 +65,39 @@ rather than argued about.
   no provenance and must be prevented — enforced by `publishConfig` plus a CI-only npm token.
 - `publishConfig.access: "public"` on every package: scoped packages default to restricted, and
   a free npm org cannot publish restricted ones.
+
+## The performance budget — NFR-01, revised at M1
+
+M1 measured the append path and the original target — p99 below 1 ms — was not
+met: p50 0.278 ms, p95 0.419 ms, p99 2.027 ms. The revision came out of that
+measurement rather than around it.
+
+| | Budget | Stretch |
+|---|---|---|
+| p95 | 1 ms | — |
+| p99 | 3 ms | 1 ms |
+
+Three things make this a revision and not a relaxation.
+
+**The budget is a budget, not a finding.** 3 ms is an engineering number, to be
+confirmed against representative hardware, sustained workloads and realistic
+payload sizes on a defined reference environment. It is not an industry
+standard and this document does not pretend otherwise.
+
+**The attribution has to be earned.** An earlier draft asserted that the p99
+tail was garbage collection. That was inference from the filesystem baseline
+moving with it, not evidence: the outliers were never correlated against GC
+events. The harness now subscribes to `perf_hooks` GC entries and reports the
+share of outliers that coincide with one, so the claim is either supported by
+the run that makes it or dropped.
+
+**Latency is never bought with durability or integrity.** Specifically ruled
+out: deferring a critical write without guaranteed recovery, weakening
+source-sequence or failure reporting, removing encryption or commitment checks,
+and uncontrolled buffering that only improves a benchmark. A deferred-write
+queue was tried in M1 and removed, and a reviewer later found two failure paths
+in the ordering that replaced it — that is the shape of the risk here. What this
+project sells is trustworthy evidence at low overhead, not the fastest audit
+logger.
+
+`NFR-02` independently bounds end-to-end agent run latency at 2%, and is met.

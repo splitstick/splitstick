@@ -65,6 +65,9 @@ jobs:
       - run: npm ci
       - name: Append overhead
         run: node bench/append.mjs --events 20000 --repeat 3
+        # 20k not 1e6: a shared runner is not NFR-01's reference environment, so
+        # this is a continuous regression metric, not the acceptance measurement.
+        # `npm run bench:append` runs the full 1e6 the requirement specifies.
       - name: Added run latency
         run: node bench/run-latency.mjs --runs 60
 

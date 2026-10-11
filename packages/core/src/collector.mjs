@@ -17,6 +17,7 @@
 
 import { randomBytes } from 'node:crypto';
 import { chainEntry, genesis, recomputeChain } from './chain.mjs';
+import { StoreBusy } from './writelock.mjs';
 import { newSalt } from './leaf.mjs';
 import { treeRoot } from './merkle.mjs';
 import { checkpointText, encodeNote } from './note.mjs';
@@ -72,6 +73,19 @@ export class Collector {
     this.now = now ?? (() => new Date());
     this.build = build ?? 'sha256:unattested';
 
+    // Physical integrity on open, not only on recover(). A process that
+    // crashed mid-append leaves a torn line, and resuming on top of it turns a
+    // recoverable tail into a broken middle — so the damage is noticed here and
+    // the collector starts degraded, with recover() the explicit way forward.
+    const detail = store.readChainDetailed();
+    if (detail.torn || detail.salts_torn || detail.malformed.length || detail.salts_malformed.length) {
+      this.#degraded = new Error(
+        'the journals carry an incomplete or unreadable line from a previous run'
+        + `${detail.torn ? ' (chain tail torn)' : ''}`
+        + `${detail.salts_torn ? ' (salt tail torn)' : ''}`
+        + `${detail.malformed.length ? ` (chain line ${detail.malformed.map(m => m.line).join(', ')} unreadable)` : ''}`
+        + `${detail.salts_malformed.length ? ` (salt line ${detail.salts_malformed.join(', ')} unreadable)` : ''}`);
+    }
     const tip = store.tip();
     this.recordSeq = tip.record_seq;
     this.sourceSeq = tip.source_seq;
@@ -86,14 +100,36 @@ export class Collector {
   get degraded() { return this.#degraded; }
 
   /**
-   * Re-read the tip from disk and resume, if what is on disk is consistent.
+   * Re-read what is on disk and resume, if resuming is safe.
    *
-   * Recovery is explicit because the alternative is guessing. If the chain
-   * itself contradicts anything, the collector stays degraded: appending to a
-   * log that is already broken buries the evidence of how it broke.
-   * @returns {{ record_seq: number, source_seq: number }}
+   * Recovery inspects the journals' PHYSICAL integrity before their contents.
+   * Reading through readChain() returned the lines it could parse and dropped
+   * the torn and malformed indicators beside them, so a real short write was
+   * invisible: recovery validated the records before the tear, declared
+   * success, and the next append landed immediately after the incomplete bytes.
+   * A torn tail — which a verifier treats as the ordinary consequence of a
+   * crash — became a broken line in the middle, which it treats as tampering.
+   *
+   * An incomplete TRAILING line is therefore truncated: it has no newline, so
+   * it was never committed, and removing it cannot lose a record. Anything
+   * else leaves the collector degraded, because a broken line in the middle is
+   * not a crash artifact and writing over it would bury whatever did it.
+   * @returns {{ record_seq: number, source_seq: number, repaired_chain_bytes: number, repaired_salts_bytes: number }}
    */
   recover() {
+    const before = this.store.readChainDetailed();
+    if (before.malformed.length > 0 || before.salts_malformed.length > 0) {
+      throw new Error(
+        'refusing to resume: a line in the middle of a journal is unreadable '
+        + `(chain ${JSON.stringify(before.malformed.map(m => m.line))}, `
+        + `salts ${JSON.stringify(before.salts_malformed)}); that is not a crash `
+        + 'artifact, and appending over it would bury the evidence of what did it');
+    }
+
+    const repaired = (before.torn || before.salts_torn)
+      ? this.store.repairTornTail()
+      : { chain: 0, salts: 0 };
+
     const entries = this.store.readChain();
     const check = recomputeChain(entries);
     const structural = check.findings.filter(f => f.code !== 'LEAF_INCONCLUSIVE'
@@ -110,7 +146,12 @@ export class Collector {
     // outage was still observed, and the hole is the report.
     this.sourceSeq = Math.max(this.sourceSeq, tip.source_seq);
     this.#degraded = null;
-    return { record_seq: this.recordSeq, source_seq: this.sourceSeq };
+    return {
+      record_seq: this.recordSeq,
+      source_seq: this.sourceSeq,
+      repaired_chain_bytes: repaired.chain,
+      repaired_salts_bytes: repaired.salts,
+    };
   }
 
   /**
@@ -214,8 +255,15 @@ export class Collector {
     try {
       this.store.append(e);
     } catch (err) {
-      // The append may have partially landed, so this position is no longer
-      // trustworthy. Stop rather than continue from it.
+      // A lock conflict is not local damage. The lock is claimed before any
+      // byte is written, so nothing landed and this collector's position is
+      // still exactly what it was — it simply does not own the store. Treating
+      // that as degradation would conflate "someone else owns this" with "my
+      // own position is untrustworthy", and would need a recover() for a
+      // condition recovery cannot address.
+      if (err instanceof StoreBusy) throw err;
+      // Any other failure may have partially landed, so the position is no
+      // longer trustworthy. Stop rather than continue from it.
       this.#degraded = err;
       throw err;
     }
