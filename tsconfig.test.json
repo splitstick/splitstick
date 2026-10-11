@@ -1,0 +1,15 @@
+{
+  // The tests are themselves the check on src, and they index arrays, mutate
+  // fixtures and reach into records by computed key constantly — that is what a
+  // tamper test does. Full strictness here would buy noise, not safety, so the
+  // test pass keeps checkJs (which catches a bad import or a renamed export, the
+  // mistakes that actually happen) and drops the null and implicit-any rules.
+  // src/ is checked under the strict tsconfig.json and must stay clean there.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "strict": false,
+    "noImplicitAny": false,
+    "noUncheckedIndexedAccess": false
+  },
+  "include": ["packages/*/src/**/*.mjs", "packages/*/test/**/*.mjs"]
+}

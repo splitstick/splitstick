@@ -1,0 +1,7 @@
+#!/bin/sh
+# Work goes on a branch and reaches main only through a PR the human merges.
+branch=$(git rev-parse --abbrev-ref HEAD)
+if [ "$branch" = "main" ]; then
+  echo "refusing to commit directly to main — create a branch and open a PR" >&2
+  exit 1
+fi
