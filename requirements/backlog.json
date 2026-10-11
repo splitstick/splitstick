@@ -179,9 +179,9 @@
       "title": "Operator-hosted witness adapter",
       "statement": "Support an operator's own internal witness endpoint.",
       "source": "Independence — your own internal authority",
-      "verify": "Operator-hosted stateful witness: enrolment, consistency-proof sequence enforcement, retained roots, signed tree heads, key history. The read-validate-write sequence is held under an exclusive CROSS-PROCESS lock covering enrolment and checkpoint transitions, with a multi-process regression test in which competing processes submit conflicting successors and exactly one wins",
+      "verify": "Operator-hosted stateful witness: enrolment, consistency-proof sequence enforcement, retained roots, signed tree heads, key history. The critical state transition is held under an exclusive CROSS-PROCESS lock covering enrolment, and is crash-consistent: recovery reconciles the retained history with the active state before validating anything",
       "status": "done",
-      "evidence": "packages/witness-self; the promise chain alone let two processes retain two distinct roots at the same height — reproduced 6/6 with a wall-clock barrier — so it now claims the same WriteLock the collector uses; contention surfaces as 503 and a genuine fork as 409, because an operator's response differs"
+      "evidence": "packages/witness-self; the promise chain alone let two processes retain two distinct roots at one height (6/6 with a barrier), and a crash between the root append and the state write let a conflicting successor in afterwards. Tests race two real processes and SIGKILL one mid-transition"
     },
     {
       "id": "FR-18",
@@ -450,9 +450,9 @@
       "title": "Witness retains roots",
       "statement": "The witness keeps submitted roots in its own append-only store.",
       "source": "Witness Practice Statement — has retained it",
-      "verify": "Every root retained in order and never overwritten, asserted across three submissions",
+      "verify": "Every root retained in order and never overwritten, asserted across three submissions. Crash-consistent: the newline is the commit marker so a torn tail is dropped rather than parsed, damage in the middle refuses to start, and a root retained without the state having advanced is reconciled on load and inside the critical section rather than ignored",
       "status": "done",
-      "evidence": "StatefulWitness.roots + roots.jsonl"
+      "evidence": "StatefulWitness #readRoots/#reconcile + roots.jsonl; two different roots at one height fails CLOSED, because a witness that cannot tell which it accepted would rest every later signature on a guess. packages/witness-self/test/crash-consistency.test.mjs"
     },
     {
       "id": "FR-45",

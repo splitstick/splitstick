@@ -204,6 +204,51 @@ and a genuine fork as **409**, because an operator's response differs — retry
 versus stop and investigate — and reporting contention as a fork would send them
 hunting for an attacker who is not there.
 
+## Found by the re-review of ca4f396, and fixed
+
+**A crash could leave the retained history inconsistent with the active state.**
+A submission commits in two writes — append the root to `roots.jsonl`, then
+advance `state.json`. A crash between them left the history ahead of the state,
+and after restart the witness accepted a different valid successor at the same
+height. The retained history then held two conflicting roots at one height,
+with cross-process locking working perfectly.
+
+The old comment here called a retained root with an unadvanced state harmless.
+That is true only if recovery reconciles, and it did not. Reproduced exactly as
+the reviewer described.
+
+The two writes are deliberately NOT merged into one. Keeping the full root
+history inside the atomically-rewritten state file would rewrite every retained
+root on every submission — the O(n²) shape DES-13 rejects for the salt journal,
+and at a ten-second cadence that is 8,640 entries a day. So the order is
+load-bearing and recovery closes the window: append only after every check has
+passed, so a retained root is one the witness DID accept; reconcile on load and
+again inside the critical section, so a root above the active state is adopted
+rather than ignored; and fail CLOSED on two different roots at one height,
+because a witness that cannot tell which it accepted would rest every later
+signature on a guess.
+
+Checking that turned up an adjacent one the reviewer did not name: a crash
+*during* the append leaves a partial line, and `roots()` parsed every line
+eagerly, so it **threw** — the witness could not read its own retained history
+and needed a hand edit before it would run. The newline is now the commit
+marker, as it is for the collector's journals, and damage in the MIDDLE refuses
+to start rather than being skipped, because one corrupted byte would otherwise
+delete a retained root.
+
+The fault-injection test has two halves, and they are different kinds of
+evidence. The deterministic one constructs the exact post-crash file state —
+faithful, because the files are the whole of the witness's state — and pins the
+window precisely. The other SIGKILLs a real submission at twelve randomised
+delays and asserts the invariant after every restart; that is a real crash and
+probabilistic about where it lands.
+
+One side effect worth recording: the rollback-detection test had to change,
+because rolling `state.json` back alone no longer works — reconciliation puts it
+straight back from the retained root. A witness operator who wants to serve an
+earlier head now has to destroy the evidence too, which is precisely why FR-50's
+detection depends on somebody else having retained the head they were served.
+
 ## Decided against
 
 **Fetching block headers to confirm an OpenTimestamps attestation.** It would

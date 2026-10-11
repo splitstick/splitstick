@@ -274,15 +274,23 @@ test('row 16: a rolled-back witness is detectable by comparing two observed head
   await w.addCheckpoint({ note: await submission(opkey, all, 100), old_size: 0 });
   const observed = await w.treeHead(OPERATOR);
   // Roll the witness back the way a colluding witness actually would: by
-  // editing its state file. The class used to offer a rollbackForTesting()
-  // method, which meant the package providing the sequence guarantee also
-  // shipped the one call that undoes it.
+  // editing BOTH its state file and its retained history. The class used to
+  // offer a rollbackForTesting() method, which meant the package providing the
+  // sequence guarantee also shipped the one call that undoes it.
+  //
+  // Rolling back state.json alone is no longer enough, and that is the crash
+  // reconciliation doing its job: it would adopt the retained root at height
+  // 100 and put the state straight back. A witness operator who wants to serve
+  // an earlier head has to destroy the evidence as well — which is exactly why
+  // FR-50's detection depends on somebody ELSE having retained the head they
+  // were served.
   const { readFileSync, writeFileSync } = await import('node:fs');
   const { STATE_FILE } = await import('../src/witness.mjs');
   const statePath = join(dir, STATE_FILE);
   const state = JSON.parse(readFileSync(statePath, 'utf8'));
   state.seq[OPERATOR] = { last_size: 0, last_root: '', received_at: '2026-10-11T12:00:00.000Z' };
   writeFileSync(statePath, JSON.stringify(state));
+  writeFileSync(join(dir, 'roots.jsonl'), '');
   const now = await w.treeHead(OPERATOR);
   const { detectRollback } = await import('../src/client.mjs');
   const r = detectRollback(observed, now);
