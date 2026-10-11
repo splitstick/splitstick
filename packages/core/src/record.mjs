@@ -236,6 +236,12 @@ export function validateRecord(rec) {
     for (const f of ['from_source_seq', 'to_source_seq']) {
       req(r, f);
       if (!Number.isInteger(r[f])) throw new RecordError(`${f} must be an integer`);
+      // source_seq starts at 1 (DES-01), so a span bounded by 0 names an
+      // observation that cannot exist — and a gap's whole value is that its
+      // span is exact.
+      if (/** @type {number} */ (r[f]) < 1) {
+        throw new RecordError(`${f} must be at least 1: source_seq counts observations from 1`);
+      }
     }
     if (/** @type {number} */ (r.from_source_seq) > /** @type {number} */ (r.to_source_seq)) {
       throw new RecordError('a gap span must not end before it starts');

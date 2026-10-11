@@ -123,6 +123,16 @@ export class Anchorer {
    */
   async rollup(seq) { return this.#submit(seq, 'rollup'); }
 
+  /**
+   * Submit a ROLL-UP to the `rollup`-tier witnesses — FR-53, FR-22.
+   *
+   * Separate from `rollup(seq)` above, which submits a per-batch checkpoint to
+   * the slow tier. This submits the roll-up artefact itself, which is the thing
+   * the hard tier is actually for.
+   * @param {number} seq
+   */
+  async anchorRollup(seq) { return this.#submit(seq, 'rollup', { artefact: 'rollup' }); }
+
   /** Retry everything queued, oldest first. */
   async flush() {
     /** @type {number[]} */
@@ -141,15 +151,18 @@ export class Anchorer {
   /**
    * @param {number} seq
    * @param {'anchor'|'rollup'} tier
-   * @param {{ requeue?: boolean }} [opts]
+   * @param {{ requeue?: boolean, artefact?: 'checkpoint'|'rollup' }} [opts]
    */
   async #submit(seq, tier, opts = {}) {
-    const raw = this.store.readCheckpointEnvelope(seq);
-    if (raw === null) throw new AnchorError(`no checkpoint ${seq} in this store`);
+    const artefact = opts.artefact ?? 'checkpoint';
+    const raw = artefact === 'rollup'
+      ? this.store.readRollupEnvelope(seq)
+      : this.store.readCheckpointEnvelope(seq);
+    if (raw === null) throw new AnchorError(`no ${artefact} ${seq} in this store`);
     const parsed = parseEnvelope(raw);
     if (!parsed.ok || parsed.note === null) {
       throw new AnchorError(
-        `checkpoint ${seq}'s envelope does not parse, so there is nothing safe to submit: `
+        `${artefact} ${seq}'s envelope does not parse, so there is nothing safe to submit: `
         + parsed.findings.map(f => f.detail).join('; '),
       );
     }
@@ -159,7 +172,12 @@ export class Anchorer {
     // What the witness needs to prove the submission extends what it holds.
     // The highest previously witnessed size is the honest `old_size`: anything
     // larger would be claiming a history the witness has not seen.
-    const ctx = this.#consistencyContext(seq);
+    // A roll-up's heights are its own ordinals, not the record log's, so the
+    // record-log context would be a lie about what the witness is being asked
+    // to extend.
+    const ctx = artefact === 'rollup'
+      ? { old_size: 0, consistency_proof: [] }
+      : this.#consistencyContext(seq);
 
     /** @type {{ issuer: string, verified: boolean, establishes: string[] }[]} */
     const attached = [];
@@ -203,7 +221,10 @@ export class Anchorer {
       attached.push({ issuer: w.id, verified: verified === true, establishes: w.establishes });
     }
 
-    if (attached.length > 0) this.store.writeCheckpointEnvelope(seq, env);
+    if (attached.length > 0) {
+      if (artefact === 'rollup') this.store.writeRollupEnvelope(seq, env);
+      else this.store.writeCheckpointEnvelope(seq, env);
+    }
 
     // Queue only when a witness was asked and none answered. An empty witness
     // set is SCOPE-15's supported configuration, and queueing for witnesses

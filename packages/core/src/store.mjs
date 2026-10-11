@@ -5,6 +5,7 @@
  *   salts/<collector>.jsonl       record_seq -> salt.      DELETABLE per record
  *   checkpoints/<collector>/<n>.note   C2SP notes                 [DES-07]
  *   succession/<collector>.jsonl  the epoch chain.         NEVER DELETED
+ *   rollups/<collector>/<n>.json  roll-up envelopes        [FR-53]
  *   content/<collector>/      payloads, encrypted.      DELETABLE
  *   keys/<collector>/         per-content keys.         DELETABLE
  *   queue/                    unwitnessed batches                 [DES-15]
@@ -54,6 +55,11 @@ export class Store {
     // notes — and the ordinals collided besides.
     this.checkpointDir = join(root, 'checkpoints', collector);
     mkdirSync(this.checkpointDir, { recursive: true });
+    // Roll-ups live apart from checkpoints. A roll-up among them would be read
+    // as a checkpoint whose root is not the root of this log — a false
+    // TREE_MISMATCH, which is the worst possible thing for a verifier to say.
+    this.rollupDir = join(root, 'rollups', collector);
+    mkdirSync(this.rollupDir, { recursive: true });
     this.chainPath = join(root, 'chain', `${collector}.jsonl`);
     this.saltsPath = join(root, 'salts', `${collector}.jsonl`);
     // Never deleted, like the chain. A retired epoch's public key is what keeps
@@ -406,6 +412,49 @@ export class Store {
   /** @param {number} seq @returns {string|null} the envelope JSON, or null */
   readCheckpointEnvelope(seq) {
     return this.readCheckpoints().find(c => c.seq === seq)?.blob ?? null;
+  }
+
+  /** @param {number} seq @returns {string} */
+  rollupPath(seq) { return join(this.rollupDir, `${seq}.json`); }
+
+  /** @param {number} seq @param {import('./envelope.mjs').Envelope} env */
+  writeRollupEnvelope(seq, env) {
+    const path = this.rollupPath(seq);
+    const tmp = `${path}.${randomBytes(6).toString('hex')}.staging`;
+    try {
+      writeFileSync(tmp, JSON.stringify(env, null, 1) + '\n', { mode: 0o600 });
+      renameSync(tmp, path);
+    } catch (e) {
+      try { unlinkSync(tmp); } catch { /* the staging file may not exist */ }
+      throw e;
+    }
+  }
+
+  /** @param {number} seq @param {string} blob a signed note */
+  writeRollup(seq, blob) { this.writeRollupEnvelope(seq, buildEnvelope(blob)); }
+
+  /** @returns {{ seq: number, blob: string, note: string }[]} in order */
+  readRollups() {
+    if (!existsSync(this.rollupDir)) return [];
+    /** @type {{ seq: number, blob: string, note: string }[]} */
+    const out = [];
+    for (const f of readdirSync(this.rollupDir)) {
+      const m = /^([0-9]+)\.json$/.exec(f);
+      if (m === null) continue;
+      const raw = readFileSync(join(this.rollupDir, f), 'utf8');
+      out.push({ seq: Number(m[1]), blob: raw, note: parseEnvelope(raw).note ?? '' });
+    }
+    return out.sort((a, b) => a.seq - b.seq);
+  }
+
+  /** @param {number} seq @returns {string|null} */
+  readRollupEnvelope(seq) {
+    return this.readRollups().find(r => r.seq === seq)?.blob ?? null;
+  }
+
+  /** The highest roll-up ordinal written. An ordinal only. */
+  lastRollupSeq() {
+    return this.readRollups().reduce((max, r) => Math.max(max, r.seq), 0);
   }
 
   /**

@@ -446,12 +446,12 @@ export async function verifyStore(root, opts = {}) {
   });
   check('WITNESS', wit.verdict, wit.detail);
 
-  // 8 ROLLUP — the hard tier. Present only when an `existence`-class proof is.
-  const rollupSeen = (wit.observed.existence ?? 0) > 0;
-  check('ROLLUP', rollupSeen ? 'ok' : 'inconclusive',
-    rollupSeen
-      ? 'a roll-up proof of existence is present'
-      : 'no roll-up checkpoint in this store (FR-53); nothing here is anchored to a party that cannot withdraw it');
+  // 8 ROLLUP — FR-53. The roll-up's leaves are the CHECKPOINT NOTES, so it is
+  // checked against the notes on disk and not against the record log. A
+  // verifier that compared it to the records would report a mismatch on a
+  // perfectly good roll-up.
+  const rollup = await verifyRollups({ store, notes, pinned, epochKeys, findings });
+  check('ROLLUP', rollup.verdict, rollup.detail);
   check('COVERAGE', 'inconclusive', 'heartbeat continuity is not yet reconciled (DES-10 ships in M4)');
   check('POLICY', 'inconclusive', 'policy-change reconciliation ships with DES-09 enforcement');
 
@@ -478,7 +478,7 @@ export async function verifyStore(root, opts = {}) {
     }
   }
 
-  return report(entries.length, anchored, checks, findings, notes, collector, opts.vkey, succession, wit);
+  return report(entries.length, anchored, checks, findings, notes, collector, opts.vkey, succession, wit, rollup);
 }
 
 /**
@@ -491,8 +491,9 @@ export async function verifyStore(root, opts = {}) {
  * @param {string} [vkey]
  * @param {ReturnType<typeof successionReport>|null} [succession]
  * @param {Awaited<ReturnType<typeof verifyWitnesses>>} [wit]
+ * @param {Awaited<ReturnType<typeof verifyRollups>>} [rollup]
  */
-function report(tree_size, anchored, checks, findings, notes, collector, vkey, succession = null, wit) {
+function report(tree_size, anchored, checks, findings, notes, collector, vkey, succession = null, wit, rollup) {
   const verdict = combine([...checks.map(c => c.verdict), ...findings.map(f => f.verdict)]);
 
   // DES-12's own shape: a verdict is reported with how many checks could and
@@ -545,6 +546,13 @@ function report(tree_size, anchored, checks, findings, notes, collector, vkey, s
         + 'key you pinned, each endorsed by its predecessor (FR-11)',
       );
     }
+  }
+
+  if (rollup && rollup.verdict === 'ok' && summary.failed === 0) {
+    can.push(
+      `that ${rollup.covers} checkpoint(s) are covered by ${rollup.count} signed roll-up `
+      + 'summar(y|ies), so a single batch can be shown to be under one by an inclusion proof (FR-53)',
+    );
   }
 
   // SEC-17 — the forward-secrecy claim and its precondition in the same place.
@@ -954,4 +962,153 @@ function verifyNoteSignatureSync(text, line, publicKey, name) {
   ]);
   const key = createPublicKey({ key: spki, format: 'der', type: 'spki' });
   return verify(null, Buffer.from(text, 'utf8'), key, line.signature);
+}
+
+/**
+ * Check the roll-up summaries — FR-53.
+ *
+ * A roll-up commits to a tree of CHECKPOINT NOTES, so it is verified against
+ * the notes on disk rather than against the record log. Getting that wrong
+ * would make a verifier report TREE_MISMATCH on a perfectly good roll-up, which
+ * is worse than not checking it: a false accusation from the component whose
+ * only product is credibility.
+ *
+ * Its origin carries a `/rollup` suffix for the same reason, and the suffix is
+ * CHECKED here rather than assumed — a roll-up presented under a different
+ * origin is a different log's summary, and FR-63 says a reader who pinned an
+ * identity is told when they are shown another.
+ *
+ * @param {object} o
+ * @param {import('@splitstick/core/store').Store} o.store
+ * @param {{ seq: number, note: string }[]} o.notes the checkpoints on disk
+ * @param {ReturnType<typeof parseVkey>|null} o.pinned
+ * @param {Map<string, { epoch: number, publicKey: Buffer }>} o.epochKeys
+ * @param {Finding[]} o.findings appended to
+ */
+async function verifyRollups({ store, notes, pinned, epochKeys, findings }) {
+  const rollups = store.readRollups();
+  if (rollups.length === 0) {
+    return {
+      verdict: /** @type {Verdict} */ ('inconclusive'),
+      detail: 'no roll-up in this store (FR-53); nothing here is anchored to a party that cannot '
+        + 'withdraw it',
+      count: 0,
+      covers: 0,
+    };
+  }
+  const leaves = notes
+    .slice()
+    .sort((a, b) => a.seq - b.seq)
+    .map(n => Buffer.from(n.note, 'utf8'));
+
+  /** @type {Verdict[]} */
+  const vs = [];
+  let covers = 0;
+  for (const { seq, blob } of rollups) {
+    const env = parseEnvelope(blob);
+    if (!env.ok || env.note === null) {
+      for (const f of env.findings) {
+        findings.push({ code: f.code, verdict: 'fail', detail: `roll-up ${seq}: ${f.detail}` });
+      }
+      vs.push('fail');
+      continue;
+    }
+    /** @type {ReturnType<typeof parseCheckpointText>} */
+    let cp;
+    /** @type {ReturnType<typeof parseNote>} */
+    let note;
+    try {
+      note = parseNote(env.note);
+      cp = parseCheckpointText(note.text);
+    } catch (e) {
+      findings.push({
+        code: 'FORMAT_UNSUPPORTED', verdict: 'fail',
+        detail: `roll-up ${seq}: ${e instanceof Error ? e.message : String(e)}`,
+      });
+      vs.push('fail');
+      continue;
+    }
+
+    if (pinned && cp.origin !== `${pinned.name}/rollup`) {
+      findings.push({
+        code: 'IDENTITY_UNPINNED', verdict: 'fail',
+        detail: `roll-up ${seq} declares origin ${cp.origin}; this reader pinned ${pinned.name}, `
+          + `so the roll-up should be ${pinned.name}/rollup. A summary of a log you did not pin is `
+          + 'a summary of another log',
+      });
+      vs.push('fail');
+      continue;
+    }
+    if (cp.tree_size > leaves.length) {
+      findings.push({
+        code: 'SIZE_REGRESSED', verdict: 'fail',
+        detail: `roll-up ${seq} covers ${cp.tree_size} checkpoints but ${leaves.length} are on disk: `
+          + 'checkpoints have been removed below a count already summarised',
+      });
+      vs.push('fail');
+      continue;
+    }
+    if (!treeRoot(leaves.slice(0, cp.tree_size)).equals(cp.root)) {
+      findings.push({
+        code: 'TREE_MISMATCH', verdict: 'fail',
+        detail: `roll-up ${seq}'s root is not the root of this store's first ${cp.tree_size} `
+          + 'checkpoint notes, so it summarises a different set of batches',
+      });
+      vs.push('fail');
+      continue;
+    }
+
+    if (!pinned) {
+      vs.push('inconclusive');
+      findings.push({
+        code: 'OPSIG_UNCHECKED', verdict: 'inconclusive',
+        detail: `roll-up ${seq} is signed, but no operator identity was pinned`,
+      });
+      continue;
+    }
+    // The signature line's NAME is the operator's key identity, which is not
+    // the roll-up's origin: a C2SP note's origin and its signers are separate,
+    // and here the origin carries a `/rollup` suffix that the key does not.
+    // Looking the line up by origin found nothing and reported an unsigned
+    // roll-up — a false accusation from a lookup bug.
+    const sig = note.signatures.find(x => x.name === pinned.name);
+    const attributed = sig
+      ? (epochKeys.size > 0
+        ? [...epochKeys.values()].find(e => noteKeyId(pinned.name, e.publicKey).equals(sig.keyId))
+        : (noteKeyId(pinned.name, pinned.publicKey).equals(sig.keyId)
+          ? { epoch: 0, publicKey: pinned.publicKey }
+          : undefined))
+      : undefined;
+    if (!sig || !attributed) {
+      findings.push({
+        code: 'OPSIG_INVALID', verdict: 'fail',
+        detail: `roll-up ${seq} is not signed by a key in the succession chain walked from the `
+          + 'pinned root',
+      });
+      vs.push('fail');
+      continue;
+    }
+    if (!await verifyNoteSignature(note.text, sig,
+      { name: pinned.name, publicKey: attributed.publicKey, keyId: noteKeyId(pinned.name, attributed.publicKey) })) {
+      findings.push({
+        code: 'OPSIG_INVALID', verdict: 'fail',
+        detail: `roll-up ${seq} declares a key id from epoch ${attributed.epoch} but the signature `
+          + "does not verify under that epoch's key",
+      });
+      vs.push('fail');
+      continue;
+    }
+    vs.push('ok');
+    if (cp.tree_size > covers) covers = cp.tree_size;
+  }
+
+  const verdict = combine(vs);
+  return {
+    verdict,
+    detail: verdict === 'ok'
+      ? `${rollups.length} roll-up(s) covering ${covers} checkpoint(s)`
+      : `${vs.filter(v => v === 'fail').length} roll-up(s) do not check out`,
+    count: rollups.length,
+    covers,
+  };
 }

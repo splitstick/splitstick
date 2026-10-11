@@ -94,6 +94,7 @@ export class Collector {
     this.sourceSeq = tip.source_seq;
     this.head = tip.record_seq === 0 ? genesis() : tip.head;
     this.checkpointSeq = store.lastCheckpointSeq();
+    this.rollupSeq = store.lastRollupSeq();
 
     // The epoch comes off disk, never from memory — FR-11. A collector that
     // remembered its epoch would start back at 0 after a restart and endorse a
@@ -526,6 +527,43 @@ export class Collector {
       run: null, source_seq: null, kind: 'policy',
       previous_policy: o.previous, next_policy: o.next,
     }));
+  }
+
+  /**
+   * Anchor a periodic summary over many batches — FR-53, FR-22.
+   *
+   * The roll-up's leaves are the CHECKPOINT NOTES, not the records. A public or
+   * rate-limited witness then receives a handful of entries a day rather than
+   * thousands, which is the only way a trust-minimised tier is affordable or
+   * acceptable use at all: a Bitcoin commitment every 10 seconds is neither.
+   *
+   * It carries its own origin suffix and lives in its own directory, because a
+   * roll-up read as a per-batch checkpoint would look like a checkpoint whose
+   * root is not the root of this log — a false TREE_MISMATCH, which is the
+   * worst thing a verifier can say.
+   *
+   * A reader can prove a single batch is under the roll-up by an ordinary
+   * RFC 6962 inclusion proof over the same leaves, which is what makes the
+   * roll-up a commitment to the history rather than to a number.
+   *
+   * @returns {Promise<{ rollup_seq: number, covers: number, leaves: Buffer[], note: string }>}
+   */
+  async rollup() {
+    const notes = this.store.readCheckpoints();
+    if (notes.length === 0) {
+      throw new Error('no checkpoint to roll up: a roll-up over an empty tree commits to nothing');
+    }
+    const leaves = notes.map(n => Buffer.from(n.note, 'utf8'));
+    const text = checkpointText({
+      origin: `${this.origin}/rollup`,
+      tree_size: leaves.length,
+      root: treeRoot(leaves),
+      suite: SUITE,
+    });
+    const note = encodeNote(text, [await signNote(text, this.signer)]);
+    const rollup_seq = ++this.rollupSeq;
+    this.store.writeRollup(rollup_seq, note);
+    return { rollup_seq, covers: leaves.length, leaves, note };
   }
 
   /**
