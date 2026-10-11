@@ -17,8 +17,34 @@
  *
  * The state is a file, not a database, because a witness that is hard to run
  * does not get run, and the guarantee is worth nothing if there is no second
- * party. It is written atomically: a witness whose state can interleave with
- * its own signature has no sequence memory at all.
+ * party.
+ *
+ * ## Why one writer is enforced, not just serialised
+ *
+ * An earlier version serialised submissions on a private promise chain and
+ * wrote state.json with an atomic rename. That is correct for one instance and
+ * worthless across two. Two processes sharing a state directory both read the
+ * same prior root, both validated against it, both signed, and both wrote —
+ * and the witness ended up retaining TWO DISTINCT ROOTS AT THE SAME HEIGHT.
+ * It countersigned two conflicting histories, which is the one thing it exists
+ * to prevent. It reproduced six times out of six once the two processes were
+ * made to enter the critical section at the same instant; without that barrier
+ * the first simply finished before the second began, which is how it looked
+ * safe.
+ *
+ * Atomic replacement stops a half-written file. It does not make
+ * read-validate-write atomic, and that sequence is the whole protocol.
+ *
+ * So the critical section is held under an exclusive cross-process lock — the
+ * same `WriteLock` the collector uses for its journals, for the same reason and
+ * with the same crash behaviour: a lock naming a process that is gone is taken
+ * over rather than left to wedge the witness, because a witness that needs
+ * manual recovery after a crash is a witness an operator stops running, and
+ * then there is no second party at all.
+ *
+ * The lock covers ENROLMENT as well as checkpoint transitions. Enrolment
+ * decides whose successor a submission is, so two processes enrolling
+ * concurrently could disagree about that.
  */
 
 import { mkdirSync, readFileSync, writeFileSync, existsSync, renameSync, appendFileSync } from 'node:fs';
@@ -28,6 +54,7 @@ import { parseNote, parseCheckpointText, encodeNote, checkpointText } from '@spl
 import { signNote, verifyNoteSignature, publicKeyFromRaw } from '@splitstick/core/signer';
 import { noteKeyId } from '@splitstick/core/note';
 import { verifyConsistency } from '@splitstick/core/merkle';
+import { WriteLock, StoreBusy } from '@splitstick/core/writelock';
 
 /**
  * A refusal, carrying the protocol status so a client can tell a regression
@@ -68,7 +95,14 @@ export class StatefulWitness {
      * @type {unknown[]}
      */
     this.receivedForTesting = [];
-    /** One in-process chain of promises, so a submission cannot interleave. */
+    /**
+     * Exclusive, cross-process, for the whole read-validate-write sequence.
+     * The in-process promise chain below is kept as well: the lock refuses a
+     * second claim from the same process (StoreBusy), so without the chain two
+     * concurrent calls on ONE instance would turn into a spurious conflict
+     * rather than queueing.
+     */
+    this.lock = new WriteLock(join(dir, '.lock'));
     this.#queue = Promise.resolve();
     if (!existsSync(this.keysPath)) {
       this.#appendKey(signer);
@@ -122,18 +156,64 @@ export class StatefulWitness {
   enrol(operator, publicKey) {
     if (typeof operator !== 'string' || !operator) throw new TypeError('an operator identity is a string');
     if (publicKey?.length !== 32) throw new TypeError('an Ed25519 public key is 32 bytes');
-    const s = this.#read();
-    const b64 = Buffer.from(publicKey).toString('base64');
-    const existing = s.enrolled[operator];
-    if (existing !== undefined && existing !== b64) {
-      throw new Error(
-        `${operator} is already enrolled under a different key; re-enrolling would reset the `
-        + 'sequence state this witness exists to keep. Enrol a new identity instead.',
-      );
+    // Under the lock: enrolment decides whose successor a submission is, so two
+    // processes enrolling at once could disagree about that.
+    return this.#exclusively(() => {
+      const s = this.#read();
+      const b64 = Buffer.from(publicKey).toString('base64');
+      const existing = s.enrolled[operator];
+      if (existing !== undefined && existing !== b64) {
+        throw new Error(
+          `${operator} is already enrolled under a different key; re-enrolling would reset the `
+          + 'sequence state this witness exists to keep. Enrol a new identity instead.',
+        );
+      }
+      if (existing === b64) return;
+      s.enrolled[operator] = b64;
+      this.#write(s);
+    });
+  }
+
+  /**
+   * Run `fn` holding the exclusive lock, and release it however `fn` ends.
+   *
+   * A contended lock surfaces as 503, not 409. They are different events and
+   * an operator's response differs: 503 means retry, 409 means a history has
+   * forked and somebody should stop and look. Reporting contention as a fork
+   * would send them hunting for an attacker that is not there.
+   *
+   * @template T @param {() => T} fn @returns {T}
+   */
+  #exclusively(fn) {
+    this.#claim();
+    try {
+      return fn();
+    } finally {
+      this.lock.release();
     }
-    if (existing === b64) return;
-    s.enrolled[operator] = b64;
-    this.#write(s);
+  }
+
+  /**
+   * Claim the exclusive lock, translating contention into a protocol status.
+   *
+   * 503, not 409. They are different events and an operator's response
+   * differs: 503 means retry, 409 means a history has forked and somebody
+   * should stop and look. Reporting contention as a fork would send them
+   * hunting for an attacker that is not there.
+   */
+  #claim() {
+    try {
+      this.lock.claim();
+    } catch (e) {
+      if (e instanceof StoreBusy) {
+        throw new WitnessRefused(503,
+          'another witness process holds this state directory. The read-validate-write sequence '
+          + 'must be exclusive, or two processes can countersign conflicting histories at the same '
+          + 'height. Retry.',
+          { retry: true });
+      }
+      throw e;
+    }
   }
 
   /** @param {string} operator @returns {SeqState} */
@@ -164,8 +244,10 @@ export class StatefulWitness {
    * @returns {Promise<{ status: 200, note: string }>}
    */
   async addCheckpoint(req) {
-    // Serialised against itself. State is updated atomically with the
-    // signature, so a concurrent submission cannot interleave (DES-08).
+    // Two layers, because they answer different questions. The promise chain
+    // queues concurrent calls on THIS instance; the exclusive lock inside
+    // #addCheckpoint stops a second PROCESS interleaving its own
+    // read-validate-write with ours.
     const run = this.#queue.then(() => this.#addCheckpoint(req), () => this.#addCheckpoint(req));
     this.#queue = run.catch(() => {});
     return run;
@@ -188,6 +270,26 @@ export class StatefulWitness {
       throw new WitnessRefused(400, `the note is not a parseable checkpoint: ${e instanceof Error ? e.message : String(e)}`);
     }
 
+    // Everything from here to the signature is one critical section. Reading
+    // the prior root, validating against it, retaining the new one and
+    // advancing the state cannot be interleaved by another process, or both
+    // processes countersign conflicting histories at the same height.
+    this.#claim();
+    try {
+      return await this.#commit(req, note, cp);
+    } finally {
+      this.lock.release();
+    }
+  }
+
+  /**
+   * The critical section. Called only with the exclusive lock held.
+   * @param {{ note: string, old_size?: number, consistency_proof?: string[] }} req
+   * @param {ReturnType<typeof parseNote>} note
+   * @param {ReturnType<typeof parseCheckpointText>} cp
+   * @returns {Promise<{ status: 200, note: string }>}
+   */
+  async #commit(req, note, cp) {
     const s = this.#read();
     const enrolled = s.enrolled[cp.origin];
     if (enrolled === undefined) {

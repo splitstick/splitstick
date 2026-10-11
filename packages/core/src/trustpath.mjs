@@ -41,6 +41,44 @@ export const OID = Object.freeze({
   timeStamping: '1.3.6.1.5.5.7.3.8',
 });
 
+/**
+ * YubiHSM 2's attestation extensions, as Yubico publishes them.
+ *
+ * Recorded here with their ASN.1 types because an earlier version of this
+ * project had `.5` as Origin and invented a `non_exportable` BOOLEAN at `.6`.
+ * Both were wrong, and a review caught it: `.5` is Capabilities, `.6` is the
+ * Object ID, Origin is `.3`, and there is NO non-exportable extension — the
+ * property has to be derived from Origin and Capabilities, which are BIT
+ * STRINGs. A genuine attestation would have failed custody validation, and the
+ * constructed BOOLEAN that did pass established nothing.
+ *
+ * Sources: docs.yubico.com/hardware/oid/oid-product-arc.html for the table,
+ * and github.com/YubicoLabs/yubihsm-parse-attestation for the bit indexing.
+ */
+export const YUBIHSM_ATTESTATION_OID = Object.freeze({
+  firmware_version: '1.3.6.1.4.1.41482.4.1',   // Octet String
+  serial_number: '1.3.6.1.4.1.41482.4.2',      // Integer
+  origin: '1.3.6.1.4.1.41482.4.3',             // Bit String
+  domains: '1.3.6.1.4.1.41482.4.4',            // Bit String
+  capabilities: '1.3.6.1.4.1.41482.4.5',       // Bit String
+  object_id: '1.3.6.1.4.1.41482.4.6',          // Integer
+  label: '1.3.6.1.4.1.41482.4.9',              // Utf8String
+  fips: '1.3.6.1.4.1.41482.4.10',              // Integer
+  fips_approved: '1.3.6.1.4.1.41482.4.12',     // Boolean
+});
+
+/**
+ * Bit positions, LSB-first, as Yubico's own parser reads them: Origin from the
+ * first content octet as a uint8, Capabilities from eight content octets as a
+ * big-endian uint64. These are NOT X.690's MSB-first bit numbers — the vendor's
+ * documented masks (generated 0x01, exportable-under-wrap
+ * 0x0000000000010000) only line up this way.
+ */
+export const YUBIHSM_ORIGIN_BIT = Object.freeze({
+  generated: 0, imported: 1, imported_wrapped: 4,
+});
+export const YUBIHSM_CAPABILITY_BIT = Object.freeze({ exportable_under_wrap: 16 });
+
 /** @param {string|Buffer|Uint8Array|X509Certificate} a @returns {X509Certificate|null} */
 export function toCert(a) {
   try {
@@ -251,6 +289,92 @@ export function readBooleanExtension(cert, oid) {
   } catch {
     return 'unreadable';
   }
+}
+
+/**
+ * A BIT STRING extension's content octets, with the leading unused-bits octet
+ * removed.
+ *
+ * Returns null when the extension is absent OR is not a BIT STRING. A
+ * certificate carrying a BOOLEAN where this format puts a BIT STRING is
+ * malformed for the format, and reading it as a yes would be accepting a
+ * document that says something else — which is precisely what the previous
+ * BOOLEAN decoder did.
+ *
+ * @param {X509Certificate} cert @param {string} oid
+ * @returns {Buffer|null}
+ */
+export function readBitStringValue(cert, oid) {
+  const ext = readExtension(cert, oid);
+  if (!ext) return null;
+  try {
+    const inner = readOnly(ext.value);
+    if (inner.tag !== TAG.BIT_STRING || inner.value.length < 2) return null;
+    const unused = inner.value[0];
+    // DER allows 0-7 unused trailing bits. Anything else is not a BIT STRING.
+    if (unused === undefined || unused > 7) return null;
+    return Buffer.from(inner.value.subarray(1));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The attested key's Origin — how it came to exist on the device.
+ *
+ * `present: false` means the extension is absent or unreadable, which is not
+ * the same as a key whose origin is unremarkable: it means the document does
+ * not say, and a document that does not say establishes nothing.
+ *
+ * `malformed` separates "the extension is not there" from "it is there and is
+ * not a readable BIT STRING". The verdict is the same — the document does not
+ * say — but the two mean different things to an operator holding a real
+ * device: the first is the wrong firmware or object, the second is a format
+ * disagreement worth reporting to the vendor or to us.
+ *
+ * @param {X509Certificate} cert
+ * @returns {{ generated: boolean, imported: boolean, imported_wrapped: boolean,
+ *             present: boolean, malformed: boolean }}
+ */
+export function yubihsmOrigin(cert) {
+  const bytes = readBitStringValue(cert, YUBIHSM_ATTESTATION_OID.origin);
+  if (!bytes || bytes.length < 1) {
+    return {
+      generated: false, imported: false, imported_wrapped: false, present: false,
+      malformed: readExtension(cert, YUBIHSM_ATTESTATION_OID.origin) !== null,
+    };
+  }
+  const v = /** @type {number} */ (bytes[0]);
+  const bit = (/** @type {number} */ n) => (v & (1 << n)) !== 0;
+  return {
+    generated: bit(YUBIHSM_ORIGIN_BIT.generated),
+    imported: bit(YUBIHSM_ORIGIN_BIT.imported),
+    imported_wrapped: bit(YUBIHSM_ORIGIN_BIT.imported_wrapped),
+    present: true,
+    malformed: false,
+  };
+}
+
+/**
+ * The attested key's Capabilities, as far as custody is concerned.
+ *
+ * @param {X509Certificate} cert
+ * @returns {{ exportable_under_wrap: boolean, present: boolean, malformed: boolean }}
+ */
+export function yubihsmCapabilities(cert) {
+  const bytes = readBitStringValue(cert, YUBIHSM_ATTESTATION_OID.capabilities);
+  if (!bytes || bytes.length < 8) {
+    return {
+      exportable_under_wrap: false, present: false,
+      malformed: readExtension(cert, YUBIHSM_ATTESTATION_OID.capabilities) !== null,
+    };
+  }
+  const v = bytes.readBigUInt64BE(bytes.length - 8);
+  return {
+    exportable_under_wrap: (v & (1n << BigInt(YUBIHSM_CAPABILITY_BIT.exportable_under_wrap))) !== 0n,
+    present: true,
+    malformed: false,
+  };
 }
 
 /**

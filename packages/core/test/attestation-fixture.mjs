@@ -22,12 +22,83 @@ const OID_CN = '2.5.4.3';
 const OID_BASIC_CONSTRAINTS = '2.5.29.19';
 
 /**
- * Yubico's attestation extensions, as documented for the YubiHSM 2 / YubiKey
- * attestation certificates. They are the shape FR-70's check 5 looks for; the
- * values below are ours, because the OIDs are theirs and the document is not.
+ * YubiHSM 2's attestation extensions, as Yubico documents them and as their own
+ * reference parser decodes them.
+ *
+ * An earlier version of this file had `.5` as Origin and invented a
+ * `non_exportable` BOOLEAN at `.6`. Both were wrong: `.5` is Capabilities, `.6`
+ * is the Object ID, Origin is `.3`, and there is no non-exportable extension at
+ * all — the property has to be derived from Origin and Capabilities, which are
+ * BIT STRINGs. A review caught it, and Yubico's OID reference and the
+ * YubicoLabs parser confirm the correction.
+ *
+ * Sources: docs.yubico.com/hardware/oid/oid-product-arc.html for the table, and
+ * github.com/YubicoLabs/yubihsm-parse-attestation for the bit indexing.
  */
-export const OID_ORIGIN = '1.3.6.1.4.1.41482.4.5';
-export const OID_NON_EXPORTABLE = '1.3.6.1.4.1.41482.4.6';
+export const YUBIHSM_OID = Object.freeze({
+  firmware_version: '1.3.6.1.4.1.41482.4.1',   // Octet String
+  serial_number: '1.3.6.1.4.1.41482.4.2',      // Integer
+  origin: '1.3.6.1.4.1.41482.4.3',             // Bit String
+  domains: '1.3.6.1.4.1.41482.4.4',            // Bit String
+  capabilities: '1.3.6.1.4.1.41482.4.5',       // Bit String
+  object_id: '1.3.6.1.4.1.41482.4.6',          // Integer
+  label: '1.3.6.1.4.1.41482.4.9',              // Utf8String
+  fips: '1.3.6.1.4.1.41482.4.10',              // Integer
+  fips_approved: '1.3.6.1.4.1.41482.4.12',     // Boolean
+});
+
+/**
+ * Origin bits, LSB-first within the FIRST content octet — matching the masks
+ * Yubico documents (generated 0x01, imported 0x02, imported_wrapped 0x10) and
+ * how their parser reads `bs.Bytes[0]` as a uint8.
+ */
+export const ORIGIN_BIT = Object.freeze({ generated: 0, imported: 1, imported_wrapped: 4 });
+
+/**
+ * Capability bits, LSB-first in the 8 content octets read as a big-endian
+ * uint64 — again matching their parser. `exportable-under-wrap` is documented
+ * with mask 0x0000000000010000, which is bit 16.
+ */
+export const CAPABILITY_BIT = Object.freeze({
+  generate_asymmetric_key: 4,
+  sign_eddsa: 8,
+  export_wrapped: 12,
+  exportable_under_wrap: 16,
+  sign_attestation_certificate: 34,
+});
+
+/**
+ * A DER BIT STRING whose content octets, read big-endian, have the given bits
+ * set — the vendor's encoding, not X.690's MSB-first bit numbering.
+ * @param {number[]} bits @param {number} [byteLength]
+ */
+export function bitStringFor(bits, byteLength = 8) {
+  const value = Buffer.alloc(byteLength);
+  for (const bit of bits) {
+    // Big-endian: bit 0 is the LSB of the LAST octet.
+    const byte = byteLength - 1 - Math.floor(bit / 8);
+    if (byte < 0) throw new RangeError(`bit ${bit} does not fit in ${byteLength} bytes`);
+    value[byte] |= 1 << (bit % 8);
+  }
+  // One leading octet counting unused trailing bits: zero, because whole
+  // octets are always emitted.
+  return encodeTlv(TAG.BIT_STRING, Buffer.concat([Buffer.from([0]), value]));
+}
+
+/** The extensions a genuine YubiHSM 2 attestation of a generated, non-exportable key carries. */
+export function yubihsmExtensions({ origin = ['generated'], capabilities = ['sign_eddsa'] } = {}) {
+  return [
+    {
+      oid: YUBIHSM_OID.origin,
+      value: bitStringFor(origin.map(o => ORIGIN_BIT[/** @type {keyof typeof ORIGIN_BIT} */ (o)]), 1),
+    },
+    {
+      oid: YUBIHSM_OID.capabilities,
+      value: bitStringFor(
+        capabilities.map(c => CAPABILITY_BIT[/** @type {keyof typeof CAPABILITY_BIT} */ (c)]), 8),
+    },
+  ];
+}
 
 const b = (/** @type {number[]} */ a) => Buffer.from(a);
 
@@ -122,6 +193,8 @@ export function certificate(o) {
  * @param {Buffer} o.attestedSpki the epoch key's SPKI
  * @param {Date} [o.notBefore] @param {Date} [o.notAfter]
  * @param {boolean} [o.nonExportable] @param {boolean} [o.corruptSignature]
+ * @param {string[]} [o.origin] origin bit names, e.g. ['imported']
+ * @param {{ oid: string, value: Buffer, critical?: boolean }[]} [o.extensions]
  * @param {string} [o.rootName] so a test can build an anchor whose NAME does
  *   not collide: Node's checkIssued is name-based, and a collision is a
  *   different case from a stranger
@@ -136,15 +209,16 @@ export function attestation(o) {
     ca: true, serial: 1,
   });
   const leafIssuer = rootName;
-  const extensions = [
-    { oid: OID_ORIGIN, value: encodeTlv(TAG.UTF8_STRING, Buffer.from('generated-on-device', 'utf8')) },
-  ];
-  if (o.nonExportable !== false) {
-    extensions.push({
-      oid: OID_NON_EXPORTABLE,
-      value: encodeTlv(TAG.BOOLEAN, b([0xff])),
-    });
-  }
+  // Vendor format: Origin and Capabilities as BIT STRINGs with the bit layout
+  // Yubico's own parser uses. `nonExportable: false` adds the
+  // exportable-under-wrap capability, which is how a real device says a key
+  // can leave it — there is no boolean to flip.
+  const extensions = o.extensions ?? yubihsmExtensions({
+    origin: o.origin ?? ['generated'],
+    capabilities: o.nonExportable === false
+      ? ['sign_eddsa', 'exportable_under_wrap']
+      : ['sign_eddsa'],
+  });
   const leaf = certificate({
     subject: 'Attested Key', issuer: leafIssuer,
     subjectSpki: o.attestedSpki, issuerKey: rootKey.privateKey,

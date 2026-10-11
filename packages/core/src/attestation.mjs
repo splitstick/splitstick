@@ -42,21 +42,35 @@
  */
 
 import { X509Certificate } from 'node:crypto';
-import { toCert, chainToAnchor, findIssuer, readBooleanExtension } from './trustpath.mjs';
+import {
+  toCert, chainToAnchor, findIssuer, yubihsmOrigin, yubihsmCapabilities,
+} from './trustpath.mjs';
 
 export const ATTESTATION_CHECKS = Object.freeze([
   'issuer', 'signature', 'key_identity', 'epoch_applicability', 'custody_properties',
 ]);
 
 /**
- * Yubico's documented attestation extension OIDs. Named here because check 5
- * has to read a property rather than infer one from the issuer, and the OID is
- * the only part of a provider's document that is stable enough to look for.
+ * The custody properties a reader may require of an attestation — FR-70's
+ * check 5.
+ *
+ * There is deliberately no single `non_exportable` property, because no
+ * provider issues one. An earlier version invented one as a BOOLEAN at an OID
+ * that is actually the Object ID, so a genuine YubiHSM 2 attestation would have
+ * failed validation while a document this project constructed passed. The
+ * property is the conjunction of two facts the device does state, and NEITHER
+ * ALONE IS SUFFICIENT:
+ *
+ * - `generated_on_device` — Origin says the key was generated on the device
+ *   rather than imported into it. A key imported into an HSM was outside one
+ *   first, so the device's non-exportability says nothing about where that key
+ *   has already been, and forward secrecy rests on it never having been
+ *   copyable.
+ * - `not_exportable` — Capabilities do not include `exportable-under-wrap`. A
+ *   key with that capability can leave under a wrap key, however good the
+ *   hardware.
  */
-export const CUSTODY_PROPERTY_OIDS = Object.freeze({
-  non_exportable: '1.3.6.1.4.1.41482.4.6',
-  origin: '1.3.6.1.4.1.41482.4.5',
-});
+export const CUSTODY_PROPERTIES = Object.freeze(['generated_on_device', 'not_exportable']);
 
 /** @typedef {{ ok: boolean, detail: string }} Check */
 
@@ -68,9 +82,9 @@ export const CUSTODY_PROPERTY_OIDS = Object.freeze({
  * @param {Uint8Array} [opts.epochPublicKey] raw 32 bytes — the key that signed
  *   this epoch's checkpoints
  * @param {{ from: Date, to: Date }} [opts.epochSpan]
- * @param {string[]} [opts.requireProperties] property names from
- *   CUSTODY_PROPERTY_OIDS; defaults to ['non_exportable']. An empty array
- *   waives check 5, and the result says the reader waived it.
+ * @param {string[]} [opts.requireProperties] names from CUSTODY_PROPERTIES;
+ *   defaults to both. An empty array waives check 5, and the result says the
+ *   reader waived it.
  * @param {(string|Buffer|X509Certificate)[]} [opts.intermediates]
  * @returns {{
  *   supported: boolean, inconclusive: boolean, detail: string,
@@ -203,7 +217,7 @@ export function validateAttestation(document, opts = {}) {
   }
 
   // 5 — custody properties.
-  const required = opts.requireProperties ?? ['non_exportable'];
+  const required = opts.requireProperties ?? [...CUSTODY_PROPERTIES];
   if (required.length === 0) {
     checks.custody_properties = {
       ok: true,
@@ -211,34 +225,70 @@ export function validateAttestation(document, opts = {}) {
         + 'rests on their judgement rather than on the document asserting non-exportability',
     };
   } else {
-    // Reading the extension's VALUE, not merely looking for its OID in the
-    // certificate's bytes. The containment test it replaces reported "the
-    // document asserts non-exportability" for a document that asserted the
-    // opposite, and would also have been satisfied by the OID appearing in a
-    // subject name or inside another extension's value.
+    // Read from the vendor's own fields, in the vendor's own encoding: Origin
+    // and Capabilities are BIT STRINGs, decoded as Yubico's reference parser
+    // decodes them. The containment test this replaces never read a value at
+    // all, and the BOOLEAN decoder before it read the wrong type at the wrong
+    // OID.
+    const origin = yubihsmOrigin(cert);
+    const caps = yubihsmCapabilities(cert);
     /** @type {string[]} */
     const problems = [];
+    /** @type {string[]} */
+    const established = [];
     for (const name of required) {
-      const oid = CUSTODY_PROPERTY_OIDS[/** @type {keyof typeof CUSTODY_PROPERTY_OIDS} */ (name)];
-      if (!oid) {
-        problems.push(`${name} is not a property this verifier knows how to read`);
+      if (name === 'generated_on_device') {
+        if (!origin.present) {
+          problems.push(origin.malformed
+            ? 'the document carries an origin extension that is not a readable BIT STRING, which '
+              + 'is the type this format uses; it is not read as a yes'
+            : 'the document does not state the key\'s origin, so whether it was generated on the '
+              + 'device or imported into it is not established');
+        } else if (origin.imported) {
+          problems.push(
+            'the document states the key was IMPORTED into the device. A key imported into an HSM '
+            + 'was outside one first, so the device\'s non-exportability says nothing about where '
+            + 'that key has already been',
+          );
+        } else if (origin.imported_wrapped) {
+          problems.push(
+            'the document states the key was imported under wrap. It was wrapped out of a device '
+            + 'and brought back, so it existed outside one, whatever the generated bit also says',
+          );
+        } else if (!origin.generated) {
+          problems.push('the document\'s origin field sets no recognised bit');
+        } else {
+          established.push('the key was generated on the device');
+        }
         continue;
       }
-      const state = readBooleanExtension(cert, oid);
-      if (state === 'true') continue;
-      problems.push(
-        state === 'false' ? `the document asserts ${name} is FALSE`
-          : state === 'absent' ? `the document does not assert ${name}`
-            : `the document's ${name} extension is not a readable BOOLEAN`,
-      );
+      if (name === 'not_exportable') {
+        if (!caps.present) {
+          problems.push(caps.malformed
+            ? 'the document carries a capabilities extension that is not a readable 8-octet BIT '
+              + 'STRING, which is the type this format uses; it is not read as a yes'
+            : 'the document does not carry a capabilities field, so whether the key can be '
+              + 'exported is not established');
+        } else if (caps.exportable_under_wrap) {
+          problems.push(
+            'the key holds the exportable-under-wrap capability, so it can leave the device under '
+            + 'a wrap key however good the hardware',
+          );
+        } else {
+          established.push('the key cannot be exported under wrap');
+        }
+        continue;
+      }
+      problems.push(`${name} is not a property this verifier knows how to read`);
     }
     checks.custody_properties = problems.length === 0
-      ? { ok: true, detail: `the document asserts ${required.join(', ')}` }
+      ? { ok: true, detail: established.join(', ') }
       : {
         ok: false,
         detail: `${problems.join('; ')}. A certificate proving a key exists in a managed service is `
-          + 'not a custody guarantee: a key that could be exported is a managed key, and accepting '
-          + 'its existence certificate would launder the weaker claim into the stronger one',
+          + 'not a custody guarantee: a key that could be exported, or that was imported from '
+          + 'somewhere else, is a managed key, and accepting its existence certificate would '
+          + 'launder the weaker claim into the stronger one',
       };
   }
 

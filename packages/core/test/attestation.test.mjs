@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { validateAttestation, ATTESTATION_CHECKS } from '../src/attestation.mjs';
-import { key, attestation, OID_NON_EXPORTABLE } from './attestation-fixture.mjs';
+import { key, attestation, yubihsmExtensions, YUBIHSM_OID } from './attestation-fixture.mjs';
 
 const EPOCH = { from: new Date('2026-10-02T00:00:00Z'), to: new Date('2026-10-03T00:00:00Z') };
 
@@ -168,6 +168,9 @@ test('check 4: with no epoch span supplied, applicability cannot be judged', () 
 // ── 5. Custody properties ────────────────────────────────────────────────────
 
 test('check 5: a document that merely proves a key exists is refused', () => {
+  // `nonExportable: false` now adds the exportable-under-wrap CAPABILITY,
+  // which is how a real device says a key can leave it. There is no boolean to
+  // flip: the vendor states Origin and Capabilities and nothing else.
   const k = key();
   const a = attestation({ attestedSpki: Buffer.from(k.spki), nonExportable: false });
   const r = validateAttestation(a.leaf.raw, {
@@ -175,7 +178,7 @@ test('check 5: a document that merely proves a key exists is refused', () => {
   });
   assert.equal(r.supported, false);
   assert.equal(r.checks.custody_properties.ok, false);
-  assert.match(r.checks.custody_properties.detail, /non.exportab/i);
+  assert.match(r.checks.custody_properties.detail, /exportable-under-wrap/);
   // A managed key that could be exported is a managed key, not a custody
   // guarantee, and a validator that accepted its existence certificate would
   // launder the weaker claim into the stronger one.
@@ -184,8 +187,6 @@ test('check 5: a document that merely proves a key exists is refused', () => {
 test('check 5: the extension is read, not assumed from the issuer', () => {
   const k = key();
   const a = attestation({ attestedSpki: Buffer.from(k.spki), nonExportable: false });
-  assert.ok(!a.leaf.raw.includes(Buffer.from(OID_NON_EXPORTABLE.split('.').map(Number).slice(2))),
-    'sanity: the fixture really omits the extension');
   const r = validateAttestation(a.leaf.raw, {
     anchors: [a.root], epochPublicKey: k.raw, epochSpan: EPOCH,
     requireProperties: [],

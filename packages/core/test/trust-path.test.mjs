@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { validateAttestation } from '../src/attestation.mjs';
 import { verifyTimeStampToken } from '../src/rfc3161.mjs';
-import { key, certificate, OID_NON_EXPORTABLE } from './attestation-fixture.mjs';
+import { key, certificate, yubihsmExtensions, YUBIHSM_OID, bitStringFor } from './attestation-fixture.mjs';
 import { encodeTlv, TAG } from '../src/der.mjs';
 
 /**
@@ -15,8 +15,10 @@ import { encodeTlv, TAG } from '../src/der.mjs';
  */
 
 const EPOCH = { from: new Date('2026-10-02T00:00:00Z'), to: new Date('2026-10-03T00:00:00Z') };
-const TRUE_ = encodeTlv(TAG.BOOLEAN, Buffer.from([0xff]));
-const FALSE_ = encodeTlv(TAG.BOOLEAN, Buffer.from([0x00]));
+/** A generated, non-exportable key, in the vendor's own encoding. */
+const GOOD = yubihsmExtensions();
+/** The same device saying the key CAN leave it. */
+const EXPORTABLE = yubihsmExtensions({ capabilities: ['exportable_under_wrap'] });
 
 function root(name = 'Provider Root') {
   const k = key();
@@ -51,7 +53,7 @@ test('an END-ENTITY certificate cannot act as a CA', () => {
     subject: 'Attested Key', issuer: 'Ordinary Key', subjectSpki: Buffer.from(victim.spki),
     issuerKey: leafKey.privateKey, notBefore: new Date('2026-10-01Z'),
     notAfter: new Date('2027-10-01Z'), serial: 3,
-    extensions: [{ oid: OID_NON_EXPORTABLE, value: TRUE_ }],
+    extensions: GOOD,
   });
   const out = validateAttestation(forged.raw, {
     anchors: [r.cert], intermediates: [endEntity], epochPublicKey: victim.raw, epochSpan: EPOCH,
@@ -75,7 +77,7 @@ test('a genuine CA intermediate still works', () => {
     subject: 'Attested Key', issuer: 'Provider Intermediate',
     subjectSpki: Buffer.from(attested.spki), issuerKey: midKey.privateKey,
     notBefore: new Date('2026-10-01Z'), notAfter: new Date('2027-10-01Z'), serial: 3,
-    extensions: [{ oid: OID_NON_EXPORTABLE, value: TRUE_ }],
+    extensions: GOOD,
   });
   const out = validateAttestation(leaf.raw, {
     anchors: [r.cert], intermediates: [mid], epochPublicKey: attested.raw, epochSpan: EPOCH,
@@ -107,55 +109,60 @@ test('an end-entity certificate cannot mint a TSA chain either', async () => {
 
 // ── Custody properties: the VALUE, not the presence ──────────────────────────
 
-test('an extension asserting non-exportable FALSE is refused', () => {
-  // It passed. The check searched the certificate's bytes for the OID and
-  // never read what it asserted, so a document explicitly saying "this key is
-  // exportable" reported custody as independently supported — laundering the
-  // weaker claim into the stronger one, which is the exact thing the code's own
-  // comment says it must not do.
+test('a document saying the key CAN leave the device is refused', () => {
+  // The original form of this test flipped an invented BOOLEAN. The vendor has
+  // no such field: a device says a key can leave it by carrying the
+  // exportable-under-wrap capability, and that is what must be refused.
   const r = root();
   const k = key();
   const leaf = certificate({
     subject: 'Attested Key', issuer: 'Provider Root', subjectSpki: Buffer.from(k.spki),
     issuerKey: r.k.privateKey, notBefore: new Date('2026-10-01Z'),
     notAfter: new Date('2027-10-01Z'), serial: 2,
-    extensions: [{ oid: OID_NON_EXPORTABLE, value: FALSE_ }],
+    extensions: EXPORTABLE,
   });
   const out = validateAttestation(leaf.raw, {
     anchors: [r.cert], epochPublicKey: k.raw, epochSpan: EPOCH,
   });
   assert.equal(out.supported, false);
   assert.equal(out.checks.custody_properties.ok, false);
-  assert.match(out.checks.custody_properties.detail, /asserts.*false|does not assert/i);
+  assert.match(out.checks.custody_properties.detail, /exportable-under-wrap/);
 });
 
-test('the OID appearing anywhere in the certificate is not an assertion', () => {
+test('an OID appearing inside another extension is not an assertion', () => {
   // The old check was a containment test over the whole DER, so the OID in a
   // subject name, a serial, or an unrelated extension's VALUE would have
-  // counted. Here it is inside another extension's value.
+  // counted. Here the capabilities OID's bytes sit inside the Domains value.
   const r = root();
   const k = key();
-  const oidBytes = Buffer.from([0x06, 0x0a, 0x2b, 0x06, 0x01, 0x04, 0x01, 0x82, 0xc4, 0x0a, 0x04, 0x06]);
+  const capsOidBytes = Buffer.from(
+    [0x06, 0x0a, 0x2b, 0x06, 0x01, 0x04, 0x01, 0x82, 0xc4, 0x0a, 0x04, 0x05]);
   const leaf = certificate({
     subject: 'Attested Key', issuer: 'Provider Root', subjectSpki: Buffer.from(k.spki),
     issuerKey: r.k.privateKey, notBefore: new Date('2026-10-01Z'),
     notAfter: new Date('2027-10-01Z'), serial: 2,
-    extensions: [{ oid: '1.3.6.1.4.1.41482.4.5', value: encodeTlv(TAG.OCTET_STRING, oidBytes) }],
+    extensions: [
+      { oid: YUBIHSM_OID.origin, value: bitStringFor([0], 1) },
+      { oid: YUBIHSM_OID.domains, value: encodeTlv(TAG.OCTET_STRING, capsOidBytes) },
+    ],
   });
   const out = validateAttestation(leaf.raw, {
     anchors: [r.cert], epochPublicKey: k.raw, epochSpan: EPOCH,
   });
+  // Origin is fine; capabilities are genuinely absent, and the OID appearing
+  // elsewhere must not stand in for them.
   assert.equal(out.checks.custody_properties.ok, false);
+  assert.match(out.checks.custody_properties.detail, /does not carry a capabilities field/);
 });
 
-test('a TRUE assertion in the right extension still passes', () => {
+test('a generated, non-exportable key in the right extensions passes', () => {
   const r = root();
   const k = key();
   const leaf = certificate({
     subject: 'Attested Key', issuer: 'Provider Root', subjectSpki: Buffer.from(k.spki),
     issuerKey: r.k.privateKey, notBefore: new Date('2026-10-01Z'),
     notAfter: new Date('2027-10-01Z'), serial: 2,
-    extensions: [{ oid: OID_NON_EXPORTABLE, value: TRUE_ }],
+    extensions: GOOD,
   });
   const out = validateAttestation(leaf.raw, {
     anchors: [r.cert], epochPublicKey: k.raw, epochSpan: EPOCH,

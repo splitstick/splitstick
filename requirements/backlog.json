@@ -179,9 +179,9 @@
       "title": "Operator-hosted witness adapter",
       "statement": "Support an operator's own internal witness endpoint.",
       "source": "Independence — your own internal authority",
-      "verify": "Operator-hosted stateful witness: enrolment, consistency-proof sequence enforcement, retained roots, signed tree heads, key history. 19 tests covering rows 9-18 of docs/m3a-failure-modes.md",
+      "verify": "Operator-hosted stateful witness: enrolment, consistency-proof sequence enforcement, retained roots, signed tree heads, key history. The read-validate-write sequence is held under an exclusive CROSS-PROCESS lock covering enrolment and checkpoint transitions, with a multi-process regression test in which competing processes submit conflicting successors and exactly one wins",
       "status": "done",
-      "evidence": "packages/witness-self; refuses to be a signature oracle, serialises submissions, writes state atomically with the signature"
+      "evidence": "packages/witness-self; the promise chain alone let two processes retain two distinct roots at the same height — reproduced 6/6 with a wall-clock barrier — so it now claims the same WriteLock the collector uses; contention surfaces as 503 and a genuine fork as 409, because an operator's response differs"
     },
     {
       "id": "FR-18",
@@ -439,9 +439,9 @@
       "title": "Witness verifies consistency, not increments",
       "statement": "The witness accepts a checkpoint whose tree_size is greater than or equal to the last it recorded for that operator AND whose Merkle consistency proof from the previous size verifies. It does not require tree_size to increase by one: a checkpoint published every 10 seconds or 1,024 records legitimately jumps. Witness state is updated atomically with the signature.",
       "source": "Witness Practice Statement — immediate successor",
-      "verify": "Sequence enforced by RFC 6962 consistency proof, not by successor: sizes legitimately jump, and a forked tree fails the proof at any size",
+      "verify": "Sequence enforced by RFC 6962 consistency proof, not by successor: sizes legitimately jump, and a forked tree fails the proof at any size. Enforced under an exclusive cross-process lock, so two witness processes cannot each accept a different successor",
       "status": "done",
-      "evidence": "StatefulWitness.addCheckpoint — 400 on regression, 409 on fork or unverifiable proof, idempotent on retry, serialised against itself"
+      "evidence": "StatefulWitness.addCheckpoint — 400 on regression, 409 on fork or unverifiable proof, 503 on contention, idempotent on retry; Anchorer computes the proof over the tree the checkpoint COMMITS TO; packages/witness-self/test/concurrency.test.mjs races two real processes"
     },
     {
       "id": "FR-44",

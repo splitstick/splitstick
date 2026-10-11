@@ -151,6 +151,59 @@ which also strips string literals — is documented as the wrong instrument for
 asking whether a ternary's branches differ, because it made
 `endsWith('_INCONCLUSIVE') ? 'inconclusive' : 'fail'` look identical.
 
+## Found by external review of PR #7, and fixed
+
+Two P1 findings, both confirmed by running them.
+
+**The YubiHSM attestation OIDs were wrong, and the decoder expected the wrong
+type.** The code had `.5` as Origin and an invented `non_exportable` BOOLEAN at
+`.6`. Yubico's published table says `.3` is Origin, `.4` Domains, `.5`
+Capabilities, `.6` Object ID — and there is **no non-exportable extension at
+all**. A genuine YubiHSM 2 attestation would have failed custody validation,
+while the constructed BOOLEAN that did pass established nothing.
+
+The property is now derived from the two facts the device actually states, and
+neither alone is sufficient: Origin must say the key was **generated on the
+device** rather than imported into it — a key imported into an HSM was outside
+one first, so the device's non-exportability says nothing about where that key
+has already been — and Capabilities must **not** include
+`exportable-under-wrap`, which lets a key leave under a wrap key however good
+the hardware. A key imported under wrap is refused even though Yubico documents
+`generated` as also set in that case (masks 0x11 and 0x12), because it was
+wrapped out and brought back.
+
+Bit indexing follows Yubico's own reference parser: Origin is the first content
+octet read LSB-first, Capabilities is eight content octets read as a big-endian
+uint64, which is how the documented masks (`0x01`, `0x0000000000010000`) line
+up. It is **not** X.690's MSB-first numbering, and guessing that would have been
+the same class of error as the OIDs.
+
+Fixtures are now vendor FORMAT rather than a constructed BOOLEAN. That is a
+real improvement and still not a real device: `provider_untested: true` stays on
+every result, and NFR-09's HSM half stays carried to M7.
+
+**The stateful witness lock was process-local.** Submissions were serialised on
+a private promise chain and state written with an atomic rename. That is correct
+for one instance and worthless across two: both processes read the same prior
+root, both validated against it, both signed, and the witness retained **two
+distinct roots at the same height**. It countersigned two conflicting histories,
+which is the one thing it exists to prevent.
+
+It reproduced six times out of six once the two processes were made to enter the
+critical section at the same wall-clock instant. Without that barrier the first
+simply finished before the second began — which is how it looked safe, and why
+an in-process test could never have found it. Atomic replacement stops a
+half-written file; it does not make read-validate-write atomic, and that
+sequence is the whole protocol.
+
+The critical section now runs under the same exclusive cross-process
+`WriteLock` the collector uses, covering enrolment as well as checkpoint
+transitions, with the same crash behaviour: a lock naming a dead process is
+taken over rather than left to wedge the witness. Contention surfaces as **503**
+and a genuine fork as **409**, because an operator's response differs — retry
+versus stop and investigate — and reporting contention as a fork would send them
+hunting for an attacker who is not there.
+
 ## Decided against
 
 **Fetching block headers to confirm an OpenTimestamps attestation.** It would
