@@ -259,7 +259,7 @@
     "source": "Integrity — Splitstick never holds it, sees it, or asks for it",
     "verify": "Automated egress capture during a representative run asserts no private key material leaves the host; plus a code check that no verifier or collector module imports a key-export API",
     "status": "done",
-    "evidence": "the signer seam in signer.mjs; code scan asserts one module touches private key material"
+    "evidence": "the signer seam in signer.mjs; code scan asserts one module touches private key material; automated egress trap over a representative run in packages/collect-oma/test/integration.test.mjs (the trap self-checks before it is trusted)"
   },
   {
     "id": "SEC-15",

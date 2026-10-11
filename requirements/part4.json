@@ -93,7 +93,7 @@
     "source": "Why — without asking you to change your agent code",
     "verify": "Byte-identical agent source before and after integration, for both collectors",
     "status": "done",
-    "evidence": "construction and configuration only; DES-14 code scan asserts the adapter touches no cryptography"
+    "evidence": "packages/collect-oma/test/integration.test.mjs hashes the agent source before and after integration and asserts the run outcome is unchanged; the agent fixture mentions Splitstick nowhere"
   },
   {
     "id": "LEG-19",
