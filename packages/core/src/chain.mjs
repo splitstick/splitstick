@@ -100,8 +100,12 @@ export function recomputeChain(entries) {
   const findings = [];
   let prev = genesis();
   let lastSeq = 0;
-  /** @type {number|null} */
-  let lastSource = null;
+  // Starts at 0, not null: the first observation a collector writes is
+  // source_seq 1, so a first persisted value of 2 means an attempt was observed
+  // and never written. Seeding this with null made exactly that case — an
+  // attempt dropped before anything was written — the one hole no verifier
+  // could see.
+  let lastSource = 0;
 
   for (const e of entries) {
     const seq = Number(e.record.record_seq);
@@ -124,7 +128,7 @@ export function recomputeChain(entries) {
     // independently of record_seq. The two counters are never compared.
     const src = e.record.source_seq;
     if (typeof src === 'number') {
-      if (lastSource !== null && src !== lastSource + 1) {
+      if (src !== lastSource + 1) {
         findings.push({
           code: 'SEQ_BROKEN', record_seq: seq,
           detail: `source_seq jumped from ${lastSource} to ${src}: ${src - lastSource - 1} observed attempt(s) were never written`,
@@ -158,7 +162,12 @@ export function recomputeChain(entries) {
   }
 
   return {
-    ok: findings.every(f => f.code.endsWith('_INCONCLUSIVE')) && findings.length === 0,
+    // `ok` means nothing was found at all. It read as though inconclusive
+    // findings were tolerated — `every(...)` is vacuously true on an empty
+    // array, so the clause could never change the answer. Callers that need the
+    // distinction read `findings`, and the verifier separates the two verdicts
+    // itself; a boolean cannot carry three.
+    ok: findings.length === 0,
     tree_size: entries.length,
     findings,
   };

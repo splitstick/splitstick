@@ -67,8 +67,8 @@ and asks `splitstick verify`.
 gate AC-1   HELD   (A1, A2, A3, B, E)
 gate AC-2   HELD   (C)
 
-8 of 11 tampers are detected by splitstick verify from files alone.
-3 are not, and each names the milestone that closes it: C2, D, F2.
+9 of 12 tampers are detected by splitstick verify from files alone.
+3 are not, and each names the milestone that closes it: C2, D, F3.
 ```
 
 The three that are not detected are in the suite on purpose:
@@ -77,7 +77,7 @@ The three that are not detected are in the suite on purpose:
 |---|---|---|---|
 | C2 | Edit, repair the chain, **re-sign** the checkpoint | The operator holds the key. Nothing local can refuse this. | M2 non-exportable custody + M3a countersignature |
 | D | Truncate the tail and drop the checkpoints above it | A chain over a prefix is internally perfect. | M3a witness + cross-pack comparison |
-| F2 | Erase a record, renumber, repair and re-sign | The action never appears at all. | M3a + counterparty reconciliation |
+| F3 | Erase a record, renumber **both** counters, repair and re-sign | The action never appears at all. | M3a + counterparty reconciliation |
 
 None of them needs new cryptography. Each needs a second party, which is the shape of the
 problem rather than a gap in the implementation.
@@ -89,7 +89,7 @@ check that could run, ran, and passed. A bare `ok` here would claim more than wa
 ```
 verdict     INCONCLUSIVE  (7 checks passed, 4 could not be answered, 0 failed)
 capability  ordering and content integrity of every record in this chain
-            NOT: truncation of the tail is not detectable from this evidence alone
+            NOT: truncation above record_seq 4 is NOT detectable from this evidence alone
             NOT: nothing here establishes WHEN any record was written
 trusting    the cryptographic primitives (SHA-256, Ed25519)
             the operator for the completeness of what was captured

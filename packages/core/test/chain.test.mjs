@@ -182,3 +182,28 @@ test('FR-62: a missing attempt is a source_seq gap, not a chain break', () => {
   assert.ok(f, JSON.stringify(r.findings));
   assert.match(f.detail, /source_seq/);
 });
+
+// Found in review: seeding the observation counter with null meant the first
+// persisted source_seq was never checked, so an attempt dropped BEFORE the
+// first written record was the one hole no verifier could see.
+test('an attempt dropped before the first record is still reported', () => {
+  const entries = [];
+  let prev = genesis();
+  const push = r => { const e = chainEntry(r, newSalt(), prev); prev = e.head; entries.push(e); };
+  push(action({ record_seq: 1, source_seq: 2, correlation: 'c-1' }));   // 1 was spent, not written
+  push(action({ record_seq: 2, source_seq: 3, correlation: 'c-2' }));
+  const r = recomputeChain(entries);
+  assert.equal(r.ok, false);
+  const f = r.findings.find(x => x.code === 'SEQ_BROKEN');
+  assert.ok(f, JSON.stringify(r.findings));
+  assert.match(f.detail, /source_seq jumped from 0 to 2/);
+});
+
+test('a chain whose first observation is source_seq 1 reports no gap', () => {
+  const entries = [];
+  let prev = genesis();
+  const push = r => { const e = chainEntry(r, newSalt(), prev); prev = e.head; entries.push(e); };
+  push(heartbeat({ record_seq: 1 }));
+  push(action({ record_seq: 2, source_seq: 1, correlation: 'c-1' }));
+  assert.equal(recomputeChain(entries).ok, true, 'a heartbeat first is normal');
+});

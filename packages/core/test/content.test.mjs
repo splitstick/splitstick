@@ -136,9 +136,13 @@ test('a tampered ciphertext is detected by the cipher, not just by the cid', () 
   const s = fresh();
   const { cid } = s.put(Buffer.from('EUR 2000000'));
   const path = s.pathFor(cid);
+  s.close();
   const bytes = readFileSync(path);
   bytes[bytes.length - 1] ^= 0xff;
   writeFileSync(path, bytes);
-  assert.throws(() => s.get(cid), /unauthenticated|auth/i);
-  assert.equal(s.reproduces(cid), false);
+  const reader = new ContentStore(s.root);
+  // A typed error naming the cid, not a bare cipher failure — a caller needs to
+  // know WHICH payload, and the verifier needs to tell this apart from absence.
+  assert.throws(() => reader.get(cid), ContentMissing);
+  assert.equal(reader.reproduces(cid), false);
 });

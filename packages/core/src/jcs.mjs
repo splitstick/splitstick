@@ -39,13 +39,35 @@ const SHORT_ESCAPE = /** @type {Record<string, string>} */ ({
  * sequences. Only the seven short escapes and the remaining C0 controls escape.
  * @param {string} s
  */
-function encodeString(s) {
+function encodeString(s, path = '') {
   let out = '"';
-  for (const ch of s) {
+  for (let i = 0; i < s.length; i++) {
+    const unit = s.charCodeAt(i);
+
+    // An unpaired surrogate is not well-formed Unicode and has no canonical
+    // encoding. Left alone it was appended literally and then turned into
+    // U+FFFD by the UTF-8 conversion, so a record containing one produced the
+    // same bytes — and the same leaf — as a record containing U+FFFD. That is a
+    // canonicalisation collision, which is the defect this whole project exists
+    // because of, so it fails loudly here rather than quietly downstream.
+    if (unit >= 0xd800 && unit <= 0xdfff) {
+      const high = unit <= 0xdbff;
+      const next = high ? s.charCodeAt(i + 1) : NaN;
+      const paired = high && next >= 0xdc00 && next <= 0xdfff;
+      if (!paired) {
+        throw new CanonicalizeError(
+          `unpaired surrogate \\u${unit.toString(16).padStart(4, '0')} is not well-formed Unicode `
+          + 'and has no canonical encoding', path);
+      }
+      out += `${s[i]}${s[i + 1]}`;
+      i += 1;
+      continue;
+    }
+
+    const ch = /** @type {string} */ (s[i]);
     const short = SHORT_ESCAPE[ch];
     if (short !== undefined) { out += short; continue; }
-    const code = ch.codePointAt(0) ?? 0;
-    out += code < 0x20 ? '\\u' + code.toString(16).padStart(4, '0') : ch;
+    out += unit < 0x20 ? '\\u' + unit.toString(16).padStart(4, '0') : ch;
   }
   return out + '"';
 }
@@ -60,33 +82,33 @@ function encodeNumber(n, path) {
     throw new CanonicalizeError(
       'non-integer number rejected: coerce it to a decimal string at capture (DES-02 rule 3)', path);
   }
-  // Number::toString already renders an integer-valued double without an
-  // exponent or trailing zero for every magnitude Number.isInteger admits,
-  // and normalises -0 to "0".
+  // Beyond 2^53 a double no longer distinguishes consecutive integers — 2^53
+  // and 2^53+1 are the same value — so two different intended amounts would
+  // canonicalise identically. That is the same ambiguity non-integers are
+  // rejected for, and it gets the same answer. Above this range, use a string.
+  if (!Number.isSafeInteger(n)) {
+    throw new CanonicalizeError(
+      `integer ${String(n)} is outside the exactly representable range: `
+      + 'two different values would canonicalise alike, so encode it as a decimal string', path);
+  }
+  // RFC 8785 number serialisation is ECMAScript Number::toString. Within the
+  // safe-integer range that is always the plain digits, and -0 normalises to 0.
   return String(n === 0 ? 0 : n);
 }
 
 /**
  * Sort by UTF-16 code unit, which is what RFC 8785 specifies — not locale
- * order, and not code point order. The difference shows up above the BMP.
+ * order, and not code point order.
+ *
+ * That is exactly what JavaScript's own relational operators do on strings, so
+ * this is a two-line comparator rather than a hand-rolled code-unit walk. The
+ * walk it replaces was verified to produce identical orderings and allocated
+ * two arrays per comparison, on the one path NFR-01 measures. `localeCompare`
+ * would be wrong here, and `sort()` with no comparator is right but reads like
+ * an oversight, so the intent is stated.
  * @param {string} a @param {string} b
  */
-function byCodeUnit(a, b) {
-  const ua = [...a].flatMap(c => {
-    const s = c.charCodeAt(0);
-    return c.length > 1 ? [s, c.charCodeAt(1)] : [s];
-  });
-  const ub = [...b].flatMap(c => {
-    const s = c.charCodeAt(0);
-    return c.length > 1 ? [s, c.charCodeAt(1)] : [s];
-  });
-  const n = Math.min(ua.length, ub.length);
-  for (let i = 0; i < n; i++) {
-    const x = ua[i] ?? 0, y = ub[i] ?? 0;
-    if (x !== y) return x - y;
-  }
-  return ua.length - ub.length;
-}
+const byCodeUnit = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
 
 /**
  * @param {unknown} v
@@ -98,7 +120,7 @@ function enc(v, path) {
   switch (typeof v) {
     case 'boolean': return v ? 'true' : 'false';
     case 'number': return encodeNumber(v, path);
-    case 'string': return encodeString(v);
+    case 'string': return encodeString(v, path);
     case 'bigint': throw new CanonicalizeError('bigint has no JSON form; use a string', path);
     case 'undefined': throw new CanonicalizeError('undefined would be dropped; omit the key or use null', path);
     case 'function': throw new CanonicalizeError('function is not serialisable', path);
@@ -113,7 +135,8 @@ function enc(v, path) {
   const keys = Object.keys(/** @type {object} */ (v)).sort(byCodeUnit);
   const body = keys.map(k => {
     const val = /** @type {Record<string, unknown>} */ (v)[k];
-    return encodeString(k) + ':' + enc(val, path ? `${path}.${k}` : k);
+    const at = path ? `${path}.${k}` : k;
+    return encodeString(k, at) + ':' + enc(val, at);
   });
   return '{' + body.join(',') + '}';
 }

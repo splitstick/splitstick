@@ -62,6 +62,10 @@ Each carries what a reader may conclude, because "verification failed" is useles
 `IDENTITY_UNPINNED` | The pack is signed under a key or origin the acceptance policy did not name (`FR-63`). Nothing prevents an operator keeping a second log; this is how a reader who pinned an identity is told they are being shown another. |
 `WITNESS_MISSING` | A witness **expected for this checkpoint** — given its tier and cadence — has no proof in the pack (`FR-66`). **Inconclusive, not a finding of deletion.** Absence is consistent with pending under fail-open, a slower roll-up tier, an unavailable witness, or a removed receipt, and nothing in the pack distinguishes them. Demonstrating removal requires an earlier pack that held the proof, which is cross-pack comparison (`DES-19`). |
 `TRUNCATED_BELOW_DISCLOSED` | A pack already disclosed holds a countersigned checkpoint above where this record ends. **Truncation, caught without a stateful witness.** |
+`CONSISTENCY_BROKEN` | Two signed checkpoints are not prefixes of one history, or a later one commits to fewer records than an earlier one. Append-only is checked, not assumed (`DES-04` rule 4). |
+`UNANCHORED_TAIL` | Records sit above the highest tree size any checkpoint commits to. **Inconclusive**, and the height is reported: it is what bounds every truncation claim, and what `DES-19`'s cross-pack comparison keys on. |
+`TORN_WRITE` | The last line of the chain is incomplete. **Inconclusive** — that is what a crash during an append leaves, and the records before it verify normally. A broken line anywhere else is `MALFORMED_RECORD` and fails, because only the end is explicable by a crash. |
+`MULTIPLE_COLLECTORS` | The store holds more than one collector chain and none was named. **Inconclusive**: one was verified and the others were not, which a reader has to be told rather than left to assume. |
 
 ## The capability statement — FR-57
 

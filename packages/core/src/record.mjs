@@ -36,6 +36,15 @@ export const OUTCOMES = Object.freeze(['ok', 'error', 'timeout', 'denied']);
 const HEX32 = /^[0-9a-f]{32}$/;
 const CID = /^sha256:[0-9a-f]{4,64}$/;
 const RFC3339 = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+const DIGEST = /^sha256:[0-9a-f]{64}$/;
+
+/** @param {Record<string, unknown>} r @param {string} f */
+function reqTimestamp(r, f) {
+  req(r, f);
+  if (typeof r[f] !== 'string' || !RFC3339.test(/** @type {string} */ (r[f]))) {
+    throw new RecordError(`${f} must be RFC 3339 UTC with milliseconds, got ${JSON.stringify(r[f])}`);
+  }
+}
 
 /** @param {unknown} v @returns {v is Record<string, unknown>} */
 const isObj = v => typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -76,7 +85,13 @@ export function validateRecord(rec) {
   req(r, 'v');
   if (r.v !== SCHEMA_VERSION) throw new RecordError(`unsupported schema version ${String(r.v)}: fails closed (NFR-07)`);
 
-  for (const f of ['collector', 'record_seq', 'ts', 'kind']) req(r, f);
+  for (const f of ['collector', 'record_seq', 'ts', 'kind', 'run']) req(r, f);
+  // run is retained forever (DES-13), and an action attributable to no run is
+  // not attributable to anything. null is the explicit "no run", which is what
+  // a heartbeat carries.
+  if (r.run !== null && (typeof r.run !== 'string' || r.run === '')) {
+    throw new RecordError('run must be a non-empty string or null');
+  }
   if (typeof r.collector !== 'string' || !r.collector) throw new RecordError('collector must be a non-empty string');
   if (!Number.isInteger(r.record_seq) || /** @type {number} */ (r.record_seq) < 1) {
     throw new RecordError('record_seq must be an integer from 1');
@@ -144,10 +159,19 @@ export function validateRecord(rec) {
       req(r, f);
       if (!Number.isInteger(r[f])) throw new RecordError(`${f} must be an integer`);
     }
+    if (/** @type {number} */ (r.from_source_seq) > /** @type {number} */ (r.to_source_seq)) {
+      throw new RecordError('a gap span must not end before it starts');
+    }
   }
 
   if (kind === 'gap_unknown') {
-    for (const f of ['from_ts', 'to_ts']) req(r, f);
+    // The interval is the whole content of this record — it is what the
+    // operator is declaring they cannot characterise — so an unparseable one
+    // makes the record meaningless rather than merely untidy.
+    for (const f of ['from_ts', 'to_ts']) reqTimestamp(r, f);
+    if (/** @type {string} */ (r.from_ts) > /** @type {string} */ (r.to_ts)) {
+      throw new RecordError('an unknown-loss interval must not end before it starts');
+    }
     // Never a span: inventing one would assert what was lost with the counter.
     for (const f of ['from_source_seq', 'to_source_seq']) {
       if (f in r) throw new RecordError(`gap_unknown must never carry ${f} (FR-60)`);
@@ -156,6 +180,17 @@ export function validateRecord(rec) {
 
   if (kind === 'heartbeat') {
     for (const f of ['build', 'policy']) req(r, f);
+  }
+
+  if (kind === 'policy') {
+    // SEC-12's downgrade defence IS these two digests: a policy record carrying
+    // neither is a note saying something happened, not evidence of what.
+    for (const f of ['previous_policy', 'next_policy']) {
+      req(r, f);
+      if (typeof r[f] !== 'string' || !DIGEST.test(/** @type {string} */ (r[f]))) {
+        throw new RecordError(`${f} must be a full sha256 digest of the effective policy`);
+      }
+    }
   }
 
   return r;

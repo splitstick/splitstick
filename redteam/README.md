@@ -72,8 +72,8 @@ its successes is marketing.
 gate AC-1   HELD   (A1, A2, A3, B, E)
 gate AC-2   HELD   (C)
 
-8 of 11 tampers are detected by splitstick verify from files alone.
-3 are not, and each names the milestone that closes it: C2, D, F2.
+9 of 12 tampers are detected by splitstick verify from files alone.
+3 are not, and each names the milestone that closes it: C2, D, F3.
 None of those needs new cryptography. Each needs a second party, which is the
 shape of the problem.
 ```

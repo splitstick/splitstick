@@ -235,24 +235,55 @@ const attacks = [
     },
   },
   {
-    id: 'F2', gate: 'AC-5', expect: 'undetected', closes: 'M3a (countersignature) + DES-19 counterparty reconciliation',
-    name: 'erase a record, renumber, repair and re-sign',
-    note: 'The action never appears at all, and nothing internal remembers it did. Reconciliation from the counterparty side is the answer here, not cryptography.',
+    id: 'F2', gate: 'AC-5', expect: 'detected',
+    name: 'erase a record and renumber record_seq only',
+    note: 'There are two counters to repair, not one. Renumbering record_seq leaves a hole in source_seq, and observation gaps are read from consecutive persisted source_seq values independently of record_seq (DES-04 rule 2).',
     async apply(ctx) {
-      const ls = lines(ctx.root);
-      ls.splice(1, 1);
-      ls.forEach((l, i) => { l.record.record_seq = i + 1; });
-      // Renumbering orphans the old salts, so re-salt into a fresh file.
-      const saltFile = path.join(ctx.root, 'salts', `${COLLECTOR}.jsonl`);
-      const salts = fs.readFileSync(saltFile, 'utf8').trim().split('\n').map((l) => JSON.parse(l));
-      fs.writeFileSync(saltFile, ls.map((l, i) =>
-        JSON.stringify({ record_seq: l.record.record_seq, salt: salts[i].salt })).join('\n') + '\n');
-      write(ctx.root, ls);
+      erase(ctx.root, { renumberSource: false });
+      repairChain(ctx.root);
+      await reSign(ctx.root, ctx.signer);
+    },
+  },
+  {
+    id: 'F3', gate: 'AC-5', expect: 'undetected', closes: 'M3a (countersignature) + DES-19 counterparty reconciliation',
+    name: 'erase a record, renumber BOTH counters, repair and re-sign',
+    note: 'The thorough version of F2. The action never appears at all and nothing internal remembers it did. Reconciliation from the counterparty side is the answer here, not cryptography.',
+    async apply(ctx) {
+      erase(ctx.root, { renumberSource: true });
       repairChain(ctx.root);
       await reSign(ctx.root, ctx.signer);
     },
   },
 ];
+
+/**
+ * Remove the second record and renumber what is left.
+ *
+ * Renumbering record_seq orphans the salts, which are keyed by it, so they are
+ * rewritten in order. With renumberSource the observation counter is closed up
+ * too, which is what an interested party who had read DES-04 would do.
+ * @param {string} root
+ * @param {{ renumberSource: boolean }} opts
+ */
+function erase(root, opts) {
+  const ls = lines(root);
+  const saltFile = path.join(root, 'salts', `${COLLECTOR}.jsonl`);
+  const salts = fs.readFileSync(saltFile, 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  const bySeq = new Map(salts.map((e) => [e.record_seq, e.salt]));
+  const kept = ls.filter((_, i) => i !== 1);
+  const keptSalts = kept.map((l) => bySeq.get(l.record.record_seq));
+
+  let source = 0;
+  kept.forEach((l, i) => {
+    l.record.record_seq = i + 1;
+    if (opts.renumberSource && typeof l.record.source_seq === 'number') {
+      l.record.source_seq = ++source;
+    }
+  });
+  fs.writeFileSync(saltFile, kept.map((l, i) =>
+    JSON.stringify({ record_seq: l.record.record_seq, salt: keptSalts[i] })).join('\n') + '\n');
+  write(root, kept);
+}
 
 const baseline = await build();
 const baseReport = await verifyStore(baseline.root, { collector: COLLECTOR, vkey: baseline.vkey });

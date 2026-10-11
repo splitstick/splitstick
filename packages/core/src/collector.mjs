@@ -136,14 +136,25 @@ export class Collector {
   }
 
   /**
+   * Validate, chain and write. The sequence advances only once the record is on
+   * disk.
+   *
+   * record_seq must equal tree_size (DES-04 rule 2), so a record that is
+   * rejected or fails to write must not consume one. Incrementing in the
+   * envelope left a permanent hole after any rejection, and a hole reads as a
+   * removed event — the verifier would report tampering forever because of one
+   * malformed observation. source_seq is deliberately not treated this way: an
+   * observed attempt spends its number whether or not it is written, and the
+   * hole is the report.
    * @param {Record<string, unknown>} record
    * @returns {import('./chain.mjs').ChainEntry}
    */
   #write(record) {
     const salt = newSalt();
-    const e = chainEntry(record, salt, this.head);
+    const e = chainEntry(record, salt, this.head);   // validates; throws before any mutation
     this.store.append(e);
     this.head = e.head;
+    this.recordSeq += 1;
     return e;
   }
 
@@ -152,7 +163,7 @@ export class Collector {
     return {
       v: SCHEMA_VERSION,
       collector: this.collector,
-      record_seq: ++this.recordSeq,
+      record_seq: this.recordSeq + 1,
       ts: this.now().toISOString().replace(/\.(\d{3})\d*Z$/, '.$1Z'),
       ...extra,
     };

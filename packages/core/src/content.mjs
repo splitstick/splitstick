@@ -81,10 +81,39 @@ const KEY_BYTES = 32;      // AES-256
 const IV_BYTES = 12;       // GCM nominal
 const TAG_BYTES = 16;
 
+/**
+ * A second writer tried to open a store that already has one.
+ *
+ * DES-13 requires one writer per collector. With a file per content object a
+ * violation was harmless; with one shared blob both writers cache the append
+ * offset, start in the same place, and the second overwrites the first — whose
+ * payload becomes unrecoverable. So the invariant is now enforced rather than
+ * assumed, because the failure it prevents is silent data loss.
+ */
+/**
+ * Lock paths held by a ContentStore in THIS process.
+ *
+ * The file lock alone cannot separate "another instance in this program" from
+ * "my own lock, left behind by a crash with the same pid" — and the first of
+ * those is by far the likelier mistake, since it is what happens when two
+ * Stores are constructed on one root. The registry answers it exactly.
+ * @type {Set<string>}
+ */
+const HELD_IN_PROCESS = new Set();
+
+export class StoreBusy extends Error {
+  /** @param {string} path @param {number} pid */
+  constructor(path, pid) {
+    super(`another writer holds ${path} (pid ${pid}); DES-13 allows one writer per collector`);
+    this.name = 'StoreBusy';
+    this.pid = pid;
+  }
+}
+
 export class ContentMissing extends Error {
-  /** @param {string} cid */
-  constructor(cid) {
-    super(`content ${cid} is not in the store: shredded, retained elsewhere, or lost`);
+  /** @param {string} cid @param {{ cause?: unknown }} [opts] */
+  constructor(cid, opts = {}) {
+    super(`content ${cid} is not retrievable: shredded, retained elsewhere, lost, or altered`, opts);
     this.name = 'ContentMissing';
     this.cid = cid;
   }
@@ -175,6 +204,7 @@ export class ContentStore {
   #blobFd = null;
   /** Append offset — the blob's length. */
   #end = 0;
+  #holdsLock = false;
 
   /** @param {string} root the store root from splitstick.yaml */
   constructor(root) {
@@ -186,7 +216,65 @@ export class ContentStore {
     this.refsPath = join(this.contentDir, 'refs.idx');
     this.keysPath = join(this.keysDir, 'content.jsonl');
     this.blobPath = join(this.contentDir, 'content.blob');
+    this.lockPath = join(this.contentDir, '.writer.lock');
     this.#end = existsSync(this.blobPath) ? statSync(this.blobPath).size : 0;
+  }
+
+  /**
+   * Claim the single write lock, once, on the first write. Reads never take it:
+   * a verifier opening a live store must not be refused, and cannot corrupt it.
+   *
+   * The lock is advisory and process-scoped — it is exclusive file creation
+   * plus a pid, which is enough for the case that actually happens (two stores
+   * in one program, or a second collector started by mistake) and makes no
+   * claim about a shared filesystem. A lock naming a process that is gone is
+   * taken over rather than left to wedge the store forever, since otherwise a
+   * crash would need manual recovery to resume collecting.
+   */
+  #claim() {
+    if (this.#holdsLock) return;
+    if (HELD_IN_PROCESS.has(this.lockPath)) throw new StoreBusy(this.lockPath, process.pid);
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const fd = openSync(this.lockPath, 'wx', 0o600);
+        writeSync(fd, JSON.stringify({ pid: process.pid, at: new Date().toISOString() }));
+        closeSync(fd);
+        this.#holdsLock = true;
+        HELD_IN_PROCESS.add(this.lockPath);
+        return;
+      } catch (err) {
+        if (/** @type {{code?: string}} */ (err).code !== 'EEXIST') throw err;
+        const pid = this.#lockHolder();
+        // A live holder elsewhere is a real conflict. Our own pid with nothing
+        // in the registry is a lock this process left behind before it was
+        // restarted, which is stale and ours to take.
+        if (pid !== null && pid !== process.pid && this.#alive(pid)) {
+          throw new StoreBusy(this.lockPath, pid);
+        }
+        rmSync(this.lockPath, { force: true });
+      }
+    }
+    throw new StoreBusy(this.lockPath, -1);
+  }
+
+  /** @returns {number|null} */
+  #lockHolder() {
+    try {
+      const pid = JSON.parse(readFileSync(this.lockPath, 'utf8')).pid;
+      return Number.isInteger(pid) ? pid : null;
+    } catch {
+      return null;   // unreadable or truncated: treat as stale
+    }
+  }
+
+  /** @param {number} pid */
+  #alive(pid) {
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch (err) {
+      return /** @type {{code?: string}} */ (err).code === 'EPERM';   // exists, not ours
+    }
   }
 
   /** @param {string} cid */
@@ -211,9 +299,22 @@ export class ContentStore {
   /** Whether the key map has been read into memory. For NFR-01's memory test. */
   get keysMaterialisedForTest() { return this.#keys !== null; }
 
-  /** @returns {number} the blob descriptor, opened for read and append */
+  /**
+   * The blob descriptor, opened for reading and positional writing.
+   *
+   * NOT append mode. Node documents that on Linux a positional write is ignored
+   * when the file is opened with O_APPEND — the kernel appends regardless — so
+   * 'a+' would have turned erasure's zero-fill into "append zeros and leave the
+   * ciphertext in place", silently weakening FR-36 on the platform CI runs on.
+   * macOS honours the position, which is exactly why the suite was green
+   * locally and would have failed on review.
+   * @returns {number}
+   */
   #blobHandle() {
-    if (this.#blobFd === null) this.#blobFd = openSync(this.blobPath, 'a+', 0o600);
+    if (this.#blobFd === null) {
+      if (!existsSync(this.blobPath)) closeSync(openSync(this.blobPath, 'w', 0o600));
+      this.#blobFd = openSync(this.blobPath, 'r+');
+    }
     return this.#blobFd;
   }
 
@@ -283,6 +384,7 @@ export class ContentStore {
    */
   putGroup(payloads) {
     if (payloads.length === 0) return [];
+    this.#claim();
     /** @type {Commitment[]} */
     const out = [];
     /** @type {[string, Entry][]} */
@@ -337,7 +439,15 @@ export class ContentStore {
     const body = blob.subarray(CONTENT_SALT_BYTES);
     const d = createDecipheriv('aes-256-gcm', key, body.subarray(0, IV_BYTES));
     d.setAuthTag(body.subarray(body.length - TAG_BYTES));
-    return Buffer.concat([d.update(body.subarray(IV_BYTES, body.length - TAG_BYTES)), d.final()]);
+    try {
+      return Buffer.concat([d.update(body.subarray(IV_BYTES, body.length - TAG_BYTES)), d.final()]);
+    } catch (err) {
+      // The extent is there but does not authenticate: zeroed by an erasure the
+      // key journal no longer records, overwritten, or truncated. A caller gets
+      // a typed error naming the cid rather than a bare cipher failure; the
+      // verifier distinguishes this from an absence through reproduces().
+      throw new ContentMissing(cid, { cause: err });
+    }
   }
 
   /**
@@ -377,6 +487,7 @@ export class ContentStore {
    * @param {Iterable<string>} cids
    */
   shredAll(cids) {
+    this.#claim();
     const keys = this.#readKeys();
     const gone = new Set([...cids].filter(cid => keys.has(cid)));
     if (gone.size === 0) return;
@@ -431,12 +542,17 @@ export class ContentStore {
     writeSync(this.#refsFd, lines.join('\n') + '\n');
   }
 
-  /** Release the journal descriptors. Idempotent. */
+  /** Release the journal descriptors and the write lock. Idempotent. */
   close() {
     for (const fd of [this.#refsFd, this.#keysFd, this.#blobFd]) if (fd !== null) closeSync(fd);
     this.#refsFd = null;
     this.#keysFd = null;
     this.#blobFd = null;
+    if (this.#holdsLock) {
+      if (this.#lockHolder() === process.pid) rmSync(this.lockPath, { force: true });
+      HELD_IN_PROCESS.delete(this.lockPath);
+      this.#holdsLock = false;
+    }
   }
 
   /** @returns {{ ref: string, cid: string }[]} */

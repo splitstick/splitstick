@@ -8,6 +8,7 @@ import { Store } from '../src/store.mjs';
 import { parseConfig } from '../src/config.mjs';
 import { generateDevSigner } from '../src/signer-file.mjs';
 import { recomputeChain, genesis } from '../src/chain.mjs';
+import { RECORD_KINDS } from '../src/record.mjs';
 import { treeRoot } from '../src/merkle.mjs';
 import { parseNote, parseCheckpointText } from '../src/note.mjs';
 import { verifyNoteSignature } from '../src/signer.mjs';
@@ -203,6 +204,9 @@ test('a reopened store continues the chain rather than restarting it', async () 
   collector.action(tx({ correlation: 'c-1' }));
   collector.action(tx({ correlation: 'c-2' }));
   const head = collector.head.toString('hex');
+  // Hand over properly. A second writer on a live store is refused now, which
+  // is the point: this used to be the shape that silently overwrote extents.
+  store.close();
 
   const reopened = new Collector({
     store: new Store(root, 'host-1'), config: parseConfig(CFG, root), signer,
@@ -303,4 +307,75 @@ test('a result commitment carries ok, and it tracks the outcome', async () => {
   assert.equal(rec(collector.action(tx({ correlation: 'c-1' }))).result.ok, true);
   assert.equal(rec(collector.action(tx({ correlation: 'c-2', outcome: 'error' }))).result.ok, false);
   assert.equal(rec(collector.action(tx({ correlation: 'c-3', outcome: 'timeout' }))).result.ok, false);
+});
+
+/**
+ * Found in review, and the worst failure mode this product has.
+ *
+ * #envelope incremented record_seq before the record was validated, so a single
+ * rejected record left a permanent hole: record_seq started at 2, and
+ * recomputeChain reported SEQ_BROKEN for the rest of that collector's life.
+ * Combined with the adapter's fail-open catch, any unexpected shape from
+ * upstream turned the whole log into "tampering detected" forever — a verifier
+ * crying wolf, which is exactly what DES-12's three verdicts exist to avoid.
+ *
+ * record_seq must equal tree_size (DES-04 rule 2), so it may only advance when
+ * a record is actually written. source_seq is different and is SUPPOSED to be
+ * spent: an attempt was observed, and the hole is the report.
+ */
+test('a rejected record leaves record_seq intact and the chain verifiable', async () => {
+  const { collector, store } = await fresh();
+  assert.throws(() => collector.action(tx({ correlation: 'c-0', outcome: 'maybe' })), /outcome/);
+  collector.action(tx({ correlation: 'c-1' }));
+  collector.action(tx({ correlation: 'c-2' }));
+
+  const recs = store.readChain().map(e => rec(e));
+  assert.deepEqual(recs.map(r => r.record_seq), [1, 2], 'record_seq must equal tree_size');
+  assert.equal(collector.tree_size, 2);
+
+  const r = recomputeChain(store.readChain());
+  const broken = r.findings.filter(f => /record_seq jumped/.test(f.detail));
+  assert.deepEqual(broken, [], 'a rejected record must not look like a removed one');
+
+  // The observed-but-unwritten attempt IS reported, which is correct: it says
+  // one attempt was seen and never recorded.
+  assert.deepEqual(recs.map(r => r.source_seq), [2, 3]);
+  const gap = r.findings.find(f => /source_seq/.test(f.detail));
+  assert.ok(gap, 'the spent source_seq is still reported');
+  assert.match(gap.detail, /1 observed attempt\(s\) were never written/);
+});
+
+test('a rejected record leaves no orphan in the chain or the head', async () => {
+  const { collector, store } = await fresh();
+  const first = collector.action(tx({ correlation: 'c-1' }));
+  assert.throws(() => collector.action(tx({ correlation: 'c-2', outcome: 'nope' })));
+  assert.equal(collector.head.toString('hex'), first.head.toString('hex'),
+    'the head must not move for a record that was never written');
+  const next = collector.action(tx({ correlation: 'c-3' }));
+  assert.equal(next.prev.toString('hex'), first.head.toString('hex'));
+  assert.equal(recomputeChain(store.readChain()).findings.filter(f => f.code === 'CHAIN_BROKEN').length, 0);
+});
+
+// The emitters must satisfy the schema they write to. policy() and gapUnknown()
+// had no test and the schema had no requirements, so neither side was checked.
+test('every record kind the collector emits validates', async () => {
+  const { collector, store } = await fresh();
+  const d = (b) => 'sha256:' + b.repeat(32);
+  collector.action(tx({ correlation: 'c-1' }));
+  collector.action(tx({ correlation: 'c-2', kind: 'approval',
+    approval: { decision: 'deny', reviewer: Buffer.from('ops@example.com') }, outcome: 'denied' }));
+  collector.heartbeat();
+  collector.heartbeat({ policy: d('cc') });
+  collector.padding();
+  collector.gap({ from_source_seq: 3, to_source_seq: 7 });
+  collector.gapUnknown({ last_checkpoint_source_seq: 2 });
+  collector.policy({ previous: d('aa'), next: d('bb') });
+
+  const kinds = store.readChain().map(e => rec(e).kind);
+  assert.deepEqual(kinds,
+    ['tool_call', 'approval', 'heartbeat', 'heartbeat', 'padding', 'gap', 'gap_unknown', 'policy']);
+  assert.deepEqual([...new Set(kinds)].sort(), [...RECORD_KINDS].sort(),
+    'and between them they cover the whole enum, so none is unexercised');
+  const r = recomputeChain(store.readChain());
+  assert.equal(r.ok, true, JSON.stringify(r.findings));
 });

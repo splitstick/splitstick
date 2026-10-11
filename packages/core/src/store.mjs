@@ -98,21 +98,70 @@ export class Store {
    * Read the chain back, joining each entry to its salt. A record whose salt
    * has been shredded comes back with `salt: null`, which recomputeChain
    * reports as inconclusive rather than as a failure.
+   *
+   * An unparseable line is NOT thrown. A crash during an append leaves a
+   * partial line, which is the ordinary consequence of a crash rather than
+   * evidence of anything, and a verifier that exits with a SyntaxError has
+   * failed to do its job. `readChainDetailed` returns the damage alongside the
+   * entries so the caller can decide; a torn LAST line and a corrupted middle
+   * one mean very different things.
    * @returns {import('./chain.mjs').ChainEntry[]}
    */
-  readChain() {
-    if (!existsSync(this.chainPath)) return [];
+  readChain() { return this.readChainDetailed().entries; }
+
+  /**
+   * @returns {{
+   *   entries: import('./chain.mjs').ChainEntry[],
+   *   torn: boolean,
+   *   malformed: { line: number, reason: string }[],
+   * }}
+   */
+  readChainDetailed() {
+    if (!existsSync(this.chainPath)) return { entries: [], torn: false, malformed: [] };
     const salts = this.#readSalts();
-    return readFileSync(this.chainPath, 'utf8').split('\n').filter(Boolean).map(line => {
-      const o = JSON.parse(line);
-      return {
-        record: o.record,
-        salt: salts.get(o.record.record_seq) ?? null,
-        leaf: Buffer.from(o.leaf, 'hex'),
-        prev: Buffer.from(o.prev, 'hex'),
-        head: Buffer.from(o.head, 'hex'),
-      };
+    const raw = readFileSync(this.chainPath, 'utf8');
+    const lines = raw.split('\n');
+    // A trailing newline means the final record was fully written.
+    const complete = lines.length > 0 && lines[lines.length - 1] === '';
+    const body = lines.filter(Boolean);
+
+    /** @type {import('./chain.mjs').ChainEntry[]} */
+    const entries = [];
+    /** @type {{ line: number, reason: string }[]} */
+    const malformed = [];
+    let torn = false;
+
+    body.forEach((line, i) => {
+      const last = i === body.length - 1;
+      try {
+        const o = JSON.parse(line);
+        if (!o || typeof o !== 'object' || !o.record || !o.leaf || !o.prev || !o.head) {
+          throw new SyntaxError('a chain line carries a record, a leaf, a prev and a head');
+        }
+        entries.push({
+          record: o.record,
+          salt: salts.get(o.record.record_seq) ?? null,
+          leaf: Buffer.from(o.leaf, 'hex'),
+          prev: Buffer.from(o.prev, 'hex'),
+          head: Buffer.from(o.head, 'hex'),
+        });
+      } catch (err) {
+        const reason = err instanceof Error ? err.message : String(err);
+        // Only the last line, with no trailing newline, is explicable as a
+        // crash mid-append. Anywhere else, something edited the file.
+        if (last && !complete) torn = true;
+        else malformed.push({ line: i + 1, reason });
+      }
     });
+
+    return { entries, torn, malformed };
+  }
+
+  /** @returns {string[]} every collector with a chain in this store */
+  collectors() {
+    const dir = join(this.root, 'chain');
+    if (!existsSync(dir)) return [];
+    return readdirSync(dir).filter(f => f.endsWith('.jsonl')).map(f => f.replace(/\.jsonl$/, '')).sort();
   }
 
   /** @returns {{ head: Buffer, record_seq: number, source_seq: number }} */

@@ -104,3 +104,63 @@ test('FR-52: the nested args commitment is inside the digest', () => {
   b.args = { ...b.args, cid: 'sha256:0000' };
   assert.notEqual(canonicalize(a), canonicalize(b));
 });
+
+// Found in review: `policy` had no required fields at all, so SEC-12's whole
+// mechanism — a chained record carrying the digest of the previous effective
+// policy and of the new one — was optional. A policy record with neither is
+// not evidence of a change; it is a note saying something happened.
+test('SEC-12: a policy record must carry both policy digests', () => {
+  const base = {
+    v: 1, collector: 'host-1', run: null, record_seq: 1, source_seq: null,
+    ts: '2026-10-11T10:00:00.000Z', kind: 'policy',
+  };
+  assert.throws(() => validateRecord(base), RecordError, 'neither digest');
+  assert.throws(() => validateRecord({ ...base, previous_policy: 'sha256:aa' }), RecordError, 'no next');
+  assert.throws(() => validateRecord({ ...base, next_policy: 'sha256:bb' }), RecordError, 'no previous');
+  assert.throws(() => validateRecord({ ...base, previous_policy: 'aa', next_policy: 'sha256:bb' }),
+    RecordError, 'not a digest');
+  assert.doesNotThrow(() => validateRecord({
+    ...base, previous_policy: 'sha256:' + 'aa'.repeat(32), next_policy: 'sha256:' + 'bb'.repeat(32),
+  }));
+});
+
+// Found in review: gap_unknown accepted from_ts "yesterday" and to_ts 42. The
+// interval is the entire content of the record — it is what the operator is
+// declaring they cannot characterise — so an unparseable one makes the record
+// meaningless rather than merely untidy.
+test('FR-60: a gap_unknown interval must be real timestamps in order', () => {
+  const base = {
+    v: 1, collector: 'host-1', run: null, record_seq: 1, source_seq: null,
+    ts: '2026-10-11T10:00:00.000Z', kind: 'gap_unknown', last_checkpoint_source_seq: 4,
+  };
+  assert.throws(() => validateRecord({ ...base, from_ts: 'yesterday', to_ts: 42 }), RecordError);
+  assert.throws(() => validateRecord({ ...base, from_ts: '2026-10-11T10:00:00.000Z', to_ts: 42 }), RecordError);
+  assert.throws(() => validateRecord({
+    ...base, from_ts: '2026-10-11T11:00:00.000Z', to_ts: '2026-10-11T10:00:00.000Z',
+  }), RecordError, 'an interval that ends before it starts');
+  assert.doesNotThrow(() => validateRecord({
+    ...base, from_ts: '2026-10-11T10:00:00.000Z', to_ts: '2026-10-11T10:05:00.000Z',
+  }));
+});
+
+test('a gap span must be ordered too', () => {
+  const base = {
+    v: 1, collector: 'host-1', run: null, record_seq: 1, source_seq: null,
+    ts: '2026-10-11T10:00:00.000Z', kind: 'gap',
+  };
+  assert.throws(() => validateRecord({ ...base, from_source_seq: 9, to_source_seq: 5 }), RecordError);
+  assert.doesNotThrow(() => validateRecord({ ...base, from_source_seq: 5, to_source_seq: 9 }));
+});
+
+// Found in review: `run` was neither required nor type-checked, although DES-13
+// lists it among the fields retained forever. An action with no run cannot be
+// attributed to anything.
+test('FR-56: run is required and is a string or null, never absent', () => {
+  const r = base();
+  delete r.run;
+  assert.throws(() => validateRecord(r), RecordError, 'run must be present');
+  assert.throws(() => validateRecord({ ...base(), run: 42 }), RecordError);
+  assert.throws(() => validateRecord({ ...base(), run: '' }), RecordError);
+  assert.doesNotThrow(() => validateRecord({ ...base(), run: null }));
+  assert.doesNotThrow(() => validateRecord({ ...base(), run: 'r-1' }));
+});

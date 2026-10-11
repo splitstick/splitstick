@@ -29,7 +29,7 @@ import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { Store } from '@splitstick/core/store';
 import { recomputeChain } from '@splitstick/core/chain';
-import { treeRoot } from '@splitstick/core/merkle';
+import { treeRoot, consistencyProof, verifyConsistency } from '@splitstick/core/merkle';
 import { parseNote, parseCheckpointText, parseVkey, SUITES } from '@splitstick/core/note';
 import { verifyNoteSignature } from '@splitstick/core/signer';
 
@@ -56,7 +56,7 @@ function combine(vs) {
  * @param {string} [opts.collector] the collector instance whose chain to read
  * @param {string} [opts.vkey] the pinned operator identity, as a note vkey
  * @returns {Promise<{
- *   verdict: Verdict, tree_size: number,
+ *   verdict: Verdict, tree_size: number, anchored_tree_size: number,
  *   summary: { passed: number, unanswered: number, failed: number },
  *   checks: { name: string, verdict: Verdict, detail?: string }[],
  *   findings: Finding[],
@@ -66,19 +66,50 @@ function combine(vs) {
  * }>}
  */
 export async function verifyStore(root, opts = {}) {
-  const collector = opts.collector ?? inferCollector(root);
-  const store = new Store(root, collector);
+  const probe = new Store(root, opts.collector ?? 'unknown');
+  const available = probe.collectors();
+  const collector = opts.collector ?? (available[0] ?? 'unknown');
+  const store = opts.collector ? probe : new Store(root, collector);
   /** @type {Finding[]} */
   const findings = [];
+
+  // A store may hold several collectors (FR-56 scopes a chain to an instance).
+  // Picking the first and saying nothing would show a reader one chain while
+  // another sat beside it unexamined.
+  if (!opts.collector && available.length > 1) {
+    findings.push({
+      code: 'MULTIPLE_COLLECTORS', verdict: 'inconclusive',
+      detail: `this store holds ${available.length} collector chains (${available.join(', ')}); `
+        + `only ${collector} was verified. Name one explicitly to verify it.`,
+    });
+  }
   /** @type {{ name: string, verdict: Verdict, detail?: string }[]} */
   const checks = [];
   /** @param {string} name @param {Verdict} verdict @param {string} [detail] */
   const check = (name, verdict, detail) => { checks.push({ name, verdict, ...(detail ? { detail } : {}) }); };
 
-  const entries = store.readChain();
+  const { entries, torn, malformed } = store.readChainDetailed();
+
+  // A crash during an append leaves a partial final line. That is the ordinary
+  // consequence of a crash, so it is reported and the complete records before
+  // it are still verified. Anywhere other than the end, a broken line means the
+  // file was edited.
+  if (torn) {
+    findings.push({
+      code: 'TORN_WRITE', verdict: 'inconclusive',
+      detail: 'the last line of the chain is incomplete, which is what a crash during an append leaves behind; the records before it verify normally',
+    });
+  }
+  for (const m of malformed) {
+    findings.push({
+      code: 'MALFORMED_RECORD', verdict: 'fail', record_seq: undefined,
+      detail: `chain line ${m.line} is not a readable record and is not at the end of the file, so it was altered rather than half-written: ${m.reason}`,
+    });
+  }
+
   if (entries.length === 0) {
     findings.push({ code: 'NO_EVIDENCE', verdict: 'inconclusive', detail: `no chain for collector ${collector} under ${root}` });
-    return report(0, checks, findings, [], collector, opts.vkey);
+    return report(0, 0, checks, findings, [], collector, opts.vkey);
   }
 
   // 1 FORMAT, 2 SEQUENCE, 3 CHAIN, 4 LEAF — recomputeChain runs these in order
@@ -136,6 +167,7 @@ export async function verifyStore(root, opts = {}) {
   const sigVs = [];
   const pinned = opts.vkey ? parseVkey(opts.vkey) : null;
   const leaves = entries.map(e => e.leaf);
+  let anchored = 0;
 
   if (notes.length === 0) {
     treeVs.push('inconclusive');
@@ -188,6 +220,7 @@ export async function verifyStore(root, opts = {}) {
       });
     } else {
       treeVs.push('ok');
+      if (cp.tree_size > anchored) anchored = cp.tree_size;
     }
 
     if (!pinned) {
@@ -220,6 +253,43 @@ export async function verifyStore(root, opts = {}) {
       });
     }
   }
+  // Append-only is CHECKED, not assumed (DES-04 rule 4). Every checkpoint must
+  // be a prefix of the next: a later one committing to fewer records, or to a
+  // history that does not extend the earlier one, is a rollback. merkle.mjs had
+  // implemented and tested consistency proofs that nothing called.
+  const sized = notes
+    .map(n => { try { return { seq: n.seq, cp: parseCheckpointText(parseNote(n.blob).text) }; } catch { return null; } })
+    .filter(x => x !== null)
+    .sort((a, b) => a.seq - b.seq);
+  for (let i = 1; i < sized.length; i++) {
+    const prev = /** @type {{ seq: number, cp: ReturnType<typeof parseCheckpointText> }} */ (sized[i - 1]);
+    const cur = /** @type {{ seq: number, cp: ReturnType<typeof parseCheckpointText> }} */ (sized[i]);
+    if (cur.cp.tree_size < prev.cp.tree_size) {
+      treeVs.push('fail');
+      findings.push({
+        code: 'CONSISTENCY_BROKEN', verdict: 'fail',
+        detail: `checkpoint ${cur.seq} commits to ${cur.cp.tree_size} records after checkpoint ${prev.seq} committed to ${prev.cp.tree_size}: a log cannot shrink`,
+      });
+      continue;
+    }
+    if (cur.cp.tree_size > leaves.length) continue;   // already reported as SIZE_REGRESSED
+    const proof = consistencyProof(leaves.slice(0, cur.cp.tree_size), prev.cp.tree_size);
+    if (!verifyConsistency(prev.cp.tree_size, prev.cp.root, cur.cp.tree_size, cur.cp.root, proof)) {
+      treeVs.push('fail');
+      findings.push({
+        code: 'CONSISTENCY_BROKEN', verdict: 'fail',
+        detail: `checkpoint ${cur.seq} is not an extension of checkpoint ${prev.seq}: both are signed, so they are checkpoints of two different histories`,
+      });
+    }
+  }
+
+  if (anchored > 0 && anchored < leaves.length) {
+    findings.push({
+      code: 'UNANCHORED_TAIL', verdict: 'inconclusive',
+      detail: `${leaves.length - anchored} record(s) above record_seq ${anchored} are committed to by no checkpoint, so nothing fixes where this log ends`,
+    });
+  }
+
   check('TREE', combine(treeVs));
   check('OP-SIG', combine(sigVs));
 
@@ -229,18 +299,19 @@ export async function verifyStore(root, opts = {}) {
   check('COVERAGE', 'inconclusive', 'heartbeat continuity is not yet reconciled (DES-10 ships in M4)');
   check('POLICY', 'inconclusive', 'policy-change reconciliation ships with DES-09 enforcement');
 
-  return report(entries.length, checks, findings, notes, collector, opts.vkey);
+  return report(entries.length, anchored, checks, findings, notes, collector, opts.vkey);
 }
 
 /**
  * @param {number} tree_size
+ * @param {number} anchored the highest tree size a valid checkpoint commits to
  * @param {{ name: string, verdict: Verdict, detail?: string }[]} checks
  * @param {Finding[]} findings
  * @param {{ seq: number, blob: string }[]} notes
  * @param {string} collector
  * @param {string} [vkey]
  */
-function report(tree_size, checks, findings, notes, collector, vkey) {
+function report(tree_size, anchored, checks, findings, notes, collector, vkey) {
   const verdict = combine([...checks.map(c => c.verdict), ...findings.map(f => f.verdict)]);
 
   // DES-12's own shape: a verdict is reported with how many checks could and
@@ -271,7 +342,11 @@ function report(tree_size, checks, findings, notes, collector, vkey) {
   if (notes.length && vkey) {
     can.push(`that the operator identity ${collector} signed the tree size and root it claims`);
   }
-  cannot.push('no witness in this set maintains sequence state, so truncation of the tail is NOT detectable from this evidence alone');
+  // The height is the number a reader needs, and DES-12's own example prints
+  // it. Without it, DES-19's cross-pack comparison has nothing to key on.
+  cannot.push(anchored > 0
+    ? `no witness in this set maintains sequence state, so truncation above record_seq ${anchored} is NOT detectable from this evidence alone`
+    : 'no checkpoint commits to any height here, so truncation anywhere in this log is NOT detectable from this evidence alone');
   cannot.push('no countersignature is present, so nothing here establishes WHEN any record was written — the ts field is self-asserted');
   cannot.push('an action that was never observed leaves no trace here; this evidence speaks to what was recorded');
   if (!vkey) cannot.push('no operator identity was pinned, so the signature on the checkpoint was not checked against anything');
@@ -280,7 +355,10 @@ function report(tree_size, checks, findings, notes, collector, vkey) {
   if (vkey) trusting.push(`the operator identity ${vkey.split('+')[0]} to be the one you meant`);
   trusting.push('the operator for the completeness of what was captured, until a witness is configured');
 
-  return { verdict, summary, tree_size, checks, findings, witnesses, capability: { can, cannot }, trusting };
+  return {
+    verdict, summary, tree_size, anchored_tree_size: anchored,
+    checks, findings, witnesses, capability: { can, cannot }, trusting,
+  };
 }
 
 /** @param {Record<string, unknown>} record @returns {[string, string][]} */
@@ -312,10 +390,3 @@ function readCheckpoints(root) {
     .sort((a, b) => a.seq - b.seq);
 }
 
-/** @param {string} root */
-function inferCollector(root) {
-  const dir = join(root, 'chain');
-  if (!existsSync(dir)) return 'unknown';
-  const f = readdirSync(dir).find(n => n.endsWith('.jsonl'));
-  return f ? f.replace(/\.jsonl$/, '') : 'unknown';
-}

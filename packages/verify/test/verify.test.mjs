@@ -30,7 +30,7 @@ async function evidence(n = 4) {
     collector: 'host-1', origin: ORIGIN, now: () => new Date(t += 1000) });
   for (let i = 0; i < n; i++) c.action(tx({ correlation: `c-${i}` }));
   await c.checkpoint();
-  return { root, store, signer, vkey: formatVkey(ORIGIN, signer.publicKey) };
+  return { root, store, signer, collector: c, vkey: formatVkey(ORIGIN, signer.publicKey) };
 }
 
 const chainFile = root => join(root, 'chain', 'host-1.jsonl');
@@ -315,4 +315,130 @@ test('a checkpoint with no suite line is inconclusive, not assumed current', asy
   assert.equal(r.summary.failed, 0, 'an undeclared suite is not a contradiction');
   assert.ok(r.findings.some(f => f.code === 'SUITE_UNDECLARED'));
   assert.equal(r.verdict, 'inconclusive');
+});
+
+/**
+ * Found in review. With nine records and a newest checkpoint committing to
+ * five, the verifier reported ZERO findings and said nothing about the four
+ * records anchored by nothing. The capability statement said truncation was
+ * undetectable but not from WHERE — and the height is the number a reader
+ * actually needs: DES-12's own FR-57 example prints "truncation above
+ * record_seq 4812 is NOT detectable", and DES-19's cross-pack mechanism has
+ * nothing to key on without it.
+ */
+test('FR-57: the report names the height above which truncation is undetectable', async () => {
+  const { root, store, signer, vkey } = await evidence(4);
+  let t = Date.parse('2026-10-11T11:00:00.000Z');
+  const c2 = new Collector({ store, config: parseConfig(CFG, root), signer,
+    collector: 'host-1', origin: ORIGIN, now: () => new Date(t += 1000) });
+  c2.action(tx({ correlation: 'c-tail-1' }));
+  c2.action(tx({ correlation: 'c-tail-2' }));
+
+  const r = await verifyStore(root, { collector: 'host-1', vkey });
+  assert.equal(r.summary.failed, 0);
+  assert.equal(r.tree_size, 6);
+  assert.equal(r.anchored_tree_size, 4, 'four records are committed to by a checkpoint');
+  assert.ok(r.findings.some(f => f.code === 'UNANCHORED_TAIL'));
+  assert.ok(r.capability.cannot.some(s => /above record_seq 4/.test(s)),
+    `the height must appear in the capability block: ${JSON.stringify(r.capability.cannot)}`);
+});
+
+test('a fully anchored log reports no unanchored tail', async () => {
+  const { root, vkey } = await evidence(4);
+  const r = await verifyStore(root, { collector: 'host-1', vkey });
+  assert.equal(r.anchored_tree_size, 4);
+  assert.ok(!r.findings.some(f => f.code === 'UNANCHORED_TAIL'));
+  assert.ok(r.capability.cannot.some(s => /above record_seq 4/.test(s)),
+    'and the height is still stated, because the tail above it is still the gap');
+});
+
+/**
+ * Found in review: merkle.mjs implemented and tested consistency proofs and the
+ * verifier never called them, so a later checkpoint that did NOT extend an
+ * earlier one went unnoticed. Dead code and a missing check at once.
+ */
+test('a later checkpoint that does not extend an earlier one is CONSISTENCY_BROKEN', async () => {
+  const { root, store, signer, vkey } = await evidence(3);
+  const { checkpointText, encodeNote } = await import('@splitstick/core/note');
+  const { signNote } = await import('@splitstick/core/signer');
+  const { treeRoot } = await import('@splitstick/core/merkle');
+
+  // A second checkpoint over a DIFFERENT history of the same size: the first
+  // record's leaf replaced. Both are correctly signed; they cannot both be
+  // checkpoints of one append-only log.
+  const leaves = store.readChain().map(e => e.leaf);
+  const forged = [Buffer.alloc(32, 9), ...leaves.slice(1)];
+  const text = checkpointText({ origin: ORIGIN, tree_size: forged.length, root: treeRoot(forged), suite: 'SS1' });
+  writeFileSync(join(root, 'checkpoints', '2.note'), encodeNote(text, [await signNote(text, signer)]));
+
+  const r = await verifyStore(root, { collector: 'host-1', vkey });
+  assert.equal(r.verdict, 'fail');
+  assert.ok(r.findings.some(f => f.code === 'TREE_MISMATCH' || f.code === 'CONSISTENCY_BROKEN'),
+    JSON.stringify(r.findings.map(f => f.code)));
+});
+
+test('checkpoints must not go backwards in tree_size', async () => {
+  const { root, store, signer, vkey } = await evidence(4);
+  const { checkpointText, encodeNote } = await import('@splitstick/core/note');
+  const { signNote } = await import('@splitstick/core/signer');
+  const { treeRoot } = await import('@splitstick/core/merkle');
+  const leaves = store.readChain().map(e => e.leaf);
+  // Checkpoint 2 commits to fewer records than checkpoint 1 — a rollback.
+  const text = checkpointText({ origin: ORIGIN, tree_size: 2, root: treeRoot(leaves.slice(0, 2)), suite: 'SS1' });
+  writeFileSync(join(root, 'checkpoints', '2.note'), encodeNote(text, [await signNote(text, signer)]));
+
+  const r = await verifyStore(root, { collector: 'host-1', vkey });
+  assert.equal(r.verdict, 'fail');
+  assert.ok(r.findings.some(f => f.code === 'CONSISTENCY_BROKEN'), JSON.stringify(r.findings.map(f => f.code)));
+});
+
+/**
+ * Found in review: a crash during an append leaves a partial JSON line, and
+ * readChain threw a raw SyntaxError out of the verifier. A torn write is the
+ * ordinary consequence of a crash, so it has to be a verdict, not a stack
+ * trace — and it must not be reported as a tamper either.
+ */
+test('a torn final line is reported, not thrown', async () => {
+  const { root, vkey } = await evidence(3);
+  const path = join(root, 'chain', 'host-1.jsonl');
+  writeFileSync(path, readFileSync(path, 'utf8') + '{"record":{"v":1},"lea');
+
+  const r = await verifyStore(root, { collector: 'host-1', vkey });
+  assert.equal(r.verdict, 'inconclusive', 'a half-written line is not a contradiction');
+  assert.equal(r.summary.failed, 0);
+  const f = r.findings.find(x => x.code === 'TORN_WRITE');
+  assert.ok(f, JSON.stringify(r.findings.map(x => x.code)));
+  assert.match(f.detail, /last line/i);
+  assert.equal(r.tree_size, 3, 'and the records before it still verify');
+});
+
+test('a corrupted line in the MIDDLE is a failure, not a torn write', async () => {
+  const { root, vkey } = await evidence(3);
+  const path = join(root, 'chain', 'host-1.jsonl');
+  const lines = readFileSync(path, 'utf8').trim().split('\n');
+  lines[1] = '{"record":{"v":1},"lea';
+  writeFileSync(path, lines.join('\n') + '\n');
+
+  const r = await verifyStore(root, { collector: 'host-1', vkey });
+  assert.equal(r.verdict, 'fail', 'only the LAST line can be explained by a crash');
+  assert.ok(r.findings.some(f => f.code === 'FORMAT_UNSUPPORTED' || f.code === 'MALFORMED_RECORD'));
+});
+
+// Found in review: with two collectors in one store and no --collector, the
+// verifier silently picked the first chain and never mentioned the other.
+test('a store holding several collectors says so instead of picking one quietly', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'splitstick-verify-'));
+  for (const id of ['host-a', 'host-b']) {
+    const store = new Store(root, id);
+    const c = new Collector({ store, config: parseConfig(CFG, root),
+      signer: await generateDevSigner(`o/${id}`), collector: id, origin: `o/${id}` });
+    c.action(tx({ correlation: 'c-1' }));
+    store.close();
+  }
+  const r = await verifyStore(root, {});
+  assert.ok(r.findings.some(f => f.code === 'MULTIPLE_COLLECTORS'), JSON.stringify(r.findings.map(f => f.code)));
+  assert.equal(r.verdict, 'inconclusive');
+  // Naming one is unambiguous and verifies normally.
+  const one = await verifyStore(root, { collector: 'host-a' });
+  assert.ok(!one.findings.some(f => f.code === 'MULTIPLE_COLLECTORS'));
 });
