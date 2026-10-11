@@ -1,0 +1,194 @@
+{
+  "note": "RFC 8785 JSON Canonicalization Scheme vectors. The first four are from the RFC's own examples; the rest pin the cases a hand-rolled canonicaliser gets wrong. DES-02, FR-52.",
+  "vectors": [
+    {
+      "name": "rfc8785 property ordering",
+      "input": {
+        "b": 1,
+        "a": 2
+      },
+      "canonical": "{\"a\":2,\"b\":1}"
+    },
+    {
+      "name": "rfc8785 nested ordering is recursive",
+      "input": {
+        "z": {
+          "y": 1,
+          "x": 2
+        },
+        "a": 3
+      },
+      "canonical": "{\"a\":3,\"z\":{\"x\":2,\"y\":1}}"
+    },
+    {
+      "name": "array order is semantic and preserved",
+      "input": {
+        "a": [
+          3,
+          1,
+          2
+        ]
+      },
+      "canonical": "{\"a\":[3,1,2]}"
+    },
+    {
+      "name": "no insignificant whitespace",
+      "input": {
+        "a": 1,
+        "b": [
+          1,
+          2
+        ]
+      },
+      "canonical": "{\"a\":1,\"b\":[1,2]}"
+    },
+    {
+      "name": "integer-valued numbers lose the exponent",
+      "input": {
+        "a": 2000000.0
+      },
+      "canonical": "{\"a\":2000000}"
+    },
+    {
+      "name": "trailing zero is not preserved",
+      "input": {
+        "a": 2000000.0
+      },
+      "canonical": "{\"a\":2000000}"
+    },
+    {
+      "name": "negative zero normalises",
+      "input": {
+        "a": 0
+      },
+      "canonical": "{\"a\":0}"
+    },
+    {
+      "name": "large integer stays literal",
+      "input": {
+        "a": 9007199254740991
+      },
+      "canonical": "{\"a\":9007199254740991}"
+    },
+    {
+      "name": "null and booleans",
+      "input": {
+        "t": true,
+        "f": false,
+        "n": null
+      },
+      "canonical": "{\"f\":false,\"n\":null,\"t\":true}"
+    },
+    {
+      "name": "string escaping is minimal",
+      "input": {
+        "a": "q\"b\\c\nd\te"
+      },
+      "canonical": "{\"a\":\"q\\\"b\\\\c\\nd\\te\"}"
+    },
+    {
+      "name": "control characters use short escapes where defined",
+      "input": {
+        "a": "\b\f\r"
+      },
+      "canonical": "{\"a\":\"\\b\\f\\r\"}"
+    },
+    {
+      "name": "other control characters use \\u",
+      "input": {
+        "a": "\u0001"
+      },
+      "canonical": "{\"a\":\"\\u0001\"}"
+    },
+    {
+      "name": "forward slash is not escaped",
+      "input": {
+        "a": "a/b"
+      },
+      "canonical": "{\"a\":\"a/b\"}"
+    },
+    {
+      "name": "non-ascii is literal UTF-8, not escaped",
+      "input": {
+        "a": "\u00e9\u20ac"
+      },
+      "canonical": "{\"a\":\"\u00e9\u20ac\"}"
+    },
+    {
+      "name": "keys sort by UTF-16 code unit, so uppercase precedes lowercase",
+      "input": {
+        "a": 1,
+        "A": 2,
+        "B": 3,
+        "b": 4
+      },
+      "canonical": "{\"A\":2,\"B\":3,\"a\":1,\"b\":4}"
+    },
+    {
+      "name": "empty object and array",
+      "input": {
+        "o": {},
+        "a": []
+      },
+      "canonical": "{\"a\":[],\"o\":{}}"
+    },
+    {
+      "name": "the worked example from the walkthrough",
+      "input": {
+        "approved_by": null,
+        "args": {
+          "amount": 2000000,
+          "currency": "EUR",
+          "to": "ACME-9931"
+        },
+        "run": "r1",
+        "seq": 1,
+        "tool": "transfer_funds"
+      },
+      "canonical": "{\"approved_by\":null,\"args\":{\"amount\":2000000,\"currency\":\"EUR\",\"to\":\"ACME-9931\"},\"run\":\"r1\",\"seq\":1,\"tool\":\"transfer_funds\"}"
+    }
+  ],
+  "rejected": [
+    {
+      "name": "a non-integer float is rejected at canonicalisation and coerced at capture (DES-02 rule 3)",
+      "input": {
+        "a": 0.1
+      }
+    },
+    {
+      "name": "NaN has no JSON representation",
+      "special": "nan"
+    },
+    {
+      "name": "Infinity has no JSON representation",
+      "special": "infinity"
+    },
+    {
+      "name": "negative Infinity has no JSON representation",
+      "special": "-infinity"
+    },
+    {
+      "name": "undefined would be silently dropped by JSON.stringify, which is the FR-52 defect itself",
+      "special": "undefined"
+    },
+    {
+      "name": "a function is not serialisable",
+      "special": "function"
+    },
+    {
+      "name": "a bigint has no JSON form; encode it as a decimal string",
+      "special": "bigint"
+    },
+    {
+      "name": "an unpaired surrogate is not well-formed Unicode and has no canonical encoding; left alone it collides with U+FFFD",
+      "input_json": "{\"note\":\"\\ud800\"}"
+    },
+    {
+      "name": "an integer outside the exactly representable range is rejected for the same reason a float is: 2^53 and 2^53+1 are one value, so two amounts would canonicalise alike",
+      "input": {
+        "a": 9007199254740992
+      }
+    }
+  ],
+  "rejected_encoding": "A rejected case may name a value JSON cannot hold, which is frequently the whole point of the case. Each entry carries exactly one of: `input`, a plain JSON value; `input_json`, a JSON text to parse first, for escapes a JSON value cannot express unambiguously; or `special`, naming a value with no JSON form at all \u2014 one of nan, infinity, -infinity, undefined, function, bigint, symbol. A driver that ignores `special` would report these cases as passing while testing nothing, which is what an earlier version of this file did."
+}

@@ -398,7 +398,9 @@
     "title": "Additive OMA integration",
     "statement": "Integrate with OMA without a fork, patch or upstream pull request.",
     "source": "Capture — not a fork",
-    "verify": "Install against unmodified upstream at the supported version"
+    "verify": "Install against unmodified upstream at the supported version",
+    "status": "done",
+    "evidence": "installed against unmodified @open-multi-agent/core@1.21.1; no patch, no vendored copy"
   },
   {
     "id": "INT-05",
@@ -562,7 +564,7 @@
     "source": "Why — the suite is public and runs in two commands",
     "verify": "Clean-clone run succeeds",
     "status": "done",
-    "evidence": "redteam/ runs from a clean clone in two commands"
+    "evidence": "redteam/README.md plus npm ci && npm test; two tamper suites, one against OMA and one against splitstick verify"
   },
   {
     "id": "DOC-02",

@@ -1,0 +1,27 @@
+{
+  "name": "@splitstick/collect-oma",
+  "version": "0.1.0",
+  "type": "module",
+  "license": "Apache-2.0",
+  "description": "Splitstick collector for @open-multi-agent/core: journal and approval-store backends.",
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "exports": {
+    ".": "./src/index.mjs"
+  },
+  "files": [
+    "src",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@splitstick/core": "0.1.0"
+  },
+  "peerDependencies": {
+    "@open-multi-agent/core": "1.21.x"
+  }
+}

@@ -1,0 +1,108 @@
+# SEC-22, SEC-23, DES-17 — release provenance, signatures and an SBOM.
+#
+# The point of this workflow is a chain a reader can walk without asking us for
+# anything: a published package digest leads to an attestation, the attestation
+# leads to this workflow run and the commit it built from, and the SBOM says
+# what went into it with every version pinned. M4's heartbeat records a build
+# digest; that digest is worth nothing unless it can be traced back here.
+#
+# Only first-party actions are used. A release workflow that pulls a third-party
+# action into the step that signs the artifact has given that action's author a
+# say in what gets signed.
+name: release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Build, attest and attach artifacts without publishing to npm'
+        type: boolean
+        default: true
+
+permissions:
+  contents: write      # attach the SBOM and tarballs to the release
+  id-token: write      # npm provenance and build attestations, via OIDC
+  attestations: write
+
+jobs:
+  release:
+    name: build, attest, publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install from the lockfile
+        run: npm ci
+
+      # Nothing is published that has not passed the gates. A release is the one
+      # moment where skipping them is most tempting and least defensible.
+      - name: Types
+        run: npm run typecheck
+      - name: Unit tests
+        run: npm run test:unit
+      - name: Tamper suite against OMA's own verifier
+        run: npm run generate && npm run redteam
+      - name: Tamper suite against splitstick verify
+        run: npm run redteam:splitstick
+      - name: Requirements traceability
+        run: npm run backlog
+      - name: Specification review gate
+        run: npm run review
+
+      # SEC-23 — an SBOM with pinned dependencies. npm produces CycloneDX
+      # itself, so this adds no dependency to produce the document that lists
+      # our dependencies.
+      - name: Software bill of materials
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          npm sbom --sbom-format cyclonedx --sbom-type library --omit dev > dist/sbom.cyclonedx.json
+          node -e '
+            const s = require("./dist/sbom.cyclonedx.json");
+            const n = (s.components || []).length;
+            if (!s.bomFormat || !s.specVersion) throw new Error("not a CycloneDX document");
+            console.log(`SBOM: ${s.bomFormat} ${s.specVersion}, ${n} component(s)`);
+          '
+
+      - name: Pack every workspace
+        run: |
+          set -euo pipefail
+          npm pack --workspaces --pack-destination dist
+          ls -l dist
+          ( cd dist && sha256sum *.tgz sbom.cyclonedx.json > SHA256SUMS )
+          cat dist/SHA256SUMS
+
+      # SEC-22 — the attestation binds each tarball's digest to this commit and
+      # this workflow. Verify with:
+      #   gh attestation verify <file.tgz> --repo splitstick/splitstick
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v1
+        with:
+          subject-path: 'dist/*.tgz'
+
+      - name: Attest the SBOM
+        uses: actions/attest-build-provenance@v1
+        with:
+          subject-path: 'dist/sbom.cyclonedx.json'
+
+      # npm's own provenance attestation, which is what shows on the package
+      # page. publishConfig.provenance is set in each workspace manifest, so the
+      # flag here is belt and braces rather than the only thing asking for it.
+      - name: Publish to npm with provenance
+        if: github.event_name == 'push' || inputs.dry_run == false
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --workspaces --provenance --access public
+
+      - name: Attach artifacts to the release
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${GITHUB_REF_NAME}" dist/*.tgz dist/sbom.cyclonedx.json dist/SHA256SUMS --clobber

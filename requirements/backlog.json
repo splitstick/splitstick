@@ -9,7 +9,9 @@
       "title": "OMA journal backend",
       "statement": "Provide a RunJournal implementation for @open-multi-agent/core, installable as a dependency and enabled by configuration alone.",
       "source": "Capture — two collectors",
-      "verify": "Integration test: journal written through OMA orchestrator"
+      "verify": "Integration test: journal written through OMA orchestrator",
+      "status": "done",
+      "evidence": "packages/collect-oma/src/journal.mjs (SplitstickRunJournal); packages/collect-oma/test/journal.test.mjs"
     },
     {
       "id": "FR-02",
@@ -18,7 +20,9 @@
       "title": "OMA approval-store backend",
       "statement": "Provide an approval-store implementation for OMA so approval requests and decisions enter the same record.",
       "source": "Capture — two collectors",
-      "verify": "Integration test: suspend/approve/resume cycle recorded"
+      "verify": "Integration test: suspend/approve/resume cycle recorded",
+      "status": "done",
+      "evidence": "packages/collect-oma/src/journal.mjs (SplitstickApprovalStore); suspend/approve/resume test against OMA DurableApprovalLedger"
     },
     {
       "id": "FR-03",
@@ -45,7 +49,9 @@
       "title": "Digest tool identity and arguments",
       "statement": "Record and digest the tool name and its invocation arguments.",
       "source": "Capture — action record",
-      "verify": "Red-team attack A fails closed"
+      "verify": "Red-team attack A fails closed",
+      "status": "done",
+      "evidence": "packages/core/src/collector.mjs; red-team A1 DETECTED (LEAF_MISMATCH)"
     },
     {
       "id": "FR-06",
@@ -54,7 +60,9 @@
       "title": "Digest tool result",
       "statement": "Record and digest the tool result content.",
       "source": "Capture — action record",
-      "verify": "Red-team attack A fails closed"
+      "verify": "Red-team attack A fails closed",
+      "status": "done",
+      "evidence": "packages/core/src/collector.mjs; red-team A3 DETECTED; result-shape tests for string, parts and non-text content"
     },
     {
       "id": "FR-07",
@@ -63,7 +71,9 @@
       "title": "Digest approval decisions",
       "statement": "Record and digest approval decisions, including the deciding identity as supplied.",
       "source": "Capture — action record",
-      "verify": "Unit test: decision tamper detected"
+      "verify": "Unit test: decision tamper detected",
+      "status": "done",
+      "evidence": "packages/core/src/collector.mjs approval path; packages/collect-oma/test/journal.test.mjs approval tests"
     },
     {
       "id": "FR-08",
@@ -72,7 +82,9 @@
       "title": "Predecessor chaining",
       "statement": "Every event carries a cryptographic digest of its predecessor.",
       "source": "Integrity — chained, salted, ratcheted",
-      "verify": "Red-team attacks B, C, F fail closed"
+      "verify": "Red-team attacks B, C, F fail closed",
+      "status": "done",
+      "evidence": "packages/core/src/chain.mjs; packages/core/test/chain.test.mjs; red-team B, C, E, F DETECTED"
     },
     {
       "id": "FR-09",
@@ -81,7 +93,9 @@
       "title": "Per-leaf salting",
       "statement": "Every leaf is salted with a per-leaf random nonce before hashing.",
       "source": "Integrity — salted leaves",
-      "verify": "Unit test: identical content yields distinct digests"
+      "verify": "Unit test: identical content yields distinct digests",
+      "status": "done",
+      "evidence": "packages/core/src/leaf.mjs; packages/core/test/leaf.test.mjs (distinct digests for identical content)"
     },
     {
       "id": "FR-10",
@@ -90,7 +104,9 @@
       "title": "Batch signing with operator key",
       "statement": "Sign each batch root with the operator-supplied key.",
       "source": "Integrity — batches are signed with your key",
-      "verify": "Signature verifies under operator public key"
+      "verify": "Signature verifies under operator public key",
+      "status": "done",
+      "evidence": "packages/core/src/note.mjs + signer.mjs; Collector.checkpoint; note signature verifies under the operator vkey"
     },
     {
       "id": "FR-11",
@@ -261,7 +277,9 @@
       "title": "splitstick verify",
       "statement": "Verify chain integrity, batch signatures and witness countersignatures from files alone.",
       "source": "Proof — offline verification",
-      "verify": "All red-team classes fail closed; baseline passes"
+      "verify": "All red-team classes fail closed; baseline passes",
+      "status": "done",
+      "evidence": "packages/verify/src/verify.mjs + cli.mjs; packages/verify/test/verify.test.mjs; redteam/splitstick.mjs"
     },
     {
       "id": "FR-30",
@@ -315,7 +333,9 @@
       "title": "Payloads are content-addressed and externalised",
       "statement": "No payload enters the chain. Every argument and result is replaced by a salted content digest, cid = H(0x05 || content_salt || plaintext), and the plaintext is stored encrypted in the deletable store. Substituting a payload while preserving its pointer is therefore impossible, and deleting the salt, key and ciphertext leaves an unlinkable commitment.",
       "source": "Erasure — no content is ever in the chain",
-      "verify": "Payload-substitution test: replacing stored content without changing the cid fails verification. Automated scan asserts no payload bytes appear anywhere in the chain"
+      "verify": "Payload-substitution test: replacing stored content without changing the cid fails verification. Automated scan asserts no payload bytes appear anywhere in the chain",
+      "status": "done",
+      "evidence": "packages/core/src/content.mjs (cid over the plaintext); red-team A2 DETECTED (CONTENT_MISMATCH); chain scanned for payload bytes"
     },
     {
       "id": "FR-36",
@@ -369,7 +389,9 @@
       "title": "Configuration file",
       "statement": "Support splitstick.yaml with store, signer, anchor_interval, rollup_interval, heartbeat_interval, on_unavailable, witnesses, quorum and unwitnessed_ceiling keys.",
       "source": "Getting started — splitstick.yaml",
-      "verify": "The documented example config is loaded in test and each key asserted to take effect; heartbeat_interval is present because it sets the resolution of every coverage claim"
+      "verify": "The documented example config is loaded in test and each key asserted to take effect; heartbeat_interval is present because it sets the resolution of every coverage claim",
+      "status": "done",
+      "evidence": "packages/core/src/config.mjs; packages/core/test/config.test.mjs loads design/default-config.yaml and asserts each key"
     },
     {
       "id": "FR-42",

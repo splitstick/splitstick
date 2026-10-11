@@ -9,8 +9,8 @@
 ```
 splitstick/
   chain/<collector>.jsonl  append-only; records, leaves, heads.  NEVER DELETED
-  salts/<collector>.json   record_seq -> salt.  DELETABLE per record            [DES-03]
-  checkpoints/<n>.note     C2SP notes with every signature line                 [DES-07]
+  salts/<collector>.jsonl  record_seq -> salt.  DELETABLE per record            [DES-03]
+  checkpoints/<collector>/<n>.note  C2SP notes, scoped like the chain          [DES-07]
   content/<cid>.bin        every payload, encrypted.  DELETABLE
   content/<cid>.salt       per-content salt.  DELETABLE
   keys/<cid>.key           per-content encryption keys.  DELETABLE
@@ -124,6 +124,31 @@ different stores.
 
 1. `chain/` is append-only and never deleted, and contains **no salts and no content**. It is
    small — a few hundred bytes per action.
+   The salt file is append-only JSONL for the same reason the chain is: a `record_seq -> salt`
+   map rewritten on every append is O(n²) and would breach NFR-01's 1 ms p99 within a few
+   thousand records. Erasure rewrites it, which is rare and bounded; appending must not.
 2. `content/` is operator-controlled, deletable, and may live anywhere, including object storage.
+   It is **one append-only encrypted blob** plus a `cid -> key, offset, length` journal, not a file
+   per payload. Creating a file measured p50 0.19 ms and p99 1.04 ms against NFR-01's 1 ms budget,
+   while a write to an open descriptor measured 0.008 ms — so a file per record cannot meet the
+   budget at p99 no matter how fast the cryptography is. Erasure overwrites the extent with zeros
+   in place, which keeps FR-36's claim at *the bytes are gone* rather than weakening it to *the key
+   is gone*; erasing the last surviving payload removes the blob.
+3. **The salt is written before the chain line.** Two files cannot be written atomically, so the
+   order decides what a partial failure leaves. Chain-first left a committed record whose salt was
+   missing while the collector's own position had not advanced, and the next append then reused the
+   sequence — a verifier reported a disk-full incident as tampering, permanently. Salt-first leaves
+   at worst an orphan salt for a record that was never written, which joins to nothing.
+   An append that fails marks the collector **degraded**: it refuses further writes rather than
+   continuing from a position it cannot trust, until `recover()` re-reads the chain and finds it
+   consistent. The agent keeps running throughout, because the adapter is fail-open (SCOPE-16).
+4. **One writer per collector, enforced.** With a file per payload two writers could not collide. With
+   one blob they both cache the append offset and the second silently overwrites the first, so the
+   store takes an advisory lock on its first write and a second writer is refused. Readers take no
+   lock and are never refused: a verifier must be able to open a live store, and cannot damage it.
+   The lock is **per collector**, not per root — content, keys and the reference index are all
+   scoped to the collector, like the chain and the salts — so two collectors may be active in one
+   store root simultaneously. A root-wide lock was safe but made that impossible, which contradicted
+   the multi-collector reads the verifier already supports.
 3. PRIV-02 is enforced by test: a scan of `chain/` for any string from the fixture's content must
    find nothing.

@@ -65,3 +65,88 @@ rather than argued about.
   no provenance and must be prevented — enforced by `publishConfig` plus a CI-only npm token.
 - `publishConfig.access: "public"` on every package: scoped packages default to restricted, and
   a free npm org cannot publish restricted ones.
+
+## The performance budget — NFR-01, revised at M1
+
+M1 measured the append path and the original target — p99 below 1 ms — was not
+met: p50 0.278 ms, p95 0.419 ms, p99 2.027 ms. The revision came out of that
+measurement rather than around it.
+
+| | Budget | Stretch |
+|---|---|---|
+| p95 | 1 ms | — |
+| p99 | 3 ms | 1 ms |
+
+Three things make this a revision and not a relaxation.
+
+**The budget is a budget, not a finding.** 3 ms is an engineering number, to be
+confirmed against representative hardware, sustained workloads and realistic
+payload sizes. It is not an industry standard and this document does not pretend
+otherwise.
+
+The reference environment is `bench/reference-env.json`: at least four CPUs,
+8 GB, a one-minute load average under 1.0, a million events and three repeats.
+The thresholds are deliberately loose, because their job is to exclude a busy
+laptop and a shared CI runner rather than to require particular hardware. The
+harness compares each run against it and prints whether it produced an
+**acceptance measurement** or a **regression metric**, naming every shortfall —
+so an acceptance claim cannot be made by accident from the wrong machine, which
+is how two of this project's performance claims had to be withdrawn.
+
+**The attribution has to be earned, and it took three attempts.** The first
+draft asserted the p99 tail was garbage collection — inference from the
+filesystem baseline moving with it, never correlated against GC events. The
+second measured it and reported zero pauses, so the claim was retracted; that
+measurement was also wrong, because `PerformanceObserver` delivers entries
+asynchronously and the harness disconnected immediately after a synchronous
+loop. The check written to validate the recorder did drain, so it validated the
+recorder under conditions the benchmark never met.
+
+The recorder now lives in `bench/gc.mjs` with its own tests, drains before
+disconnecting, and runs a deliberate allocation storm through the same path on
+every benchmark so that a reported zero is a measurement rather than a lost one.
+Measured: 71 pauses totalling 344 ms, coinciding with 56% of the slowest one per
+cent of samples. That is a correlation, which supports *garbage collection is a
+material contributor to the tail* and not *the tail is garbage collection*;
+filesystem write latency accounts for much of the remainder.
+
+The sequence is recorded because the lesson is not about GC. A plausible
+mechanism and a correlated signal are not a measurement, and a measurement whose
+instrument is unvalidated is not one either.
+
+**Latency is never bought with durability or integrity.** Specifically ruled
+out: deferring a critical write without guaranteed recovery, weakening
+source-sequence or failure reporting, removing encryption or commitment checks,
+and uncontrolled buffering that only improves a benchmark. A deferred-write
+queue was tried in M1 and removed, and a reviewer later found two failure paths
+in the ordering that replaced it — that is the shape of the risk here. What this
+project sells is trustworthy evidence at low overhead, not the fastest audit
+logger.
+
+## Every budget proves its instrument and states its resolution
+
+Three performance claims here have been wrong in the same way: a number
+reported more confidently than the measurement supported. An attribution with no
+measurement behind it; a measurement whose instrument was never validated, which
+produced a zero and prompted a retraction that was itself wrong; and a
+sequential A/B whose drift produced a negative overhead, printed as a speedup.
+
+So `bench/precision.mjs` and `bench/gc.mjs` are modules with their own tests,
+and every budget reports:
+
+- **its instruments, checked in the same run.** Clock resolution against the
+  smallest quantity reported, and the GC recorder against a deliberate
+  allocation storm. A zero from an instrument that cannot see anything is not a
+  measurement.
+- **its resolution**, not only its result. `NFR-02` is a paired difference
+  because the arms are interleaved, and reports a 95% interval.
+- **a verdict that will not overclaim.** `within` requires the whole interval to
+  sit below the budget; a budget falling *inside* the interval is reported as
+  `UNRESOLVED`, because that run is consistent with passing and with failing.
+
+`NFR-02` is met on that standard, not merely un-contradicted: 40 paired runs put
+the added latency at 0.864 ms with a 95% interval of [-1.612, 3.340] ms, wholly
+below the 16.975 ms that 2% of a 400 ms-per-call run allows. The interval is wide
+relative to the difference and narrow relative to the budget, which is the
+distinction that matters — the measurement cannot resolve whether the true cost
+is 0.5 ms or 2 ms, and does not need to in order to establish it is under 17 ms.

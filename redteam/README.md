@@ -51,12 +51,32 @@ npm test
 ```
 
 `npm run generate` writes `out/journal.jsonl` through OMA's real orchestrator and
-asserts the baseline verifies. `npm run redteam` applies the six tampers.
+asserts the baseline verifies. `npm run redteam` applies the six tampers above.
+`npm run redteam:splitstick` then builds a real Splitstick store from that same
+journal and applies eleven tampers to it, asking `splitstick verify` for a
+verdict on each.
 
-Every attack declares the outcome currently observed, and the suite **exits
-non-zero when an observation changes** — so it is a regression canary in both
+Every attack declares the outcome currently observed, and both suites **exit
+non-zero when an observation changes** — so they are regression canaries in both
 directions. If upstream closes a gap, this goes red, which is how you want to
 find out.
+
+The two files have different jobs and neither replaces the other.
+`redteam.mjs` records what OMA's `verifyRun()` does, and must keep recording it
+accurately even as Splitstick closes the same gaps. `splitstick.mjs` is the
+acceptance harness for our own milestones: it declares three attacks as
+UNDETECTED, with the milestone that closes each, because a suite containing only
+its successes is marketing.
+
+```
+gate AC-1   HELD   (A1, A2, A3, B, E)
+gate AC-2   HELD   (C)
+
+9 of 12 tampers are detected by splitstick verify from files alone.
+3 are not, and each names the milestone that closes it: C2, D, F3.
+None of those needs new cryptography. Each needs a second party, which is the
+shape of the problem.
+```
 
 ## Is this a vulnerability?
 

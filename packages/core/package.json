@@ -1,0 +1,25 @@
+{
+  "name": "@splitstick/core",
+  "version": "0.1.0",
+  "type": "module",
+  "license": "Apache-2.0",
+  "description": "Splitstick core: record schema, canonical encoding, leaf, chain, tree, signer and store.",
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "exports": {
+    ".": "./src/index.mjs",
+    "./*": "./src/*.mjs"
+  },
+  "files": [
+    "src",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "yaml": "2.6.1"
+  }
+}

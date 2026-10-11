@@ -54,7 +54,19 @@ them.
 
    **Observation gaps are detected from consecutive persisted `source_seq` values**, independently
    of `record_seq`. If one action record carries `source_seq: 4790` and the next carries `4796`,
-   then 4791–4795 were observed and never written.
+   then 4791–4795 were observed and never written. `source_seq` **starts at 1**, so a first
+   persisted value of 2 is a gap like any other — without that, an attempt dropped before the first
+   record was written would have been the one hole no verifier could see.
+
+   The observation is spent **before anything that can fail**. Externalising the payloads first
+   meant a storage failure threw with the counter untouched, so the next action took the next
+   consecutive number and an offline verifier could not see that a consequential action had been
+   observed and dropped — which is the one thing this counter exists to expose.
+
+   `record_seq`, by contrast, advances **only when a record is actually written**. A rejected
+   record must not consume one: `record_seq == tree_size` is the invariant, and a hole in it reads
+   as a removed event, so a single malformed observation would otherwise make a verifier report
+   tampering for the rest of that collector's life.
 
    Non-action records — heartbeats, policy events, gap declarations and padding — carry
    **`source_seq: null`** rather than repeating the last value. Null states "this record is not an

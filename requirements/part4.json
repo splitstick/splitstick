@@ -42,7 +42,9 @@
     "title": "Build provenance attestation",
     "statement": "Publish a provenance attestation for every released collector artifact, binding the digest to its source commit and build, so the digest in a heartbeat can be independently traced.",
     "source": "Provenance — a build digest you can check",
-    "verify": "Attestation verifies against the published artifact and source revision"
+    "verify": "Attestation verifies against the published artifact and source revision",
+    "status": "done",
+    "evidence": ".github/workflows/release.yml — actions/attest-build-provenance over every tarball, plus npm provenance"
   },
   {
     "id": "SEC-23",
@@ -51,7 +53,9 @@
     "title": "Signed releases and SBOM",
     "statement": "Sign every release and publish an SBOM with pinned dependencies.",
     "source": "Provenance — signed releases and an SBOM",
-    "verify": "Signature and SBOM present and verified in CI for each release"
+    "verify": "Signature and SBOM present and verified in CI for each release",
+    "status": "done",
+    "evidence": ".github/workflows/release.yml — npm publish --provenance and a CycloneDX SBOM with pinned dependencies"
   },
   {
     "id": "SEC-24",
@@ -87,7 +91,9 @@
     "title": "No agent code changes",
     "statement": "Both collectors integrate by dependency and configuration only; no change to the customer's agent code is required.",
     "source": "Why — without asking you to change your agent code",
-    "verify": "Byte-identical agent source before and after integration, for both collectors"
+    "verify": "Byte-identical agent source before and after integration, for both collectors",
+    "status": "done",
+    "evidence": "packages/collect-oma/test/integration.test.mjs hashes the agent source before and after integration and asserts the run outcome is unchanged; the agent fixture mentions Splitstick nowhere"
   },
   {
     "id": "LEG-19",
@@ -143,7 +149,9 @@
     "title": "Canonicalisation completeness",
     "statement": "The canonical encoding must cover every field of the action record at every nesting depth. A test must prove that mutating any single field, at any depth, changes the leaf digest.",
     "source": "Capture — action record: tool name, arguments, result, approval decision",
-    "verify": "Property test mutating each field in turn, including nested argument keys; every mutation must change the digest"
+    "verify": "Property test mutating each field in turn, including nested argument keys; every mutation must change the digest",
+    "status": "done",
+    "evidence": "spec/vectors/jcs.json; leafPaths property test in record.test.mjs; leaf-level mutation test in leaf.test.mjs"
   },
   {
     "id": "FR-53",
@@ -170,7 +178,9 @@
     "title": "Counterparty reference capture",
     "statement": "Extract externally issued identifiers from a tool result and index them for reconciliation. The index lives in the deletable content store, never in the chain, because a transaction reference can itself be identifying.",
     "source": "Capture — action record",
-    "verify": "A result containing an external reference is indexed and queryable; the index is removed by crypto-shredding"
+    "verify": "A result containing an external reference is indexed and queryable; the index is removed by crypto-shredding",
+    "status": "done",
+    "evidence": "extractRefs + the deletable reference index in content.mjs; shredded with the content"
   },
   {
     "id": "SEC-26",
@@ -197,7 +207,9 @@
     "title": "Collector instance identity",
     "statement": "Each collector instance has a stable identity that scopes its chain and its log origin. Records carry the run they belong to as a field; the chain itself is collector-scoped, so concurrent runs interleave in one log and heartbeats need no run at all.",
     "source": "Capture — action record; Coverage attestation",
-    "verify": "Two concurrent runs produce one contiguous chain with correct run tags; a heartbeat emitted with no run active is chained and anchored"
+    "verify": "Two concurrent runs produce one contiguous chain with correct run tags; a heartbeat emitted with no run active is chained and anchored",
+    "status": "done",
+    "evidence": "collector-scoped chain in chain.mjs and collector.mjs; interleaved-run test; heartbeat with no run"
   },
   {
     "id": "DOC-10",
@@ -233,7 +245,9 @@
     "title": "Action record and chain entry are separate structures",
     "statement": "The canonicalised, hashed ActionRecord is immutable and contains no chain metadata. prev, leaf and head live in a ChainEntry wrapper that is never canonicalised, so the digest of a record can never depend on a value derived from it. Conformance vectors publish the exact bytes hashed.",
     "source": "Integrity — chained, salted, ratcheted; Capture — action record",
-    "verify": "Conformance vectors: given a fixed ActionRecord, the canonical bytes, leaf and head are byte-exact. A test asserts no chain field appears inside the canonicalised subject"
+    "verify": "Conformance vectors: given a fixed ActionRecord, the canonical bytes, leaf and head are byte-exact. A test asserts no chain field appears inside the canonicalised subject",
+    "status": "done",
+    "evidence": "ActionRecord and ChainEntry are separate structures; validateRecord rejects leaf/prev/head/salt in the subject"
   },
   {
     "id": "FR-60",
@@ -260,7 +274,9 @@
     "title": "Retries, timeouts and errors in the schema",
     "statement": "The record schema represents a failed, timed-out or retried tool call explicitly: an outcome enum, an attempt number, and a correlation id grouping attempts of one logical action. source_seq advances once per observed ATTEMPT, not per logical action, because a timed-out attempt may already have caused an external side effect and must stay independently accountable. Correlation, not the counter, is what groups attempts. The correlation identifier is opaque and randomly generated, never derived from a payload, user or session, because it is retained after erasure.",
     "source": "Capture — action record",
-    "verify": "Interleaved retries across two correlations keep source_seq strictly increasing; an omitted retry is detected as a source_seq gap; coverage reports attempt count and logical-action count separately"
+    "verify": "Interleaved retries across two correlations keep source_seq strictly increasing; an omitted retry is detected as a source_seq gap; coverage reports attempt count and logical-action count separately",
+    "status": "done",
+    "evidence": "outcome, attempt and correlation in record.mjs; Collector.correlate; unresolved calls settled as timeout"
   },
   {
     "id": "FR-63",
