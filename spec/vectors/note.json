@@ -1,0 +1,14 @@
+{
+  "spec": "C2SP signed-note / Go sumdb note format, as adopted by DES-06 and DES-07",
+  "note": "The key-id derivation is checked against a published verifier key, so that half of the format is externally anchored rather than self-consistent: keyid = SHA-256(name + 0x0a || algorithm_byte || public_key)[0:4]. Algorithm 1 is Ed25519. Cross-implementation conformance for the signature itself \u2014 a real C2SP witness countersigning a Splitstick checkpoint \u2014 is FR-46's conformance suite in M3a; nothing here claims it.",
+  "keyid": [
+    {
+      "source": "the PeterNeumann verifier key published with the Go note package",
+      "vkey": "PeterNeumann+c74f20a3+ARpc2QcUPDhMQegwxbzhKqiBfsVkmqq/LDE4izWy10TW",
+      "name": "PeterNeumann",
+      "algorithm": 1,
+      "public_key_b64": "GlzZBxQ8OExB6DDFvOEqqIF+xWSaqr8sMTiLNbLXRNY=",
+      "expect_keyid": "c74f20a3"
+    }
+  ]
+}
