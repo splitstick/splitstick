@@ -13,7 +13,8 @@
     "AC-3": {
       "class": "Re-sign rewritten history with the current key",
       "redteam": "ratchet suite",
-      "kind": "local + HSM"
+      "kind": "local + HSM",
+      "note": "Carried from M2 to M3a. The ratchet makes yesterday's record unforgeable with today's key, but an operator holding the current key can still re-sign a rewritten history within the current epoch \u2014 and nothing local can refuse that. The countersignature over the original root is the half that contradicts it, so the class closes only when both exist. The red-team suite names both for attack C2 and always did; M2 claiming the gate alone would have been the plan disagreeing with the suite."
     },
     "AC-4": {
       "class": "Truncate the record's tail",
@@ -60,7 +61,8 @@
         "SEC-02",
         "SEC-05",
         "GOV-19"
-      ]
+      ],
+      "shipped": true
     },
     {
       "id": "M1",
@@ -102,35 +104,36 @@
         "FR-56",
         "FR-59",
         "FR-62"
-      ]
+      ],
+      "shipped": true
     },
     {
       "id": "M2",
       "name": "Key custody",
       "goal": "Make yesterday's record unforgeable with today's key, and state the precondition honestly.",
-      "gate": [
-        "AC-3"
-      ],
+      "gate": [],
       "weeks": "2",
-      "exit": "An epoch-N key cannot produce a valid epoch-N-1 signature against a real HSM or KMS. The non-exportable custody precondition appears wherever the forward-secrecy claim does.",
+      "exit": "An epoch-N key cannot produce a valid epoch-N-1 signature. The succession chain walks from a pinned root and a skipped or self-endorsing epoch is refused. The non-exportable custody precondition appears wherever the forward-secrecy claim does, and the verifier refuses the claim outright for any epoch declared software-keyed. M2 closes no attack class on its own: AC-3 needs the countersignature and is carried to M3a.",
       "ids": [
         "FR-11",
         "NFR-09",
         "SEC-08",
         "SEC-17",
         "OPS-04"
-      ]
+      ],
+      "shipped": false
     },
     {
       "id": "M3a",
       "name": "Anchoring and sequencing",
       "goal": "The first second party. Close truncation and erasure, which no amount of local cryptography can reach.",
       "gate": [
+        "AC-3",
         "AC-4",
         "AC-5"
       ],
       "weeks": "5-7",
-      "exit": "Red-team D, E and F all DETECTED. A run with no configuration at all anchors to a public log the project does not operate. A rolled-back witness is detected. An auditor supplying their own acceptance policy verifies the same pack. Egress captured against real witness traffic, confirming no content leaves the host.",
+      "exit": "Red-team C2, D, E and F all DETECTED. A run with no configuration at all anchors to a public log the project does not operate. A rolled-back witness is detected. An auditor supplying their own acceptance policy verifies the same pack. Egress captured against real witness traffic, confirming no content leaves the host. AC-3 closes here rather than in M2, because a re-signed history is contradicted by a countersignature over the original root and by nothing local.",
       "ids": [
         "FR-12",
         "FR-13",
@@ -170,7 +173,15 @@
         "FR-63",
         "FR-65",
         "FR-70"
-      ]
+      ],
+      "carries": [
+        {
+          "id": "NFR-09",
+          "why": "M2 built and covered the AWS KMS signer, which satisfies the KMS half. The HSM half is blocked by evidence rather than effort: of the products that sign Ed25519, AWS KMS issues no per-key attestation and GCP offers the algorithm at software protection level only, so independently-supported custody requires hardware \u2014 and the YubiHSM 2 purchase is held until its attestation capability is confirmed. See docs/kms-capability-matrix.md.",
+          "closes": "A hardware signer behind the same sign(bytes) seam, with an integration test proving its signature verifies under an independent Ed25519 implementation, and FR-70's five checks exercised against a real attestation document rather than a constructed one. M3a is the right home because FR-65 and FR-70 already land there."
+        }
+      ],
+      "shipped": false
     },
     {
       "id": "M3b",
@@ -202,7 +213,8 @@
         "FR-60",
         "FR-61",
         "FR-68"
-      ]
+      ],
+      "shipped": false
     },
     {
       "id": "M4",
@@ -226,7 +238,8 @@
         "DOC-10",
         "FR-64",
         "FR-66"
-      ]
+      ],
+      "shipped": false
     },
     {
       "id": "M5",
@@ -253,7 +266,8 @@
         "PRIV-09",
         "INT-03",
         "FR-69"
-      ]
+      ],
+      "shipped": false
     },
     {
       "id": "M6",
@@ -289,7 +303,8 @@
           "why": "M1 proved canonicalisation completeness with a property test that mutates every field at every depth, and an independent review still found a collision it could not reach: two records differing only by an unpaired surrogate produced identical canonical bytes and identical leaves. The test only mutates values that round-trip through JSON, so no amount of running it would ever have found that.",
           "closes": "FR-46's conformance suite fuzzes the canonicaliser rather than only driving fixed vectors: unpaired surrogates, numbers at the representable boundary, deeply nested structures, keys that collide after Unicode normalisation. The property asserted is that distinct inputs never share canonical bytes."
         }
-      ]
+      ],
+      "shipped": false
     },
     {
       "id": "M7",
@@ -348,7 +363,8 @@
           "why": "The 2 percent budget is established against a scripted model and an assumed 400 ms per model call. Both assumptions are recorded in the result, and neither has been tested against a real provider.",
           "closes": "Re-measure the interleaved paired A/B against a real provider once one is in the loop, and confirm the 95 percent interval still clears the budget at that model latency."
         }
-      ]
+      ],
+      "shipped": false
     }
   ],
   "regressionRule": "Every milestone runs the complete red-team suite, not only its own classes. A gate closed earlier that reopens fails the build."

@@ -320,13 +320,33 @@ console.log(`${detected.length} of ${attacks.length} tampers are detected by spl
 console.log(`${open.length} are not, and each names the milestone that closes it: ${open.map((a) => a.id).join(', ')}.`);
 console.log('None of those needs new cryptography. Each needs a second party, which is the shape of the problem.\n');
 
-const gates = ['AC-1', 'AC-2'];
-for (const gate of gates) {
+// Which gates must hold is read from the plan, not restated here. An earlier
+// version listed them literally, and the plan and the suite could then disagree
+// about a gate — which is exactly what nearly happened with AC-3: it was
+// assigned to M2 while this suite had always named "M2 custody + M3a
+// countersignature" as what closes it. Deriving it means flipping a milestone's
+// `shipped` flag changes what this suite demands.
+const plan = JSON.parse(fs.readFileSync('requirements/milestones.json', 'utf8'));
+const shipped = plan.milestones.filter((m) => m.shipped);
+const due = new Set(shipped.flatMap((m) => m.gate));
+const later = plan.milestones
+  .filter((m) => !m.shipped)
+  .flatMap((m) => m.gate.map((g) => `${g} (${m.id})`));
+
+let unmet = 0;
+for (const gate of [...due].sort()) {
   const required = attacks.filter((a) => a.gate === gate && a.expect === 'detected');
   const held = required.length > 0;
-  console.log(`gate ${gate}   ${held ? 'HELD' : 'NOT MET'}   (${required.map((a) => a.id).join(', ')})`);
+  if (!held) unmet += 1;
+  console.log(`gate ${gate}   ${held ? 'HELD' : 'NOT MET'}   (${required.map((a) => a.id).join(', ') || 'no detected attack in this suite'})`);
 }
+if (later.length) console.log(`\nscheduled   ${later.sort().join(', ')}`);
 console.log();
+
+if (unmet > 0) {
+  console.error(`${unmet} gate(s) claimed by a shipped milestone are not held by this suite.`);
+  process.exit(1);
+}
 
 if (mismatches > 0) {
   console.error(`${mismatches} observation(s) changed. Update this file, or fix what moved.`);
