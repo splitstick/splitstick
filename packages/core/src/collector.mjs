@@ -16,7 +16,7 @@
  */
 
 import { randomBytes } from 'node:crypto';
-import { chainEntry, genesis } from './chain.mjs';
+import { chainEntry, genesis, recomputeChain } from './chain.mjs';
 import { newSalt } from './leaf.mjs';
 import { treeRoot } from './merkle.mjs';
 import { checkpointText, encodeNote } from './note.mjs';
@@ -27,9 +27,31 @@ import { SCHEMA_VERSION, SUITE } from './record.mjs';
 /** @param {unknown} v @returns {v is Uint8Array} */
 const isBytes = v => v instanceof Uint8Array;
 
+/**
+ * The collector will not write while it cannot trust its own position.
+ *
+ * An append that fails leaves the in-memory head and sequence behind what may
+ * already be on disk. Continuing from that state reused a record_seq and a
+ * stale predecessor, which a verifier reports as SEQ_BROKEN for the rest of the
+ * log's life — so a disk-full incident became a permanent accusation of
+ * tampering. Refusing to write, loudly, is the honest alternative; the agent
+ * keeps running because the adapter is fail-open (SCOPE-16).
+ */
+export class CollectorDegraded extends Error {
+  /** @param {unknown} cause */
+  constructor(cause) {
+    const why = cause instanceof Error ? cause.message : String(cause);
+    super(`collector is degraded after a failed append (${why}); call recover() once the store is writable`);
+    this.name = 'CollectorDegraded';
+    this.cause = cause;
+  }
+}
+
 export class Collector {
   /** @type {Map<string, { correlation: string, attempts: number }>} in-memory only */
   #actions = new Map();
+  /** @type {unknown} the failure that degraded this collector, or null */
+  #degraded = null;
 
   /**
    * @param {object} o
@@ -59,6 +81,37 @@ export class Collector {
 
   /** The log's tree size — the record count, always equal to record_seq. */
   get tree_size() { return this.recordSeq; }
+
+  /** The failure that stopped this collector writing, or null. */
+  get degraded() { return this.#degraded; }
+
+  /**
+   * Re-read the tip from disk and resume, if what is on disk is consistent.
+   *
+   * Recovery is explicit because the alternative is guessing. If the chain
+   * itself contradicts anything, the collector stays degraded: appending to a
+   * log that is already broken buries the evidence of how it broke.
+   * @returns {{ record_seq: number, source_seq: number }}
+   */
+  recover() {
+    const entries = this.store.readChain();
+    const check = recomputeChain(entries);
+    const structural = check.findings.filter(f => f.code !== 'LEAF_INCONCLUSIVE'
+      && !/source_seq/.test(f.detail ?? ''));
+    if (structural.length > 0) {
+      throw new Error(
+        `refusing to resume: the chain on disk is inconsistent (${structural.map(f => f.code).join(', ')}); `
+        + 'appending to it would bury the evidence of how it broke');
+    }
+    const tip = this.store.tip();
+    this.recordSeq = tip.record_seq;
+    this.head = tip.record_seq === 0 ? genesis() : tip.head;
+    // The observation counter is never rewound: an attempt observed during the
+    // outage was still observed, and the hole is the report.
+    this.sourceSeq = Math.max(this.sourceSeq, tip.source_seq);
+    this.#degraded = null;
+    return { record_seq: this.recordSeq, source_seq: this.sourceSeq };
+  }
 
   /**
    * Consume a source_seq for an observed attempt.
@@ -155,9 +208,17 @@ export class Collector {
    * @returns {import('./chain.mjs').ChainEntry}
    */
   #write(record) {
+    if (this.#degraded !== null) throw new CollectorDegraded(this.#degraded);
     const salt = newSalt();
     const e = chainEntry(record, salt, this.head);   // validates; throws before any mutation
-    this.store.append(e);
+    try {
+      this.store.append(e);
+    } catch (err) {
+      // The append may have partially landed, so this position is no longer
+      // trustworthy. Stop rather than continue from it.
+      this.#degraded = err;
+      throw err;
+    }
     this.head = e.head;
     this.recordSeq += 1;
     return e;
@@ -191,6 +252,16 @@ export class Collector {
    * @returns {import('./chain.mjs').ChainEntry}
    */
   action(a) {
+    if (this.#degraded !== null) throw new CollectorDegraded(this.#degraded);
+
+    // Spend the observation FIRST, before anything that can fail. Externalising
+    // the payloads came first, so a storage failure threw with the counter
+    // untouched — the adapter caught it, the agent carried on, and the next
+    // action took the next consecutive number, leaving a verifier nothing to
+    // see. Exposing a consequential action that was observed and never recorded
+    // is the one job this counter has.
+    const source_seq = this.observe();
+
     const c = this.#commitAll({
       agent: a.agent,
       args: a.args,
@@ -201,7 +272,7 @@ export class Collector {
 
     const record = this.#envelope({
       run: a.run ?? null,
-      source_seq: this.observe(),
+      source_seq,
       kind: a.kind ?? 'tool_call',
       tool: a.tool,
       consequential: a.consequential ?? true,

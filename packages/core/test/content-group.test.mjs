@@ -36,7 +36,7 @@ test('a group appends to the blob and returns one commitment per payload', () =>
   assert.equal(args.bytes, 18);
   assert.equal(result.bytes, 15);
   assert.equal(s.pathFor(args.cid), s.pathFor(result.cid), 'both live in the one blob');
-  assert.equal(s.pathFor(args.cid), join(s.root, 'content', 'content.blob'));
+  assert.equal(s.pathFor(args.cid), join(s.root, 'content', s.collector, 'content.blob'));
   // Distinct, non-overlapping extents.
   const a = s.rangeForTest(args.cid);
   const b = s.rangeForTest(result.cid);

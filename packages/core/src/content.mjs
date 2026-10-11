@@ -17,10 +17,11 @@
  * salt with the ciphertext and the key is what makes the surviving commitment
  * unlinkable — which is the whole of FR-36.
  *
- * Layout (DES-13):
- *   content/content.blob   every payload, encrypted, append-only  DELETABLE
- *   content/refs.idx       counterparty references                DELETABLE [DES-19]
- *   keys/content.jsonl     cid -> key and extent                  DELETABLE
+ * Layout (DES-13), scoped to the collector like the chain and the salts, so two
+ * collectors can be active in one store root at the same time:
+ *   content/<collector>/content.blob   payloads, encrypted, append-only  DELETABLE
+ *   content/<collector>/refs.idx      counterparty references            DELETABLE [DES-19]
+ *   keys/<collector>/content.jsonl    cid -> key and extent              DELETABLE
  *
  * chain/ holds none of these, which is what makes PRIV-02 literally true
  * rather than true of large payloads only.
@@ -206,11 +207,20 @@ export class ContentStore {
   #end = 0;
   #holdsLock = false;
 
-  /** @param {string} root the store root from splitstick.yaml */
-  constructor(root) {
+  /**
+   * @param {string} root the store root from splitstick.yaml
+   * @param {string} [collector] the collector instance this content belongs to
+   *
+   * The write lock is per collector rather than per root. A root-wide lock was
+   * safe but meant two simultaneously active collectors could not both write
+   * payloads, which contradicted the multi-collector reads the verifier
+   * already supports.
+   */
+  constructor(root, collector = 'default') {
     this.root = root;
-    this.contentDir = join(root, 'content');
-    this.keysDir = join(root, 'keys');
+    this.collector = collector;
+    this.contentDir = join(root, 'content', collector);
+    this.keysDir = join(root, 'keys', collector);
     mkdirSync(this.contentDir, { recursive: true });
     mkdirSync(this.keysDir, { recursive: true });
     this.refsPath = join(this.contentDir, 'refs.idx');

@@ -113,7 +113,7 @@ test('FR-55: the reference index is crypto-shredded with everything else', () =>
   assert.deepEqual(s.findByRef('TX-77814'), [cid]);
   s.shred(cid);
   assert.deepEqual(s.findByRef('TX-77814'), [], 'the ref must not outlive the content');
-  const idx = join(s.root, 'content', 'refs.idx');
+  const idx = join(s.root, 'content', s.collector, 'refs.idx');
   if (existsSync(idx)) {
     assert.ok(!readFileSync(idx).includes('TX-77814'), 'and not linger in the index file');
   }
@@ -129,7 +129,7 @@ test('the reference index is never written into the chain directory', () => {
       assert.ok(!readFileSync(path).includes('TX-77814'));
     }
   }
-  assert.ok(existsSync(join(s.root, 'content', 'refs.idx')));
+  assert.ok(existsSync(join(s.root, 'content', s.collector, 'refs.idx')));
 });
 
 test('a tampered ciphertext is detected by the cipher, not just by the cid', () => {

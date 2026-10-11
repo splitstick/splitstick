@@ -58,6 +58,11 @@ them.
    persisted value of 2 is a gap like any other — without that, an attempt dropped before the first
    record was written would have been the one hole no verifier could see.
 
+   The observation is spent **before anything that can fail**. Externalising the payloads first
+   meant a storage failure threw with the counter untouched, so the next action took the next
+   consecutive number and an offline verifier could not see that a consequential action had been
+   observed and dropped — which is the one thing this counter exists to expose.
+
    `record_seq`, by contrast, advances **only when a record is actually written**. A rejected
    record must not consume one: `record_seq == tree_size` is the invariant, and a hole in it reads
    as a removed event, so a single malformed observation would otherwise make a verifier report

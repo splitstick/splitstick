@@ -4,10 +4,8 @@
  *   chain/<collector>.jsonl       records, leaves, heads.  NEVER DELETED
  *   salts/<collector>.jsonl       record_seq -> salt.      DELETABLE per record
  *   checkpoints/<collector>/<n>.note   C2SP notes                 [DES-07]
- *   content/<cid>.bin         every payload, encrypted. DELETABLE
- *   content/<cid>.salt        per-content salt.         DELETABLE
- *   content/refs.idx          counterparty references.  DELETABLE [DES-19]
- *   keys/<cid>.key            per-content keys.         DELETABLE
+ *   content/<collector>/      payloads, encrypted.      DELETABLE
+ *   keys/<collector>/         per-content keys.         DELETABLE
  *   queue/                    unwitnessed batches                 [DES-15]
  *
  * The split is the whole point: Article 19 asks for months of logs accessible
@@ -54,7 +52,7 @@ export class Store {
     mkdirSync(this.checkpointDir, { recursive: true });
     this.chainPath = join(root, 'chain', `${collector}.jsonl`);
     this.saltsPath = join(root, 'salts', `${collector}.jsonl`);
-    this.content = new ContentStore(root);
+    this.content = new ContentStore(root, collector);
 
   }
 
@@ -68,15 +66,42 @@ export class Store {
     if (e.salt === null) throw new TypeError('a record is written with its salt; erasure comes later');
     if (this.#chainFd === null) this.#chainFd = openSync(this.chainPath, 'a', 0o600);
     if (this.#saltsFd === null) this.#saltsFd = openSync(this.saltsPath, 'a', 0o600);
-    writeSync(this.#chainFd, JSON.stringify({
+
+    // The SALT first, then the chain line. Two files cannot be written
+    // atomically, so the order decides what a partial failure leaves behind.
+    // Chain-first left a committed record whose salt was missing while the
+    // collector's own position had not advanced — the next append then reused
+    // the sequence, and a verifier called a disk-full incident tampering.
+    // Salt-first leaves at worst an orphan salt for a record that was never
+    // written, which joins to nothing and says nothing.
+    const salt = JSON.stringify({
+      record_seq: e.record.record_seq, salt: e.salt.toString('hex'),
+    }) + '\n';
+    const line = JSON.stringify({
       record: e.record,
       leaf: e.leaf.toString('hex'),
       prev: e.prev.toString('hex'),
       head: e.head.toString('hex'),
-    }) + '\n');
-    writeSync(this.#saltsFd, JSON.stringify({
-      record_seq: e.record.record_seq, salt: e.salt.toString('hex'),
-    }) + '\n');
+    }) + '\n';
+
+    this.#writeAll(this.#saltsFd, salt, this.saltsPath);
+    this.#writeAll(this.#chainFd, line, this.chainPath);
+  }
+
+  /**
+   * Write every byte, or throw. `writeSync` may report a short write, and a
+   * truncated JSON line is a torn record — the verifier handles one at the end
+   * of a file, but it should not be this code's doing.
+   * @param {number} fd @param {string} text @param {string} path
+   */
+  #writeAll(fd, text, path) {
+    const buf = Buffer.from(text, 'utf8');
+    let off = 0;
+    while (off < buf.length) {
+      const n = writeSync(fd, buf, off, buf.length - off);
+      if (n <= 0) throw new Error(`short write to ${path}: ${off} of ${buf.length} bytes`);
+      off += n;
+    }
   }
 
   /** Release the journal descriptors. Idempotent. */

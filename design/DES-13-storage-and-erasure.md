@@ -134,9 +134,21 @@ different stores.
    budget at p99 no matter how fast the cryptography is. Erasure overwrites the extent with zeros
    in place, which keeps FR-36's claim at *the bytes are gone* rather than weakening it to *the key
    is gone*; erasing the last surviving payload removes the blob.
-3. **One writer per store, enforced.** With a file per payload two writers could not collide. With
+3. **The salt is written before the chain line.** Two files cannot be written atomically, so the
+   order decides what a partial failure leaves. Chain-first left a committed record whose salt was
+   missing while the collector's own position had not advanced, and the next append then reused the
+   sequence — a verifier reported a disk-full incident as tampering, permanently. Salt-first leaves
+   at worst an orphan salt for a record that was never written, which joins to nothing.
+   An append that fails marks the collector **degraded**: it refuses further writes rather than
+   continuing from a position it cannot trust, until `recover()` re-reads the chain and finds it
+   consistent. The agent keeps running throughout, because the adapter is fail-open (SCOPE-16).
+4. **One writer per collector, enforced.** With a file per payload two writers could not collide. With
    one blob they both cache the append offset and the second silently overwrites the first, so the
    store takes an advisory lock on its first write and a second writer is refused. Readers take no
    lock and are never refused: a verifier must be able to open a live store, and cannot damage it.
+   The lock is **per collector**, not per root — content, keys and the reference index are all
+   scoped to the collector, like the chain and the salts — so two collectors may be active in one
+   store root simultaneously. A root-wide lock was safe but made that impossible, which contradicted
+   the multi-collector reads the verifier already supports.
 3. PRIV-02 is enforced by test: a scan of `chain/` for any string from the fixture's content must
    find nothing.
