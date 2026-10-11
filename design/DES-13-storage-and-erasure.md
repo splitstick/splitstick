@@ -9,7 +9,7 @@
 ```
 splitstick/
   chain/<collector>.jsonl  append-only; records, leaves, heads.  NEVER DELETED
-  salts/<collector>.json   record_seq -> salt.  DELETABLE per record            [DES-03]
+  salts/<collector>.jsonl  record_seq -> salt.  DELETABLE per record            [DES-03]
   checkpoints/<n>.note     C2SP notes with every signature line                 [DES-07]
   content/<cid>.bin        every payload, encrypted.  DELETABLE
   content/<cid>.salt       per-content salt.  DELETABLE
@@ -124,6 +124,9 @@ different stores.
 
 1. `chain/` is append-only and never deleted, and contains **no salts and no content**. It is
    small — a few hundred bytes per action.
+   The salt file is append-only JSONL for the same reason the chain is: a `record_seq -> salt`
+   map rewritten on every append is O(n²) and would breach NFR-01's 1 ms p99 within a few
+   thousand records. Erasure rewrites it, which is rare and bounded; appending must not.
 2. `content/` is operator-controlled, deletable, and may live anywhere, including object storage.
 3. PRIV-02 is enforced by test: a scan of `chain/` for any string from the fixture's content must
    find nothing.

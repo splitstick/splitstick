@@ -55,7 +55,10 @@ export function chainHead(prev, leaf) {
 /**
  * @typedef {object} ChainEntry
  * @property {Record<string, unknown>} record the canonicalised subject — no chain metadata
- * @property {Buffer} salt the per-leaf salt, held alongside and deletable (DES-13)
+ * @property {Buffer|null} salt the per-leaf salt, held alongside and deletable (DES-13).
+ * Null once crypto-shredded, which is why it is nullable here: a record whose
+ * salt is gone is INCONCLUSIVE, not a failure, and the type has to admit that
+ * state or the verifier could not represent lawful erasure.
  * @property {Buffer} leaf
  * @property {Buffer} prev
  * @property {Buffer} head
