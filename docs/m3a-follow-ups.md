@@ -82,6 +82,75 @@ holding a root for a height that was never checkpointed. There is a test for
 exactly that, and the red-team harness now anchors every checkpoint rather than
 the first.
 
+## Found by an independent review after shipping, and fixed
+
+Eleven findings. Three were vulnerabilities in the trust path, which for a
+product whose claim is "you do not have to trust the operator" is the worst
+place to have them.
+
+**An end-entity certificate could act as a CA.** Neither the RFC 3161 path nor
+the attestation path checked basic constraints, so an ordinary certificate from
+a trusted provider root could mint an attestation over any key, or a TSA chain —
+and FR-70 reported the result as independently supported. An operator holds such
+certificates. Both paths now share one implementation
+(`packages/core/src/trustpath.mjs`); two copies of a trust walk is how one gets
+fixed and the other does not.
+
+**FR-70's check 5 read the extension's presence, not its value.** A document
+explicitly asserting `non_exportable = FALSE` passed, reporting custody as
+independently supported — laundering the weaker claim into the stronger one,
+which the code's own comment said it must not do. The containment test it used
+would also have been satisfied by the OID appearing in a subject name or inside
+another extension's value.
+
+**No `extendedKeyUsage = timeStamping` check.** RFC 3161 §2.3 requires it of a
+TSA certificate. Without it, any certificate under an accepted anchor could sign
+timestamps: "somebody with a certificate from this CA said so" was being
+reported as "a timestamp authority said so".
+
+Then four that would have produced false or misleading reports:
+
+**A duplicated witness retry failed the whole verification.**
+`ENVELOPE_DUPLICATE_ISSUER` was emitted as `fail`, so a retry that landed twice
+— which the stateful witness itself treats as idempotent — read as tampering.
+The verdict is now sourced from one table that the lint holds against
+`spec/failure-codes.json`, because it was being decided at the call site in two
+places: hard-coded `fail` for envelope findings, and derived from the code's
+NAME suffix for chain findings. The second was right only by luck —
+`TORN_WRITE` is specified inconclusive and does not end in `_INCONCLUSIVE`.
+
+**The retry queue kept the least valuable entries.** On overflow it discarded
+the newest, reasoning that the oldest had the widest unwitnessed window. That is
+backwards: the tree is append-only, so a countersignature at the highest height
+establishes every record below it. It now keeps the newest, flushes
+highest-first, and reports the lower entries as `superseded` — because a witness
+that has advanced refuses them as regressions, and retrying them oldest-first
+produced failures that were the queue's own doing.
+
+**Refuted versus malformed was decided by matching an error message.**
+Rewording it would silently have downgraded a proof that contradicts a
+checkpoint to one that merely could not be read. It is a property on the error
+now.
+
+**The verifier carried a second Ed25519 implementation.** `checkNoteLine` had
+its own SPKI assembly and verify call rather than using core's, duplicating a
+security-critical path for no reason once the function became async.
+
+And four pieces of code that read as decisions and were not: a condition that
+could never be true, a ternary whose branches were identical, a predicate forced
+constant by `&& false`, and `rollbackForTesting()` — a method on the production
+witness that rewound the only guarantee it provides. The test now edits the
+state file, which is what a dishonest operator would have to do.
+
+**The lesson that needed a structural fix.** Four separate instruments here have
+read their own documentation as code: the failure-code lint, the claims lint, the
+NFR-05 offline scan, and the review regression test written during this very
+review. It had been learned three times and written down twice.
+`tools/code-text.mjs` is now the one shared helper, and its second variant —
+which also strips string literals — is documented as the wrong instrument for
+asking whether a ternary's branches differ, because it made
+`endsWith('_INCONCLUSIVE') ? 'inconclusive' : 'fail'` look identical.
+
 ## Decided against
 
 **Fetching block headers to confirm an OpenTimestamps attestation.** It would

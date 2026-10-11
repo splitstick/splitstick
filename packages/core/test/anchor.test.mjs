@@ -234,9 +234,12 @@ test('row 23: the unwitnessed queue is bounded and reports what it dropped', asy
   // NFR-01's revision excluded uncontrolled buffering explicitly. A queue that
   // grows without bound is how a transient outage becomes a memory incident.
   assert.equal(a.queued().length, 3);
-  // The OLDEST are kept: they are the ones whose unwitnessed window is widest,
-  // and the newest will be re-anchored by the next checkpoint anyway.
-  assert.deepEqual(a.queued(), [1, 2, 3]);
+  // The NEWEST are kept. This test asserted the opposite, on the stated
+  // reasoning that the oldest had the widest unwitnessed window — which is
+  // backwards, because the tree is append-only and a countersignature at the
+  // highest height establishes every record below it. The old policy threw
+  // away exactly the entries worth retrying.
+  assert.deepEqual(a.queued(), [4, 5, 6]);
   assert.equal(a.dropped, 3);
   assert.ok(QUEUE_CEILING > 0);
   store.close();

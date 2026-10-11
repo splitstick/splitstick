@@ -27,7 +27,7 @@
 
 import { parseNote, parseCheckpointText, parseVkey, noteKeyId } from './note.mjs';
 import { verifyNoteSignature } from './signer.mjs';
-import { parseEnvelope, addCountersignature, buildEnvelope } from './envelope.mjs';
+import { parseEnvelope, addCountersignature } from './envelope.mjs';
 import { consistencyProof } from './merkle.mjs';
 
 /**
@@ -134,19 +134,43 @@ export class Anchorer {
    */
   async anchorRollup(seq) { return this.#submit(seq, 'rollup', { artefact: 'rollup' }); }
 
-  /** Retry everything queued, oldest first. */
+  /**
+   * Retry what is queued, HIGHEST FIRST, and drop the rest once one succeeds.
+   *
+   * Anchoring the highest height makes the lower queued entries not merely
+   * redundant but unsubmittable: a stateful witness that has advanced to height
+   * 6 refuses height 4 as a regression (FR-43). Retrying oldest-first would
+   * therefore have produced a run of 400s that were the queue's own doing, and
+   * reported them as witness failures.
+   *
+   * `superseded` says which were dropped for that reason rather than silently
+   * clearing them — an entry that disappears without explanation looks like one
+   * that was anchored.
+   */
   async flush() {
     /** @type {number[]} */
     const anchored = [];
     /** @type {number[]} */
+    const superseded = [];
+    /** @type {number[]} */
     const still = [];
-    for (const seq of [...this.queue]) {
+    const descending = [...this.queue].sort((a, b) => b - a);
+    for (const seq of descending) {
+      if (anchored.length > 0) {
+        // Something higher is already countersigned, and it covers this one.
+        superseded.push(seq);
+        continue;
+      }
       const r = await this.#submit(seq, 'anchor', { requeue: false });
       if (r.attached.length > 0) anchored.push(seq);
       else still.push(seq);
     }
-    this.queue = still;
-    return { anchored, queued: still };
+    this.queue = still.sort((a, b) => a - b);
+    return {
+      anchored,
+      superseded: superseded.sort((a, b) => a - b),
+      queued: [...this.queue],
+    };
   }
 
   /**
@@ -184,7 +208,12 @@ export class Anchorer {
     const attached = [];
     /** @type {{ issuer: string, detail: string }[]} */
     const failed = [];
-    let env = parsed.note === raw ? buildEnvelope(note) : JSON.parse(raw);
+    // `raw` is always envelope JSON: the store synthesises one even for a
+    // legacy `.note` file. An earlier version guarded this with
+    // `parsed.note === raw`, comparing a note's text to the JSON wrapping it —
+    // a condition that could never be true, reading as though it handled a
+    // case it never reached.
+    let env = /** @type {import('./envelope.mjs').Envelope} */ (JSON.parse(raw));
 
     for (const w of due) {
       /** @type {import('./envelope.mjs').Countersignature} */
@@ -249,15 +278,21 @@ export class Anchorer {
   }
 
   /**
-   * The oldest are kept. They are the ones whose unwitnessed window is widest,
-   * and the newest will be re-anchored by the next checkpoint anyway.
+   * The NEWEST are kept.
+   *
+   * This was the other way round, on the reasoning that the oldest entries had
+   * the widest unwitnessed window. That is backwards: the tree is append-only,
+   * so a countersignature at the highest height establishes every record below
+   * it. Keeping the oldest meant that after an outage the operator could prove
+   * height 3 when height 6 was available — the queue discarded exactly the
+   * entries worth retrying.
    * @param {number} seq
    */
   #enqueue(seq) {
     if (this.queue.includes(seq)) return;
     this.queue.push(seq);
     while (this.queue.length > this.queue_ceiling) {
-      this.queue.pop();
+      this.queue.shift();
       this.dropped += 1;
     }
   }

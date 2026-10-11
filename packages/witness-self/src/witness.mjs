@@ -313,24 +313,19 @@ export class StatefulWitness {
     this.#appendKey(next);
     this.signer = next;
   }
-
-  /**
-   * Force the sequence state backwards. Exists ONLY so the rollback-detection
-   * test can produce a rolled-back witness; a real witness has no reason to
-   * offer this, and the name says so at every call site.
-   * @param {string} operator @param {number} size
-   */
-  rollbackForTesting(operator, size) {
-    const s = this.#read();
-    const kept = this.roots(operator).filter(r => r.tree_size <= size);
-    const last = kept[kept.length - 1];
-    s.seq[operator] = {
-      last_size: size,
-      last_root: last?.root ?? '',
-      received_at: this.now().toISOString(),
-    };
-    this.#write(s);
-  }
 }
 
 export { publicKeyFromRaw };
+
+/**
+ * The state file's shape, so a test or an operator's tooling can read it
+ * without this module offering a way to MOVE the sequence backwards.
+ *
+ * `rollbackForTesting()` used to live on the class. It was named so that every
+ * call site said what it was, which is not the same as not existing: a method
+ * that rewinds sequence state is a method that undoes the only guarantee this
+ * witness provides, and shipping it in the package that provides that guarantee
+ * is an invitation. The rollback-detection test writes the file instead, which
+ * is exactly what a dishonest operator would have to do.
+ */
+export const STATE_FILE = 'state.json';

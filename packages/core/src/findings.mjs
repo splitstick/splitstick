@@ -71,6 +71,86 @@ export const FAILURE_CODES = Object.freeze([
 /** DES-12's three verdicts. There is no fourth, and no absent one. */
 export const VERDICTS = Object.freeze(['ok', 'fail', 'inconclusive']);
 
+/**
+ * What a reader may conclude from each code — the verdict, in one place.
+ *
+ * This is here because the verdict was being decided at the call site, twice,
+ * and both times wrongly:
+ *
+ * One forwarding site derived it from the code's NAME, treating anything ending
+ * `_INCONCLUSIVE` as inconclusive and everything else as a failure. That is
+ * correct today only by luck: `TORN_WRITE` is specified inconclusive and does
+ * not end that way, and it reaches a reader through a different path.
+ *
+ * Another hard-coded `fail` for every envelope finding, which made a duplicated
+ * witness retry — a benign event the witness itself treats as idempotent — fail
+ * the whole verification. A false accusation, from a product whose only asset
+ * is not making them.
+ *
+ * `tools/lint-failure-codes.mjs` asserts this table and
+ * spec/failure-codes.json agree exactly, so the document a reader is pointed at
+ * and the behaviour they get cannot drift.
+ */
+export const DEFAULT_VERDICTS = Object.freeze({
+  // M1
+  FORMAT_UNSUPPORTED: 'fail',
+  MALFORMED_RECORD: 'fail',
+  TORN_WRITE: 'inconclusive',
+  SEQ_BROKEN: 'fail',
+  CHAIN_BROKEN: 'fail',
+  LEAF_MISMATCH: 'fail',
+  LEAF_INCONCLUSIVE: 'inconclusive',
+  CONTENT_MISMATCH: 'fail',
+  CONTENT_ABSENT: 'inconclusive',
+  TREE_MISMATCH: 'fail',
+  SIZE_REGRESSED: 'fail',
+  CONSISTENCY_BROKEN: 'fail',
+  UNANCHORED: 'inconclusive',
+  UNANCHORED_TAIL: 'inconclusive',
+  OPSIG_INVALID: 'fail',
+  OPSIG_UNCHECKED: 'inconclusive',
+  IDENTITY_UNPINNED: 'fail',
+  SUITE_UNDECLARED: 'inconclusive',
+  MULTIPLE_COLLECTORS: 'inconclusive',
+  CHECKPOINTS_UNATTRIBUTED: 'inconclusive',
+  NO_EVIDENCE: 'inconclusive',
+  // M2
+  SUCCESSION_BROKEN: 'fail',
+  OPSIG_EPOCH_REGRESSED: 'fail',
+  // M3a
+  ENVELOPE_DIGEST_MISMATCH: 'fail',
+  ENVELOPE_NOTE_MISMATCH: 'fail',
+  ENVELOPE_DUPLICATE_ISSUER: 'inconclusive',
+  WITNESS_SHORT: 'fail',
+  WITNESS_MISMATCH: 'fail',
+  WITNESS_MISSING: 'inconclusive',
+  TRUNCATED_BELOW_DISCLOSED: 'fail',
+  // M3b — a declared discontinuity is reported prominently and never silently
+  // bridged, but it is the operator telling you something rather than evidence
+  // contradicting itself, so the specification makes it inconclusive.
+  DISCONTINUITY: 'inconclusive',
+  // M4
+  COVERAGE_GAP: 'fail',
+  COVERAGE_UNKNOWN: 'inconclusive',
+});
+
+/**
+ * The specified verdict for a code. Throws on an unknown one for the same
+ * reason finding() does.
+ * @param {string} code
+ * @returns {'ok'|'fail'|'inconclusive'}
+ */
+export function verdictFor(code) {
+  const v = DEFAULT_VERDICTS[/** @type {keyof typeof DEFAULT_VERDICTS} */ (code)];
+  if (!v) {
+    throw new FindingError(
+      `${JSON.stringify(code)} has no specified verdict. Add it to DEFAULT_VERDICTS in `
+      + 'packages/core/src/findings.mjs and to spec/failure-codes.json — the lint requires both.',
+    );
+  }
+  return /** @type {'ok'|'fail'|'inconclusive'} */ (v);
+}
+
 const CODES = new Set(FAILURE_CODES);
 
 export class FindingError extends Error {

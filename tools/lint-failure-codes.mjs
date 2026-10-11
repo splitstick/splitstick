@@ -36,6 +36,7 @@
  */
 
 import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { code } from './code-text.mjs';
 import { join } from 'node:path';
 
 const spec = JSON.parse(readFileSync('spec/failure-codes.json', 'utf8'));
@@ -67,13 +68,12 @@ const names = (haystack, code) => new RegExp(`\\b${code}\\b`).test(haystack);
 const srcFiles = walk('packages', f => f.endsWith('.mjs') && f.includes('/src/'));
 const designText = read(walk('design', f => f.endsWith('.md')));
 /**
- * Comments stripped before scanning. `@property {string} code` and
- * `findings: { code: string }[]` in a typedef are type annotations, not
- * emissions, and the dynamic-code check below flagged them as computed codes
- * the moment M3a's typedefs arrived.
+ * Comments stripped before scanning: `@property {string} code` in a typedef is
+ * a type annotation, not an emission. The helper is shared, because four
+ * separate instruments in this repository have made this mistake — see
+ * tools/code-text.mjs.
  */
-const stripComments = (/** @type {string} */ t) =>
-  t.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+const stripComments = code;
 
 const srcText = stripComments(read(srcFiles));
 
@@ -157,6 +157,36 @@ for (const code of frozen) {
     errs.push(`${code} is frozen in packages/core/src/findings.mjs and specified in no document. Add it to spec/failure-codes.json with what a reader may conclude from it.`);
   }
 }
+// The verdict table and the specification must agree, code for code. A
+// document promising "inconclusive" while the software returns "fail" is worse
+// than either: a reader checks the document and gets the other behaviour.
+const findingsSrc = readFileSync('packages/core/src/findings.mjs', 'utf8');
+const tableBlock = findingsSrc.slice(
+  findingsSrc.indexOf('export const DEFAULT_VERDICTS'),
+  findingsSrc.indexOf('export function verdictFor'),
+);
+/** @type {Map<string, string>} */
+const tableVerdicts = new Map(
+  [...stripComments(tableBlock).matchAll(/([A-Z][A-Z_]+):\s*'(ok|fail|inconclusive)'/g)]
+    .map(m => [/** @type {string} */ (m[1]), /** @type {string} */ (m[2])]),
+);
+for (const [code, entry] of specified) {
+  const got = tableVerdicts.get(code);
+  if (got === undefined) {
+    errs.push(`${code} has no entry in DEFAULT_VERDICTS, so forwarding it would throw.`);
+  } else if (got !== entry.verdict) {
+    errs.push(
+      `${code} is specified as ${entry.verdict} but DEFAULT_VERDICTS says ${got}. A document `
+      + 'promising one verdict while the software returns the other is worse than either.',
+    );
+  }
+}
+for (const code of tableVerdicts.keys()) {
+  if (!specified.has(code)) {
+    errs.push(`${code} has a verdict in DEFAULT_VERDICTS and is in no document.`);
+  }
+}
+
 for (const code of specified.keys()) {
   if (!frozen.has(code)) {
     errs.push(`${code} is specified in spec/failure-codes.json but not in FAILURE_CODES in packages/core/src/findings.mjs, so nothing can construct it: finding() would throw.`);

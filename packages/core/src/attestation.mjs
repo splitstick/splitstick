@@ -42,6 +42,7 @@
  */
 
 import { X509Certificate } from 'node:crypto';
+import { toCert, chainToAnchor, findIssuer, readBooleanExtension } from './trustpath.mjs';
 
 export const ATTESTATION_CHECKS = Object.freeze([
   'issuer', 'signature', 'key_identity', 'epoch_applicability', 'custody_properties',
@@ -118,20 +119,37 @@ export function validateAttestation(document, opts = {}) {
     return no('no provider root was supplied, so this attestation establishes nothing', true);
   }
 
+  // The walk is the shared one (trustpath.mjs), which requires every issuer to
+  // be a certificate authority. It did not, and an ordinary end-entity
+  // certificate from a trusted provider root could therefore mint an
+  // attestation over any key — making this whole procedure worth nothing to
+  // anybody who already held such a certificate, which an operator does.
+  const walk = chainToAnchor(cert, [...intermediates, ...anchors], anchors);
   const link = findIssuer(cert, [...intermediates, ...anchors]);
-  if (!link) {
+  if (!walk.ok) {
     checks.issuer = {
-      ok: false,
-      detail: `this document is issued by ${cert.issuer} and chains to no anchor this reader `
-        + 'supplied. "Chains to a valid CA" is not the question',
+      ok: !!link && link.isCa,
+      detail: walk.reason,
     };
-    checks.signature = { ok: false, detail: 'not evaluated: no issuer among the supplied anchors' };
-    return no('the attestation does not chain to a provider root the reader accepts');
+    // Reported separately so a reader learns WHICH of the two went wrong:
+    // "claims an issuer you accept" and "and the signature holds" fail for
+    // different reasons and need different responses.
+    checks.signature = link && link.verified
+      ? { ok: true, detail: `the signature verifies under ${link.issuer.subject}'s key, but the chain was not accepted` }
+      : { ok: false, detail: link
+        ? `the document's signature does NOT verify under ${link.issuer.subject}'s key`
+        : 'not evaluated: no issuer among the supplied anchors' };
+    return no(`the attestation does not chain to a provider root the reader accepts: ${walk.reason}`);
   }
-  checks.issuer = { ok: true, detail: `chains to ${link.issuer.subject}, an anchor this reader supplied` };
-  checks.signature = link.verified
-    ? { ok: true, detail: `the document's signature verifies under ${link.issuer.subject}'s key` }
-    : { ok: false, detail: `the document's signature does NOT verify under ${link.issuer.subject}'s key` };
+  const anchor = walk.chain[walk.chain.length - 1];
+  checks.issuer = {
+    ok: true,
+    detail: walk.pinned
+      ? `this document's exact bytes were pinned by the reader`
+      : `chains to ${anchor?.subject}, an anchor this reader supplied, through `
+        + `${walk.chain.length - 1} certificate authority link(s)`,
+  };
+  checks.signature = { ok: true, detail: 'every link in the chain verifies, including this document' };
 
   // 3 — the attested key is this epoch's key.
   if (!opts.epochPublicKey) {
@@ -193,18 +211,34 @@ export function validateAttestation(document, opts = {}) {
         + 'rests on their judgement rather than on the document asserting non-exportability',
     };
   } else {
-    const missing = required.filter(name => {
+    // Reading the extension's VALUE, not merely looking for its OID in the
+    // certificate's bytes. The containment test it replaces reported "the
+    // document asserts non-exportability" for a document that asserted the
+    // opposite, and would also have been satisfied by the OID appearing in a
+    // subject name or inside another extension's value.
+    /** @type {string[]} */
+    const problems = [];
+    for (const name of required) {
       const oid = CUSTODY_PROPERTY_OIDS[/** @type {keyof typeof CUSTODY_PROPERTY_OIDS} */ (name)];
-      return !oid || !hasExtension(cert, oid);
-    });
-    checks.custody_properties = missing.length === 0
+      if (!oid) {
+        problems.push(`${name} is not a property this verifier knows how to read`);
+        continue;
+      }
+      const state = readBooleanExtension(cert, oid);
+      if (state === 'true') continue;
+      problems.push(
+        state === 'false' ? `the document asserts ${name} is FALSE`
+          : state === 'absent' ? `the document does not assert ${name}`
+            : `the document's ${name} extension is not a readable BOOLEAN`,
+      );
+    }
+    checks.custody_properties = problems.length === 0
       ? { ok: true, detail: `the document asserts ${required.join(', ')}` }
       : {
         ok: false,
-        detail: `the document does not assert ${missing.join(', ')}. A certificate proving a key `
-          + 'exists in a managed service is not a custody guarantee: a key that could be exported '
-          + 'is a managed key, and accepting its existence certificate would launder the weaker '
-          + 'claim into the stronger one',
+        detail: `${problems.join('; ')}. A certificate proving a key exists in a managed service is `
+          + 'not a custody guarantee: a key that could be exported is a managed key, and accepting '
+          + 'its existence certificate would launder the weaker claim into the stronger one',
       };
   }
 
@@ -229,68 +263,4 @@ export function validateAttestation(document, opts = {}) {
     provider_untested: true,
     attested_key: attested.toString('base64'),
   };
-}
-
-/** @param {string|Buffer|X509Certificate} a @returns {X509Certificate|null} */
-function toCert(a) {
-  try {
-    return a instanceof X509Certificate ? a : new X509Certificate(a);
-  } catch {
-    return null;
-  }
-}
-
-/**
- * @param {X509Certificate} cert @param {X509Certificate[]} candidates
- * @returns {{ issuer: X509Certificate, verified: boolean }|null}
- */
-function findIssuer(cert, candidates) {
-  for (const c of candidates) {
-    let issued = false;
-    try {
-      issued = cert.checkIssued(c);
-    } catch {
-      issued = false;
-    }
-    if (!issued) continue;
-    let verified = false;
-    try {
-      verified = cert.verify(c.publicKey);
-    } catch {
-      verified = false;
-    }
-    // Returned even when the signature fails, so checks 1 and 2 can report
-    // different things: "issued by someone you trust" and "and the signature
-    // holds" are separate facts, and collapsing them hides which is wrong.
-    return { issuer: c, verified };
-  }
-  return null;
-}
-
-/**
- * Whether the certificate carries an extension with this OID.
- *
- * Node exposes no general extension accessor, so the DER is searched for the
- * encoded OID inside the extensions block. That is a containment test rather
- * than a parse, which is why the OIDs looked for are long and provider-specific:
- * a short OID could appear by coincidence in a key or a serial, and a false
- * positive here would report a custody property the document does not assert.
- * @param {X509Certificate} cert @param {string} oid
- */
-function hasExtension(cert, oid) {
-  const needle = encodedOid(oid);
-  return cert.raw.includes(needle);
-}
-
-/** @param {string} dotted @returns {Buffer} the full TLV, tag and length */
-function encodedOid(dotted) {
-  const parts = dotted.split('.').map(Number);
-  const body = [/** @type {number} */ (parts[0]) * 40 + /** @type {number} */ (parts[1])];
-  for (const p of parts.slice(2)) {
-    const bytes = [p & 0x7f];
-    let n = p >> 7;
-    while (n > 0) { bytes.unshift((n & 0x7f) | 0x80); n >>= 7; }
-    body.push(...bytes);
-  }
-  return Buffer.from([0x06, body.length, ...body]);
 }

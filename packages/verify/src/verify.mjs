@@ -33,12 +33,12 @@ import { treeRoot, consistencyProof, verifyConsistency } from '@splitstick/core/
 import { parseNote, parseCheckpointText, parseVkey, SUITES } from '@splitstick/core/note';
 import { verifyNoteSignature } from '@splitstick/core/signer';
 import { successionReport } from '@splitstick/core/succession';
-import { validateFindings } from '@splitstick/core/findings';
+import { validateFindings, verdictFor } from '@splitstick/core/findings';
 import { CAPABILITY_CLASSES } from '@splitstick/core/anchor';
 import { verifyTimeStampToken } from '@splitstick/core/rfc3161';
 import { describeOtsProof } from '@splitstick/core/opentimestamps';
 import { parseEnvelope } from '@splitstick/core/envelope';
-import * as nodeCrypto from 'node:crypto';
+
 import { noteKeyId } from '@splitstick/core/note';
 
 /** @typedef {'ok'|'fail'|'inconclusive'} Verdict */
@@ -148,7 +148,10 @@ export async function verifyStore(root, opts = {}) {
   for (const f of chain.findings) {
     findings.push({
       code: f.code,
-      verdict: f.code.endsWith('_INCONCLUSIVE') ? 'inconclusive' : 'fail',
+      // From the specification, not from the code's name. The name heuristic
+      // was right only by luck: TORN_WRITE is specified inconclusive and does
+      // not end in _INCONCLUSIVE.
+      verdict: verdictFor(f.code),
       ...(f.record_seq === undefined ? {} : { record_seq: f.record_seq }),
       detail: f.detail,
     });
@@ -274,8 +277,16 @@ export async function verifyStore(root, opts = {}) {
     // and reading the note first would verify the signature and miss that.
     const env = parseEnvelope(blob, legacy_note === undefined ? {} : { expectNote: legacy_note });
     for (const f of env.findings) {
-      const verdict = f.code === 'FORMAT_UNSUPPORTED' && format === 'envelope' ? 'fail' : 'fail';
-      findings.push({ code: f.code, verdict, detail: `checkpoint ${seq}: ${f.detail}` });
+      // The verdict comes from the specification, not from this call site. It
+      // used to be a ternary whose branches were both 'fail' — which looked
+      // like a decision and was not one — and that made a duplicated witness
+      // retry fail the whole verification. A retry that landed twice is a
+      // benign operational event the witness itself treats as idempotent.
+      findings.push({
+        code: f.code,
+        verdict: verdictFor(f.code),
+        detail: `checkpoint ${seq}: ${f.detail}`,
+      });
     }
     if (!env.ok || env.note === null) {
       treeVs.push('fail');
@@ -793,7 +804,7 @@ async function verifyWitnesses({ envelopes, policy, leaves, findings, anchored }
         // produce WITNESS_MISMATCH — the strongest finding available, because
         // the operator could rewrite the note but not forge the signature over
         // what the witness actually saw.
-        const r = checkNoteLine(env.note ?? '', cs.entry, spec);
+        const r = await checkNoteLine(env.note ?? '', cs.entry, spec);
         if (r === 'ok') {
           credit(credited, cs.issuer, classes);
           witnesses.push({
@@ -977,9 +988,9 @@ function credit(credited, issuer, classes) {
  * @param {string} noteBlob
  * @param {import('@splitstick/core/envelope').Countersignature} cs
  * @param {{ id: string, public_key?: string }} spec
- * @returns {'ok'|'bad'|'no-key'}
+ * @returns {Promise<'ok'|'bad'|'no-key'>}
  */
-function checkNoteLine(noteBlob, cs, spec) {
+async function checkNoteLine(noteBlob, cs, spec) {
   if (!spec.public_key) return 'no-key';
   try {
     const text = parseNote(noteBlob).text;
@@ -990,24 +1001,14 @@ function checkNoteLine(noteBlob, cs, spec) {
     // Synchronous shape check first: a key id that does not match cannot be a
     // signature by this key, and saying "does not verify" would be vaguer.
     if (!line.keyId.equals(noteKeyId(cs.issuer, pub))) return 'bad';
-    return verifyNoteSignatureSync(text, line, pub, cs.issuer) ? 'ok' : 'bad';
+    return await verifyNoteSignature(text, line, {
+      name: cs.issuer, publicKey: pub, keyId: noteKeyId(cs.issuer, pub),
+    }) ? 'ok' : 'bad';
   } catch {
     return 'bad';
   }
 }
 
-/**
- * @param {string} text @param {{ signature: Buffer }} line
- * @param {Buffer} publicKey @param {string} name
- */
-function verifyNoteSignatureSync(text, line, publicKey, name) {
-  const { verify, createPublicKey } = nodeCrypto;
-  const spki = Buffer.concat([
-    Buffer.from('302a300506032b6570032100', 'hex'), publicKey,
-  ]);
-  const key = createPublicKey({ key: spki, format: 'der', type: 'spki' });
-  return verify(null, Buffer.from(text, 'utf8'), key, line.signature);
-}
 
 /**
  * Check the roll-up summaries — FR-53.

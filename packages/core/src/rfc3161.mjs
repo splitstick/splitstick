@@ -38,6 +38,7 @@ import {
   TAG, DerError, readTlv, readOnly, children, readOid, readInteger, readTime,
   encodeTlv, encodeOidValue,
 } from './der.mjs';
+import { toCert, chainToAnchor, hasTimeStampingEku } from './trustpath.mjs';
 
 export class Rfc3161Error extends Error {
   /** @param {string} m */
@@ -253,13 +254,18 @@ function pickSigner(certs, sid) {
       if (found) return found;
     }
   }
-  const leaf = certs.find(c => !certs.some(other => other !== c && isIssuedBy(c, other) === false && false))
+  // No SignerIdentifier match: fall back to the certificate that nothing else
+  // in the bundle was issued by, which is the leaf of a chain, and to the first
+  // otherwise. An earlier version of this line carried a `&& false` that made
+  // its predicate constant, so it had always returned certs[0] while reading as
+  // though it chose.
+  const leaf = certs.find(c => !certs.some(other => other !== c && issuedBy(other, c)))
     ?? certs[0];
   return /** @type {X509Certificate} */ (leaf);
 }
 
 /** @param {X509Certificate} cert @param {X509Certificate} issuer */
-function isIssuedBy(cert, issuer) {
+function issuedBy(cert, issuer) {
   try {
     return cert.checkIssued(issuer) && cert.verify(issuer.publicKey);
   } catch {
@@ -346,15 +352,23 @@ export async function verifyTimeStampToken(der, opts) {
       genTime: t.genTime, tsa,
     };
   }
-  const chain = chainTo(t.signerCertificate, t.certificates, anchors);
-  if (!chain) {
+  // RFC 3161 2.3 — the signer must be a timestamp authority, not merely a
+  // certificate under an accepted anchor. "Somebody with a certificate from
+  // this CA said so" is a weaker statement than "a TSA said so".
+  if (!hasTimeStampingEku(t.signerCertificate)) {
     return {
       ok: false,
-      detail: `${tsa}'s certificate does not chain to any anchor this reader supplied. "Chains to a `
-        + 'valid CA" is not the question; chaining to an anchor the reader named is',
+      detail: `${tsa}'s certificate does not carry extendedKeyUsage=id-kp-timeStamping as the sole `
+        + 'purpose, which RFC 3161 requires of a timestamp authority. Any certificate under this '
+        + 'anchor could otherwise sign timestamps',
       genTime: t.genTime, tsa,
     };
   }
+  const walk = chainToAnchor(t.signerCertificate, t.certificates, anchors);
+  if (!walk.ok) {
+    return { ok: false, detail: `${tsa}: ${walk.reason}`, genTime: t.genTime, tsa };
+  }
+  const chain = walk.chain;
   const at = opts.at;
   if (at) {
     for (const c of chain) {
@@ -395,39 +409,6 @@ function verifySignature(t) {
   }
 }
 
-/** @param {string|Buffer|X509Certificate} a @returns {X509Certificate|null} */
-function toCert(a) {
-  try {
-    return a instanceof X509Certificate ? a : new X509Certificate(a);
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Walk from the signer to an anchor, checking each link's signature. Depth is
- * bounded: a cycle in a supplied bundle must not hang a verifier.
- * @param {X509Certificate} leaf
- * @param {X509Certificate[]} bundle
- * @param {X509Certificate[]} anchors
- * @returns {X509Certificate[]|null}
- */
-function chainTo(leaf, bundle, anchors) {
-  /** @type {X509Certificate[]} */
-  const chain = [leaf];
-  let current = leaf;
-  for (let depth = 0; depth < 8; depth += 1) {
-    const anchor = anchors.find(a => isIssuedBy(current, a));
-    if (anchor) return [...chain, anchor];
-    if (anchors.some(a => a.raw.equals(current.raw))) return chain;
-    const next = bundle.find(c => c !== current && isIssuedBy(current, c));
-    if (!next) return null;
-    chain.push(next);
-    current = next;
-  }
-  return null;
-}
-
 /**
  * A `TimeStampReq` over a SHA-256 imprint, with `certReq` set.
  *
@@ -458,3 +439,5 @@ export function timeStampRequest(imprint) {
     encodeTlv(TAG.BOOLEAN, Buffer.from([0xff])),
   ]));
 }
+
+export { hasTimeStampingEku };

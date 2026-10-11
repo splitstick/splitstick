@@ -31,8 +31,20 @@
 import { createHash } from 'node:crypto';
 
 export class OtsError extends Error {
-  /** @param {string} m */
-  constructor(m) { super(m); this.name = 'OtsError'; }
+  /**
+   * @param {string} m
+   * @param {{ refuted?: boolean }} [kind] `refuted` means the proof is valid
+   *   and about OTHER bytes, which contradicts this checkpoint. Everything else
+   *   is merely unreadable. The distinction decides a `fail` from an
+   *   `inconclusive`, so it is carried on the error rather than inferred from
+   *   its message — matching the wording meant rewording it would silently
+   *   downgrade a contradiction to a parse problem.
+   */
+  constructor(m, kind = {}) {
+    super(m);
+    this.name = 'OtsError';
+    this.refuted = kind.refuted === true;
+  }
 }
 
 /** The magic that opens a complete `.ots` file. */
@@ -140,6 +152,7 @@ export function parseOtsProof(proof, opts = {}) {
       `the proof is over ${digest.toString('hex').slice(0, 16)}… but the bytes being checked digest `
       + `to ${Buffer.from(opts.expectDigest).toString('hex').slice(0, 16)}…: this is a valid proof `
       + 'about something else',
+      { refuted: true },
     );
   }
 
@@ -210,8 +223,8 @@ function apply(op, current, c) {
  *
  * @param {Buffer|Uint8Array} proof
  * @param {{ imprint: Uint8Array }} opts
- * @returns {{ ok: boolean, inconclusive: boolean, malformed?: boolean, detail: string,
- *             heights: number[], pending: string[] }}
+ * @returns {{ ok: boolean, refuted: boolean, inconclusive: boolean, malformed?: boolean,
+ *             detail: string, heights: number[], pending: string[] }}
  */
 export function describeOtsProof(proof, opts) {
   /** @type {ReturnType<typeof parseOtsProof>} */
@@ -223,9 +236,10 @@ export function describeOtsProof(proof, opts) {
     // A proof over other bytes is REFUTED; a proof that does not parse is
     // merely broken. Collapsing them would let a mangled adapter produce this
     // project's strongest accusation.
-    const refuted = /valid proof about something else/.test(detail);
+    const refuted = e instanceof OtsError && e.refuted === true;
     return {
       ok: false,
+      refuted,
       inconclusive: !refuted,
       ...(refuted ? {} : { malformed: true }),
       detail,
@@ -240,6 +254,7 @@ export function describeOtsProof(proof, opts) {
   if (heights.length === 0 && pending.length > 0) {
     return {
       ok: false,
+      refuted: false,
       inconclusive: true,
       detail: `the proof is PENDING at ${pending.join(', ')}: the calendar holds the digest but it `
         + 'is not yet in a block. That is the ordinary state for the first hour after submission, '
@@ -251,6 +266,7 @@ export function describeOtsProof(proof, opts) {
   if (heights.length === 0) {
     return {
       ok: false,
+      refuted: false,
       inconclusive: true,
       detail: p.attestations.length === 0
         ? 'the proof reaches no attestation at all, so it commits to nothing'
@@ -261,6 +277,7 @@ export function describeOtsProof(proof, opts) {
     };
   }
   return {
+    refuted: false,
     // Never `ok`. Walking the proof establishes a commitment to a block header;
     // confirming that header is in the chain needs a chain source, which
     // NFR-05 forbids this verifier from having.

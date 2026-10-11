@@ -168,9 +168,9 @@
       "title": "RFC 3161 TSA adapter",
       "statement": "Support an RFC 3161 timestamp authority as a witness type.",
       "source": "Independence — an RFC 3161 TSA",
-      "verify": "Verified against a GENUINE LibreSSL-produced TimeStampToken committed as a fixture; five independent checks each with a test that breaks only it",
+      "verify": "Verified against a GENUINE LibreSSL-produced TimeStampToken committed as a fixture; the signer must carry extendedKeyUsage=id-kp-timeStamping as its sole purpose (RFC 3161 2.3), and the chain must reach an anchor the reader supplied through certificate authorities only",
       "status": "done",
-      "evidence": "Verification in packages/core/src/rfc3161.mjs with a strict hand-written DER reader (no ASN.1 dependency in the verifier's closure); submission in packages/witness-tsa"
+      "evidence": "Verification in packages/core/src/rfc3161.mjs with a strict hand-written DER reader (no ASN.1 dependency in the verifier's closure) over the shared trust path; submission in packages/witness-tsa"
     },
     {
       "id": "FR-17",

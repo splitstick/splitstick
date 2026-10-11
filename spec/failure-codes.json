@@ -160,8 +160,8 @@
     {
       "code": "ENVELOPE_DUPLICATE_ISSUER",
       "milestone": "M3a",
-      "verdict": "fail",
-      "conclusion": "One issuer appears more than once in a checkpoint envelope. Both entries are reported, because hiding one would hide a duplicate submission, but the issuer counts once towards any quorum: a quorum satisfied by one party submitting twice is not a quorum (FR-19)."
+      "verdict": "inconclusive",
+      "conclusion": "One issuer appears more than once in a checkpoint envelope. Both entries are reported, because hiding one would hide a duplicate submission, but the issuer counts once towards any quorum: a quorum satisfied by one party submitting twice is not a quorum (FR-19). This is INCONCLUSIVE, not a failure. A witness retry that landed twice is a benign operational event — the stateful witness itself treats a resubmission as idempotent — and failing the evidence over it would be a false accusation."
     },
     {
       "code": "WITNESS_SHORT",

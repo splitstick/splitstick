@@ -153,9 +153,9 @@
     "title": "No trust in operator or vendor",
     "statement": "Verification must not require trusting the operator, host, collector binary, or Splitstick.",
     "source": "Threat model — trust",
-    "verify": "The report enumerates what the reader is trusting; the operator appears only for completeness, identity and custody. The verifier source is asserted to import no config loader at all",
+    "verify": "The report enumerates what the reader is trusting; the operator appears only for completeness, identity and custody. The verifier source is asserted to import no config loader at all, and the trust path refuses any certificate the operator could have obtained for themselves",
     "status": "done",
-    "evidence": "packages/verify/test/assumptions.test.mjs; an operator's configuration is not evidence"
+    "evidence": "packages/verify/test/assumptions.test.mjs and packages/core/test/trust-path.test.mjs; an operator's configuration is not evidence, and neither is a certificate they already hold"
   },
   {
     "id": "SEC-04",

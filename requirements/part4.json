@@ -368,8 +368,8 @@
     "title": "Validate a provider custody attestation",
     "statement": "Before reporting custody as independently supported, validate the attestation: issuer chains to a provider root named in the acceptance policy, document signature valid over the bytes presented, attested key is the one that signed this epoch, attestation period covers the epoch, and the document actually asserts non-exportability. Even all five together do not establish historical key destruction, which remains operator-declared.",
     "source": "Integrity — forward-secure epoch ratchet",
-    "verify": "All five checks reported separately, each with a test that breaks only it. Tested against CONSTRUCTED documents only — no cloud path issues an Ed25519 attestation — and every result carries provider_untested: true",
+    "verify": "All five checks reported separately, each with a test that breaks only it, plus the trust-path tests: an end-entity certificate cannot act as a CA, and an extension asserting non-exportable FALSE is refused. Tested against CONSTRUCTED documents only — no cloud path issues an Ed25519 attestation — and every result carries provider_untested: true",
     "status": "done",
-    "evidence": "packages/core/src/attestation.mjs; establishes_destruction is hard-coded false with a test asserting it"
+    "evidence": "packages/core/src/attestation.mjs over the shared packages/core/src/trustpath.mjs; check 5 reads the extension's VALUE through the DER rather than searching the certificate for its OID; establishes_destruction is hard-coded false with a test asserting it"
   }
 ]

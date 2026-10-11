@@ -10,6 +10,7 @@ import { parseConfig } from '@splitstick/core/config';
 import { generateDevSigner } from '@splitstick/core/signer-file';
 import { formatVkey } from '@splitstick/core/note';
 import { verifyStore } from '../src/verify.mjs';
+import { code as sharedCode } from '../../../tools/code-text.mjs';
 
 const CFG = 'version: 1\nstore: ./s\n';
 const ORIGIN = 'splitstick.dev/host-1';
@@ -286,7 +287,7 @@ function reachableFromVerifier() {
  * tools/lint-claims.mjs. Stripping comments is the fix in all three.
  * @param {string} t
  */
-const code = (t) => t.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+const code = sharedCode;
 
 test('NFR-05: nothing the verifier reaches imports a network module', () => {
   const reached = reachableFromVerifier();

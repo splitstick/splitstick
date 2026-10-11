@@ -268,13 +268,21 @@ test('row 16: the witness publishes a signed tree head, and never an earlier one
 });
 
 test('row 16: a rolled-back witness is detectable by comparing two observed heads', async () => {
-  const { w, opkey } = await fixture();
+  const { w, opkey, dir } = await fixture();
   w.enrol(OPERATOR, opkey.publicKey);
   const all = leaves(200);
   await w.addCheckpoint({ note: await submission(opkey, all, 100), old_size: 0 });
   const observed = await w.treeHead(OPERATOR);
-  // Roll the witness back, as a colluding witness would.
-  w.rollbackForTesting(OPERATOR, 0);
+  // Roll the witness back the way a colluding witness actually would: by
+  // editing its state file. The class used to offer a rollbackForTesting()
+  // method, which meant the package providing the sequence guarantee also
+  // shipped the one call that undoes it.
+  const { readFileSync, writeFileSync } = await import('node:fs');
+  const { STATE_FILE } = await import('../src/witness.mjs');
+  const statePath = join(dir, STATE_FILE);
+  const state = JSON.parse(readFileSync(statePath, 'utf8'));
+  state.seq[OPERATOR] = { last_size: 0, last_root: '', received_at: '2026-10-11T12:00:00.000Z' };
+  writeFileSync(statePath, JSON.stringify(state));
   const now = await w.treeHead(OPERATOR);
   const { detectRollback } = await import('../src/client.mjs');
   const r = detectRollback(observed, now);
