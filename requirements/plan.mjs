@@ -42,11 +42,23 @@ for (const g of Object.keys(gates)) if (!gated.has(g)) errs.push(`gate ${g}: nev
 // ordering: a requirement may not depend on one in a later milestone
 const msOfId = new Map();
 for (const m of milestones) for (const id of m.ids) msOfId.set(id, m.id);
+const pos = id => order.indexOf(msOfId.get(id));
+// A carry must come from a STRICTLY EARLIER milestone. The comment above said
+// so from the start and nothing checked it, so M3a could claim to close an M7
+// requirement — which is the same declared-but-unenforced shape as the failure
+// codes this milestone added a lint for, in the very commit that added it.
 for (const m of milestones) for (const c of m.carries ?? []) {
   const owner = msOfId.get(c.id);
-  if (!owner) errs.push(`${m.id}: carries ${c.id}, which is in no 1.0 milestone`);
+  if (!owner) { errs.push(`${m.id}: carries ${c.id}, which is in no 1.0 milestone`); continue; }
+  const here = order.indexOf(m.id);
+  const there = order.indexOf(owner);
+  if (there === here) {
+    errs.push(`${m.id}: carries ${c.id}, which it already owns — a carry crosses milestones`);
+  } else if (there > here) {
+    errs.push(`${m.id}: carries ${c.id} from ${owner}, a LATER milestone — a carry closes earlier work, `
+      + 'it cannot reach forward');
+  }
 }
-const pos = id => order.indexOf(msOfId.get(id));
 for (const [id, deps] of Object.entries(depends)) {
   if (!msOfId.has(id)) continue;
   for (const dep of deps) {

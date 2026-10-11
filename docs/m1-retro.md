@@ -105,12 +105,24 @@ contends four real OS processes; that is the shape, not the exception.
 
 **4. The verifier's vocabulary is now an artifact.**
 [`spec/failure-codes.json`](../spec/failure-codes.json) carries every code with
-its verdict class, its conclusion text and the milestone that implements it, and
-`tools/lint-failure-codes.mjs` — wired into `npm run backlog` and CI — enforces
-that nothing is emitted that is unspecified, nothing specified-and-due goes
-unemitted, and nothing delivered goes untested or undocumented. It found ten
-gaps the moment it was written, including one its own substring bug had been
-excusing.
+its verdict class, its conclusion text and the milestone that implements it.
+
+The guarantee is split, because the two halves need different instruments.
+`tools/lint-failure-codes.mjs` checks statically that nothing unspecified is
+emitted, nothing specified-and-due goes unemitted, every delivered code is named
+in the design, and every `code:` site is a literal — that last one is what makes
+the scan sound rather than merely plausible. **Coverage is proved separately and
+executably** in `packages/verify/test/failure-codes.test.mjs`: a table of
+scenarios must cover exactly the delivered codes, and each must make a real
+verifier run emit its code with the verdict class the specification promises.
+
+The lint originally claimed coverage too, by searching the test files for each
+code's name — and a review pointed out that a comment would satisfy it, which it
+did when they tried. That is the measurement-overclaim pattern from §4 above,
+reappearing in the very check built to stop the others. Between them the two
+instruments found eleven gaps: ten codes specified in no document, one with no
+test, one more its own substring bug had been excusing, and a `carries` ordering
+rule that was described in a comment and never implemented.
 
 **5. Every budget proves its instrument in the same run.**
 `bench/precision.mjs` and `bench/gc.mjs` are modules with tests. A benchmark

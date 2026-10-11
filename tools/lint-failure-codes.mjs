@@ -15,12 +15,24 @@
  * unnoticed. A green suite cannot distinguish a capability that works from one
  * that is never reached.
  *
- * So spec/failure-codes.json is the source of truth, and this enforces:
+ * So spec/failure-codes.json is the source of truth. What this lint can check
+ * STATICALLY, and does:
  *
  *   1. every code the verifier emits is specified there
- *   2. every code whose milestone has been delivered IS emitted
- *   3. every delivered code is exercised by at least one test
- *   4. every delivered code is named in the design, so the prose stays honest
+ *   2. every code whose milestone has been delivered IS emitted somewhere
+ *   3. every delivered code is named in the design, so the prose stays honest
+ *   4. every `code:` site is a string literal, which is what makes (1) and (2)
+ *      sound — a dynamically assembled code would be invisible to this scan
+ *
+ * What it deliberately does NOT claim is test coverage. It used to, by searching
+ * the test files for each code's name, and a review pointed out that a comment
+ * would satisfy that — which it did. A static reference is not a demonstration
+ * that a failure mode can occur, so the coverage guarantee lives in
+ * packages/verify/test/failure-codes.test.mjs instead, where a table of
+ * scenarios must cover exactly the delivered codes and each one must make a
+ * real verifier run emit its code. That test fails if the table drifts from
+ * this file in either direction, and both failure modes were confirmed by
+ * breaking them on purpose.
  */
 
 import { readdirSync, readFileSync, statSync } from 'node:fs';
@@ -53,16 +65,28 @@ const read = (/** @type {string[]} */ files) => files.map(f => readFileSync(f, '
 const names = (haystack, code) => new RegExp(`\\b${code}\\b`).test(haystack);
 
 const srcFiles = walk('packages', f => f.endsWith('.mjs') && f.includes('/src/'));
-const testFiles = walk('packages', f => f.endsWith('.test.mjs'));
 const designText = read(walk('design', f => f.endsWith('.md')));
 const srcText = read(srcFiles);
-const testText = read(testFiles);
 
 /** Codes a module emits: `code: 'X'`. @param {string} text */
 const emitted = (text) =>
   new Set([...text.matchAll(/code:\s*'([A-Z_]+)'/g)].map(m => /** @type {string} */ (m[1])));
 
 const emittedCodes = emitted(srcText);
+
+// The static scan above is only sound if every code is a literal. A computed
+// one — `code: prefix + suffix`, or a code forwarded from a variable — would be
+// invisible to it, and the lint would then be silently incomplete rather than
+// wrong, which is harder to notice.
+// Capture every assignment and test the captured text, rather than trying to
+// exclude quotes with a lookahead: `code:\s*(?!['"])` backtracks to zero
+// whitespace and then happily matches a quoted literal, which this check did on
+// its first run — it flagged all 27 literals and would have missed a real
+// computed one.
+const dynamic = [...srcText.matchAll(/\bcode:\s*([^,\n}]+)/g)]
+  .map(m => /** @type {string} */ (m[1]).trim())
+  .filter(expr => expr !== '' && !/^['"]/.test(expr))
+  .filter(expr => !/^f\.code$/.test(expr));
 const specified = new Map(spec.codes.map((/** @type {any} */ c) => [c.code, c]));
 
 /** @type {string[]} */
@@ -90,11 +114,7 @@ for (const [code, entry] of specified) {
   if (!emittedCodes.has(code)) {
     errs.push(`${code} is specified for ${entry.milestone} (delivered) and the verifier never emits it.`);
   }
-  // 3 — and one nothing tests is a behaviour nobody has seen happen.
-  if (!names(testText, code)) {
-    errs.push(`${code} is specified for ${entry.milestone} (delivered) and no test exercises it.`);
-  }
-  // 4 — the design prose is the thing a reader actually reads.
+  // 3 — the design prose is the thing a reader actually reads.
   if (!names(designText, code)) {
     errs.push(`${code} is specified for ${entry.milestone} (delivered) and named in no design element.`);
   }
@@ -106,6 +126,13 @@ for (const [code, entry] of specified) {
   }
 }
 
+// 4 — anything that would make the scan unsound.
+for (const expr of dynamic) {
+  errs.push(`a code is assigned from the expression \`${expr}\` rather than a literal. `
+    + 'This scan reads literals, so a computed code would be invisible to it; '
+    + 'use a literal, or extend this lint to follow the value.');
+}
+
 if (errs.length) {
   process.stderr.write('\nFAILURE-CODE LINT FAILED\n\n');
   for (const e of errs) process.stderr.write(`  ${e}\n`);
@@ -115,5 +142,6 @@ if (errs.length) {
 
 const due = [...specified.values()].filter((/** @type {any} */ c) => delivered.has(c.milestone));
 const later = specified.size - due.length;
-process.stdout.write(`\n  failure codes: ${due.length} delivered, all emitted, tested and documented;`
-  + ` ${later} scheduled for later milestones\n\n`);
+process.stdout.write(`\n  failure codes: ${due.length} delivered, all emitted as literals and named in the`
+  + ` design; ${later} scheduled for later milestones\n`
+  + '                 (coverage is proved by packages/verify/test/failure-codes.test.mjs, not here)\n\n');
