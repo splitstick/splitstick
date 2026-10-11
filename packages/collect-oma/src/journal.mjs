@@ -27,13 +27,40 @@
  * @property {boolean} [consequential]
  */
 
-/** @param {any} result @returns {string|undefined} */
-function resultText(result) {
+/**
+ * The result bytes to commit.
+ *
+ * OMA's `ToolResultContent` is `string | ToolResultContentPart[]`, and a part
+ * need not be text — an image result is still a result. Returning undefined for
+ * anything non-textual would make FR-06 fail silently for exactly the tools
+ * whose output matters most, so a non-text payload is serialised rather than
+ * dropped.
+ * @param {any} result
+ * @returns {string|undefined}
+ */
+function resultBytes(result) {
   if (!result) return undefined;
-  const parts = result.content;
-  if (!Array.isArray(parts)) return undefined;
-  const text = parts.filter(p => p && p.type === 'text').map(p => p.text).join('');
-  return text.length ? text : undefined;
+  const content = result.content;
+  if (typeof content === 'string') return content.length ? content : undefined;
+  if (!Array.isArray(content)) return content === undefined ? undefined : JSON.stringify(content);
+  const text = content.filter(p => p && p.type === 'text').map(p => p.text).join('');
+  if (text.length) return text;
+  return content.length ? JSON.stringify(content) : undefined;
+}
+
+/**
+ * Did the tool fail? A `ToolResultBlock` carries `is_error`; the
+ * `ToolCallRecord` beside it carries `isError`. Reading only one of the two
+ * reported every failure as ok, which is what the red-team harness caught.
+ * @param {any} e a tool/result event
+ * @returns {boolean}
+ */
+function resultFailed(e) {
+  const block = e.result || {};
+  if (typeof block.is_error === 'boolean') return block.is_error;
+  if (typeof block.isError === 'boolean') return block.isError;
+  if (e.record && typeof e.record.isError === 'boolean') return e.record.isError;
+  return false;
 }
 
 /** @param {any} content @returns {string} */
@@ -92,13 +119,13 @@ export class SplitstickRunJournal {
     if (e.type === 'tool/result') {
       const p = this.pendingCalls.get(e.toolCallId);
       this.pendingCalls.delete(e.toolCallId);
-      const text = resultText(e.result);
+      const text = resultBytes(e.result);
       this.collector.action({
         run: (p && p.run) || e.runId || null,
         tool: (p && p.tool) || 'unknown',
         ...(p && p.args ? { args: p.args } : {}),
         ...(text === undefined ? {} : { result: Buffer.from(text) }),
-        outcome: e.result && e.result.isError ? 'error' : 'ok',
+        outcome: resultFailed(e) ? 'error' : 'ok',
         attempt: (p && p.attempt) || 1,
         correlation: (p && p.correlation) || this.collector.correlate(e.toolCallId, undefined).correlation,
       });

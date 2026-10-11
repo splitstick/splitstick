@@ -8,7 +8,7 @@
   "scripts": {
     "generate": "node redteam/generate.mjs",
     "redteam": "node redteam/redteam.mjs",
-    "test": "npm run generate && npm run redteam",
+    "test": "npm run generate && npm run redteam && npm run redteam:splitstick",
     "requirements": "node requirements/build.mjs",
     "plan": "node requirements/plan.mjs",
     "backlog": "npm run requirements && npm run plan && npm run design",
@@ -16,8 +16,11 @@
     "review": "node requirements/review.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
     "test:unit": "node --test packages/*/test/*.test.mjs",
-    "bench": "node packages/core/test/bench.mjs",
-    "verify": "npm run test:unit && npm run typecheck && npm test && npm run backlog && npm run review"
+    "bench": "node bench/append.mjs && node bench/run-latency.mjs",
+    "verify": "node packages/verify/src/cli.mjs",
+    "redteam:splitstick": "node redteam/splitstick.mjs",
+    "bench:append": "node bench/append.mjs",
+    "bench:latency": "node bench/run-latency.mjs"
   },
   "dependencies": {
     "@open-multi-agent/core": "1.21.1",

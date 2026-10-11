@@ -18,17 +18,59 @@
  * unlinkable — which is the whole of FR-36.
  *
  * Layout (DES-13):
- *   content/<cid>.bin    ciphertext, AES-256-GCM        DELETABLE
- *   content/<cid>.salt   per-content salt               DELETABLE
- *   content/refs.idx     counterparty reference index   DELETABLE   [DES-19]
- *   keys/<cid>.key       per-content encryption key     DELETABLE
+ *   content/content.blob   every payload, encrypted, append-only  DELETABLE
+ *   content/refs.idx       counterparty references                DELETABLE [DES-19]
+ *   keys/content.jsonl     cid -> key and extent                  DELETABLE
  *
  * chain/ holds none of these, which is what makes PRIV-02 literally true
  * rather than true of large payloads only.
+ *
+ * The content salt is a header in the content file rather than a file of its
+ * own. Creating a file costs 0.22 ms on a 1 ms budget (NFR-01), and the salt
+ * buys nothing by being separate: FR-36 deletes it in the same step as the
+ * ciphertext, and a holder of the ciphertext who lacks the key gains nothing
+ * from the salt — if they could decrypt they would already have the plaintext.
+ *
+ * The encryption key stays in its own directory, and that separation is NOT a
+ * performance trade to make later: DES-13 allows content/ to live anywhere
+ * including object storage, and a key stored beside its ciphertext would be
+ * shipped wherever the ciphertext goes.
+ *
+ * Two further decisions came out of measuring NFR-01 rather than assuming it.
+ *
+ * **Nothing on the append path creates a file**, and that is a measurement, not
+ * a preference. On the development machine `fs.writeFileSync` creating one new
+ * file measured p50 0.19 ms and p99 1.04 ms, while a write to an already-open
+ * descriptor measured p50 0.008 ms and p99 0.016 ms. SHA-256 and AES-GCM over a
+ * record are 0.03 ms together and were never the problem. A p99 of 1.04 ms for
+ * a single file creation means NFR-01's 1 ms budget cannot be met at p99 by any
+ * implementation that creates a file per record, however fast its cryptography.
+ *
+ * So payloads are appended to one encrypted blob and `keys/content.jsonl` maps
+ * each cid to its key and its extent. The route taken to get here is recorded
+ * because each step was a dead end worth not repeating: one file per payload
+ * (0.86 ms of the budget in file creation alone), then one file per record
+ * (0.64 ms p50, 3.2 ms p99), then a deferred write queue — which reduces no
+ * work at all, only moves it, and turned a 1.4 ms p50 into a multi-second
+ * stall. Fewer writes beat later writes.
+ *
+ * **Erasure stays byte-destructive.** The blob is shared, so FR-36 cannot
+ * unlink a payload; it overwrites the extent with zeros in place, which is a
+ * positional write of the payload's own length and not a rewrite of the file.
+ * The claim therefore stays "the bytes are gone" rather than weakening to "the
+ * bytes are unreadable", which is what deleting only the key would have left.
+ * Erasing the last surviving payload truncates the blob.
+ *
+ * **Per-content keys stay per-content** — one shared key would mean erasing a
+ * single payload destroyed the batch — and keys/ stays a separate directory,
+ * because DES-13 lets content/ live anywhere including object storage and a key
+ * stored beside its ciphertext travels wherever the ciphertext goes. One blob
+ * per collector is also a better shape for object storage than a million small
+ * objects.
  */
 
 import { createHash, randomBytes, createCipheriv, createDecipheriv } from 'node:crypto';
-import { mkdirSync, writeFileSync, readFileSync, rmSync, existsSync } from 'node:fs';
+import { mkdirSync, writeFileSync, readFileSync, rmSync, existsSync, statSync, openSync, writeSync, closeSync, readSync } from 'node:fs';
 import { join } from 'node:path';
 
 /** 0x05 — content commitment. Distinct from 0x00, 0x01, 0x02 and 0x04. */
@@ -89,12 +131,20 @@ const REF_TEXT = /\bref(?:erence)?[=:]\s*([A-Za-z0-9][A-Za-z0-9_-]{3,63})\b/gi;
 export function extractRefs(result) {
   /** @type {Set<string>} */
   const refs = new Set();
-  const text = Buffer.from(result).toString('utf8');
+  const text = Buffer.isBuffer(result) ? result.toString('utf8') : Buffer.from(result).toString('utf8');
 
-  try {
-    walk(JSON.parse(text));
-  } catch {
-    // Not JSON, or not an object. The free-text pass below still applies.
+  // Only attempt a parse when the text could be JSON. Letting JSON.parse throw
+  // on every plain-text result builds an exception and a stack trace per
+  // record, which measured four times the cost of parsing a result that IS
+  // JSON — garbage the collector then has to collect, on the one path with a
+  // sub-millisecond budget.
+  const first = text.trimStart()[0];
+  if (first === '{' || first === '[') {
+    try {
+      walk(JSON.parse(text));
+    } catch {
+      // Not JSON after all. The free-text pass below still applies.
+    }
   }
   /** @param {unknown} v @param {string} [key] */
   function walk(v, key) {
@@ -112,8 +162,20 @@ export function extractRefs(result) {
 }
 
 /** @typedef {{ cid: string, bytes: number }} Commitment */
+/** @typedef {{ key: Buffer, offset: number, length: number }} Entry */
 
 export class ContentStore {
+  /** @type {number|null} */
+  #refsFd = null;
+  /** @type {number|null} */
+  #keysFd = null;
+  /** @type {Map<string, Entry>|null} the key journal, read once and kept */
+  #keys = null;
+  /** @type {number|null} */
+  #blobFd = null;
+  /** Append offset — the blob's length. */
+  #end = 0;
+
   /** @param {string} root the store root from splitstick.yaml */
   constructor(root) {
     this.root = root;
@@ -122,6 +184,9 @@ export class ContentStore {
     mkdirSync(this.contentDir, { recursive: true });
     mkdirSync(this.keysDir, { recursive: true });
     this.refsPath = join(this.contentDir, 'refs.idx');
+    this.keysPath = join(this.keysDir, 'content.jsonl');
+    this.blobPath = join(this.contentDir, 'content.blob');
+    this.#end = existsSync(this.blobPath) ? statSync(this.blobPath).size : 0;
   }
 
   /** @param {string} cid */
@@ -130,12 +195,73 @@ export class ContentStore {
     return cid.slice('sha256:'.length);
   }
 
-  /** @param {string} cid the ciphertext path, exposed for tamper tests */
-  pathFor(cid) { return join(this.contentDir, `${this.#base(cid)}.bin`); }
-  /** @param {string} cid */
-  saltPathFor(cid) { return join(this.contentDir, `${this.#base(cid)}.salt`); }
-  /** @param {string} cid */
-  keyPathFor(cid) { return join(this.keysDir, `${this.#base(cid)}.key`); }
+  /**
+   * The file a commitment's bytes live in. Exposed because the tamper tests
+   * need it, and because a verifier reports the path it could not read.
+   * @param {string} cid
+   */
+  pathFor(cid) { this.#base(cid); return this.blobPath; }
+
+  /** The extent of one commitment inside the blob. For tests. @param {string} cid */
+  rangeForTest(cid) {
+    const e = /** @type {Entry} */ (this.#readKeys().get(cid));
+    return { offset: e.offset, length: e.length };
+  }
+
+  /** Whether the key map has been read into memory. For NFR-01's memory test. */
+  get keysMaterialisedForTest() { return this.#keys !== null; }
+
+  /** @returns {number} the blob descriptor, opened for read and append */
+  #blobHandle() {
+    if (this.#blobFd === null) this.#blobFd = openSync(this.blobPath, 'a+', 0o600);
+    return this.#blobFd;
+  }
+
+  /** @returns {Map<string, Entry>} */
+  #readKeys() {
+    if (this.#keys) return this.#keys;
+    /** @type {Map<string, Entry>} */
+    const m = new Map();
+    if (existsSync(this.keysPath)) {
+      for (const line of readFileSync(this.keysPath, 'utf8').split('\n')) {
+        if (!line) continue;
+        const { cid, key, offset, length } = JSON.parse(line);
+        m.set(cid, { key: Buffer.from(key, 'base64'), offset, length });
+      }
+    }
+    this.#keys = m;
+    return m;
+  }
+
+  /**
+   * @param {string} cid @param {Entry} e
+   *
+   * The journal is the source of truth and it is append-only, so a writer does
+   * NOT materialise the key map: a collector that writes a million payloads and
+   * reads none would otherwise hold every key in memory for no purpose, which
+   * is the shape that breaks NFR-01's million-event target. A reader
+   * materialises on demand and sees everything written, because the journal has
+   * it all.
+   */
+  #writeKey(cid, e) {
+    if (this.#keysFd === null) this.#keysFd = openSync(this.keysPath, 'a', 0o600);
+    writeSync(this.#keysFd, JSON.stringify({
+      cid, key: e.key.toString('base64'), offset: e.offset, length: e.length,
+    }) + '\n');
+    if (this.#keys) this.#keys.set(cid, e);
+  }
+
+  /** @param {(cid: string) => boolean} keep */
+  #rewriteKeys(keep) {
+    const left = [...this.#readKeys()].filter(([cid]) => keep(cid));
+    if (this.#keysFd !== null) { closeSync(this.#keysFd); this.#keysFd = null; }
+    writeFileSync(this.keysPath,
+      left.map(([cid, e]) => JSON.stringify({
+        cid, key: e.key.toString('base64'), offset: e.offset, length: e.length,
+      })).join('\n') + (left.length ? '\n' : ''),
+      { mode: 0o600 });
+    this.#keys = new Map(left);
+  }
 
   /**
    * Store a payload and return its commitment. The commitment is all that goes
@@ -145,30 +271,73 @@ export class ContentStore {
    * @returns {Commitment}
    */
   put(plaintext, opts = {}) {
-    const salt = randomBytes(CONTENT_SALT_BYTES);
-    const cid = contentCid(salt, plaintext);
-    const key = randomBytes(KEY_BYTES);
-    const iv = randomBytes(IV_BYTES);
-    const c = createCipheriv('aes-256-gcm', key, iv);
-    const body = Buffer.concat([c.update(plaintext), c.final()]);
-    writeFileSync(this.pathFor(cid), Buffer.concat([iv, c.getAuthTag(), body]), { mode: 0o600 });
-    writeFileSync(this.saltPathFor(cid), salt, { mode: 0o600 });
-    writeFileSync(this.keyPathFor(cid), key, { mode: 0o600 });
-    if (opts.refs) this.#index(cid, opts.refs);
-    return { cid, bytes: plaintext.length };
+    const [only] = this.putGroup([{ bytes: plaintext, ...(opts.refs ? { refs: opts.refs } : {}) }]);
+    return /** @type {Commitment} */ (only);
+  }
+
+  /**
+   * Store every payload of one record in a single file.
+   *
+   * @param {{ bytes: Uint8Array, refs?: Iterable<string>, index?: boolean }[]} payloads
+   * @returns {Commitment[]} commitments, in the order given
+   */
+  putGroup(payloads) {
+    if (payloads.length === 0) return [];
+    /** @type {Commitment[]} */
+    const out = [];
+    /** @type {[string, Entry][]} */
+    const entries = [];
+    /** @type {Buffer[]} */
+    const blobs = [];
+    let offset = this.#end;
+
+    for (const p of payloads) {
+      const salt = randomBytes(CONTENT_SALT_BYTES);
+      const cid = contentCid(salt, p.bytes);
+      const key = randomBytes(KEY_BYTES);
+      const iv = randomBytes(IV_BYTES);
+      const c = createCipheriv('aes-256-gcm', key, iv);
+      const blob = Buffer.concat([salt, iv, c.update(p.bytes), c.final(), c.getAuthTag()]);
+      blobs.push(blob);
+      entries.push([cid, { key, offset, length: blob.length }]);
+      offset += blob.length;
+      out.push({ cid, bytes: p.bytes.length });
+    }
+
+    const joined = Buffer.concat(blobs);
+    writeSync(this.#blobHandle(), joined, 0, joined.length, this.#end);
+    this.#end += joined.length;
+    for (const [cid, e] of entries) this.#writeKey(cid, e);
+    for (let i = 0; i < payloads.length; i++) {
+      const refs = /** @type {{refs?: Iterable<string>}} */ (payloads[i]).refs;
+      if (refs) this.#index(/** @type {Commitment} */ (out[i]).cid, refs);
+    }
+    return out;
+  }
+
+  /** @param {string} cid @returns {Buffer} the stored bytes for one commitment */
+  #blob(cid) {
+    const e = /** @type {Entry} */ (this.#readKeys().get(cid));
+    const buf = Buffer.alloc(e.length);
+    readSync(this.#blobHandle(), buf, 0, e.length, e.offset);
+    return buf;
   }
 
   /** @param {string} cid @returns {boolean} */
-  has(cid) { return existsSync(this.pathFor(cid)) && existsSync(this.keyPathFor(cid)); }
+  has(cid) {
+    const e = this.#readKeys().get(cid);
+    return e !== undefined && existsSync(this.blobPath) && statSync(this.blobPath).size >= e.offset + e.length;
+  }
 
   /** @param {string} cid @returns {Buffer} */
   get(cid) {
     if (!this.has(cid)) throw new ContentMissing(cid);
-    const key = readFileSync(this.keyPathFor(cid));
-    const blob = readFileSync(this.pathFor(cid));
-    const d = createDecipheriv('aes-256-gcm', key, blob.subarray(0, IV_BYTES));
-    d.setAuthTag(blob.subarray(IV_BYTES, IV_BYTES + TAG_BYTES));
-    return Buffer.concat([d.update(blob.subarray(IV_BYTES + TAG_BYTES)), d.final()]);
+    const { key } = /** @type {Entry} */ (this.#readKeys().get(cid));
+    const blob = this.#blob(cid);
+    const body = blob.subarray(CONTENT_SALT_BYTES);
+    const d = createDecipheriv('aes-256-gcm', key, body.subarray(0, IV_BYTES));
+    d.setAuthTag(body.subarray(body.length - TAG_BYTES));
+    return Buffer.concat([d.update(body.subarray(IV_BYTES, body.length - TAG_BYTES)), d.final()]);
   }
 
   /**
@@ -182,8 +351,8 @@ export class ContentStore {
    * @returns {boolean|null}
    */
   reproduces(cid) {
-    if (!this.has(cid) || !existsSync(this.saltPathFor(cid))) return null;
-    const salt = readFileSync(this.saltPathFor(cid));
+    if (!this.has(cid)) return null;
+    const salt = this.#blob(cid).subarray(0, CONTENT_SALT_BYTES);
     try {
       return contentCid(salt, this.get(cid)) === cid;
     } catch {
@@ -197,11 +366,41 @@ export class ContentStore {
    * nobody can produce.
    * @param {string} cid
    */
-  shred(cid) {
-    for (const p of [this.pathFor(cid), this.saltPathFor(cid), this.keyPathFor(cid)]) {
-      rmSync(p, { force: true });
+  shred(cid) { this.shredAll([cid]); }
+
+  /**
+   * Shred several commitments in one pass — FR-36.
+   *
+   * The key journal is rewritten once per call, not once per cid, so honouring
+   * a request that touches ten thousand records is one rewrite rather than ten
+   * thousand. Erasure is the operation allowed to be O(n); appending is not.
+   * @param {Iterable<string>} cids
+   */
+  shredAll(cids) {
+    const keys = this.#readKeys();
+    const gone = new Set([...cids].filter(cid => keys.has(cid)));
+    if (gone.size === 0) return;
+
+    if (existsSync(this.blobPath)) {
+      const fd = this.#blobHandle();
+      for (const cid of gone) {
+        // Zero the extent in place: a positional write of the payload's own
+        // length, not a rewrite of the blob. This is what keeps FR-36's claim
+        // "the bytes are gone" rather than "the key is gone".
+        const e = /** @type {Entry} */ (keys.get(cid));
+        writeSync(fd, Buffer.alloc(e.length), 0, e.length, e.offset);
+      }
+      const survivors = [...keys].some(([cid]) => !gone.has(cid));
+      if (!survivors) {
+        closeSync(fd);
+        this.#blobFd = null;
+        rmSync(this.blobPath, { force: true });
+        this.#end = 0;
+      }
     }
-    this.#rewriteIndex(e => e.cid !== cid);
+
+    this.#rewriteKeys(cid => !gone.has(cid));
+    this.#rewriteIndex(e => !gone.has(e.cid));
   }
 
   /** @param {string} ref @returns {string[]} cids */
@@ -212,17 +411,32 @@ export class ContentStore {
   /** Replace stored bytes without touching the commitment — FR-35's attack.
    * @param {string} cid @param {Uint8Array} plaintext */
   overwriteForTest(cid, plaintext) {
-    const key = readFileSync(this.keyPathFor(cid));
+    const e = /** @type {Entry} */ (this.#readKeys().get(cid));
+    const salt = this.#blob(cid).subarray(0, CONTENT_SALT_BYTES);
     const iv = randomBytes(IV_BYTES);
-    const c = createCipheriv('aes-256-gcm', key, iv);
-    const body = Buffer.concat([c.update(plaintext), c.final()]);
-    writeFileSync(this.pathFor(cid), Buffer.concat([iv, c.getAuthTag(), body]));
+    const c = createCipheriv('aes-256-gcm', e.key, iv);
+    const forged = Buffer.concat([salt, iv, c.update(plaintext), c.final(), c.getAuthTag()]);
+    // Keep the extent: the point is that the pointer still resolves and the
+    // commitment no longer reproduces.
+    const padded = Buffer.alloc(e.length);
+    forged.copy(padded, 0, 0, Math.min(forged.length, e.length));
+    writeSync(this.#blobHandle(), padded, 0, padded.length, e.offset);
   }
 
   /** @param {string} cid @param {Iterable<string>} refs */
   #index(cid, refs) {
     const lines = [...refs].map(ref => JSON.stringify({ ref, cid }));
-    if (lines.length) writeFileSync(this.refsPath, lines.join('\n') + '\n', { flag: 'a', mode: 0o600 });
+    if (!lines.length) return;
+    if (this.#refsFd === null) this.#refsFd = openSync(this.refsPath, 'a', 0o600);
+    writeSync(this.#refsFd, lines.join('\n') + '\n');
+  }
+
+  /** Release the journal descriptors. Idempotent. */
+  close() {
+    for (const fd of [this.#refsFd, this.#keysFd, this.#blobFd]) if (fd !== null) closeSync(fd);
+    this.#refsFd = null;
+    this.#keysFd = null;
+    this.#blobFd = null;
   }
 
   /** @returns {{ ref: string, cid: string }[]} */
@@ -233,6 +447,7 @@ export class ContentStore {
 
   /** @param {(e: { ref: string, cid: string }) => boolean} keep */
   #rewriteIndex(keep) {
+    if (this.#refsFd !== null) { closeSync(this.#refsFd); this.#refsFd = null; }
     if (!existsSync(this.refsPath)) return;
     const left = this.#readIndex().filter(keep);
     if (left.length === 0) { rmSync(this.refsPath, { force: true }); return; }

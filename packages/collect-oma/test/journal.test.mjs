@@ -315,3 +315,65 @@ test('INT-07: wiring is construction and configuration only', async () => {
   await probe.append([ev(1, 'run/start', { mode: 'runAgent' })]);
   assert.equal((await probe.readFrom(1)).length, 1, 'upstream behaviour is untouched');
 });
+
+// OMA's ToolResultContent is `string | ToolResultContentPart[]`, and the error
+// flag on a ToolResultBlock is `is_error`, not `isError`. The red-team harness
+// found both: against a genuine OMA journal the adapter was recording no result
+// at all and reporting every failure as ok.
+test('FR-06: a string-shaped result is committed, not dropped', async () => {
+  const { journal, store } = await wired();
+  await journal.append([
+    call(1, 'tc-1', 'transfer_funds', { amount: 2000000 }),
+    ev(2, 'tool/result', {
+      toolCallId: 'tc-1',
+      result: { type: 'tool_result', toolUseId: 'tc-1', content: 'OK: transferred EUR 2000000 ref=TX-77814' },
+    }),
+  ]);
+  const r = fld(store.readChain()[0].record);
+  assert.ok(r.result, 'a string result must still be recorded');
+  assert.equal(store.content.get(r.result.cid).toString(), 'OK: transferred EUR 2000000 ref=TX-77814');
+  assert.equal(r.result.ok, true);
+  assert.deepEqual(store.content.findByRef('TX-77814'), [r.result.cid]);
+});
+
+test('FR-06: is_error on the result block is read as an error outcome', async () => {
+  const { journal, store } = await wired();
+  await journal.append([
+    call(1, 'tc-1', 'transfer_funds', {}),
+    ev(2, 'tool/result', {
+      toolCallId: 'tc-1',
+      result: { type: 'tool_result', toolUseId: 'tc-1', content: 'upstream refused', is_error: true },
+    }),
+  ]);
+  const r = fld(store.readChain()[0].record);
+  assert.equal(r.outcome, 'error');
+  assert.equal(r.result.ok, false);
+});
+
+test('FR-06: isError on the ToolCallRecord is honoured too', async () => {
+  const { journal, store } = await wired();
+  await journal.append([
+    call(1, 'tc-1', 'transfer_funds', {}),
+    ev(2, 'tool/result', {
+      toolCallId: 'tc-1',
+      result: { type: 'tool_result', toolUseId: 'tc-1', content: 'nope' },
+      record: { isError: true },
+    }),
+  ]);
+  assert.equal(fld(store.readChain()[0].record).outcome, 'error');
+});
+
+test('FR-06: a result with no text part is still committed rather than lost', async () => {
+  const { journal, store } = await wired();
+  await journal.append([
+    call(1, 'tc-1', 'screenshot', {}),
+    ev(2, 'tool/result', {
+      toolCallId: 'tc-1',
+      result: { type: 'tool_result', toolUseId: 'tc-1',
+        content: [{ type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'iVBORw0K' } }] },
+    }),
+  ]);
+  const r = fld(store.readChain()[0].record);
+  assert.ok(r.result, 'an image result is a result; dropping it would fail FR-06 silently');
+  assert.ok(store.content.get(r.result.cid).toString().includes('iVBORw0K'));
+});

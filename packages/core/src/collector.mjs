@@ -103,16 +103,36 @@ export class Collector {
   }
 
   /**
-   * Externalise a payload and return its commitment.
-   * @param {Uint8Array} plaintext
-   * @param {{ index?: boolean }} [opts]
-   * @returns {{ cid: string, bytes: number }}
+   * Externalise every payload of one record in a single group, and return the
+   * commitments by field name.
+   *
+   * One file per record, not per payload — a file creation measured 0.3 ms
+   * against NFR-01's 1 ms budget, and a record can carry five payloads.
+   *
+   * @param {Record<string, Uint8Array|undefined>} fields
+   * @param {string} [indexField] the field to scan for counterparty references
+   * @returns {Record<string, { cid: string, bytes: number }>}
    */
-  #commit(plaintext, opts = {}) {
-    if (!isBytes(plaintext)) {
-      throw new TypeError('payloads are handed over as bytes; the collector never records a value');
+  #commitAll(fields, indexField) {
+    /** @type {string[]} */
+    const names = [];
+    /** @type {{ bytes: Uint8Array, refs?: Set<string> }[]} */
+    const payloads = [];
+    for (const [name, bytes] of Object.entries(fields)) {
+      if (bytes === undefined) continue;
+      if (!isBytes(bytes)) {
+        throw new TypeError('payloads are handed over as bytes; the collector never records a value');
+      }
+      names.push(name);
+      // FR-55 — only the result is scanned for counterparty references; an
+      // argument is what we asked for, a result is what they issued.
+      payloads.push(name === indexField ? { bytes, refs: extractRefs(bytes) } : { bytes });
     }
-    return this.store.content.put(plaintext, opts.index ? { refs: extractRefs(plaintext) } : {});
+    const commitments = this.store.content.putGroup(payloads);
+    /** @type {Record<string, { cid: string, bytes: number }>} */
+    const out = {};
+    names.forEach((name, i) => { out[name] = /** @type {{cid: string, bytes: number}} */ (commitments[i]); });
+    return out;
   }
 
   /**
@@ -155,22 +175,31 @@ export class Collector {
    * @returns {import('./chain.mjs').ChainEntry}
    */
   action(a) {
+    const c = this.#commitAll({
+      agent: a.agent,
+      args: a.args,
+      result: a.result,
+      reviewer: a.approval ? a.approval.reviewer : undefined,
+      request: a.approval ? a.approval.request : undefined,
+    }, 'result');
+
     const record = this.#envelope({
       run: a.run ?? null,
       source_seq: this.observe(),
       kind: a.kind ?? 'tool_call',
       tool: a.tool,
       consequential: a.consequential ?? true,
-      ...(a.agent ? { agent: this.#commit(a.agent) } : {}),
-      ...(a.args ? { args: this.#commit(a.args) } : {}),
-      // FR-55 — only the result is scanned for counterparty references; an
-      // argument is what we asked for, a result is what they issued.
-      ...(a.result ? { result: this.#commit(a.result, { index: true }) } : {}),
+      ...(c.agent ? { agent: c.agent } : {}),
+      ...(c.args ? { args: c.args } : {}),
+      // `ok` is carried alongside the commitment because DES-13 retains it: a
+      // boolean outcome identifies nobody, and a verifier needs it after the
+      // payload itself has been shredded.
+      ...(c.result ? { result: { ...c.result, ok: (a.outcome ?? 'ok') === 'ok' } } : {}),
       approval: a.approval
         ? {
           decision: a.approval.decision,
-          ...(a.approval.reviewer ? { reviewer: this.#commit(a.approval.reviewer) } : {}),
-          ...(a.approval.request ? { request: this.#commit(a.approval.request) } : {}),
+          ...(c.reviewer ? { reviewer: c.reviewer } : {}),
+          ...(c.request ? { request: c.request } : {}),
         }
         : null,
       outcome: a.outcome ?? 'ok',

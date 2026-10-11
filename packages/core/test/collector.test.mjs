@@ -295,3 +295,12 @@ test('no-argument calls correlate separately from each other by tool', async () 
   assert.equal(a.correlation, b.correlation);
   assert.equal(b.attempt, 2);
 });
+
+// DES-13 retains result.ok: a boolean outcome identifies nobody, and a verifier
+// needs it once the payload itself has been crypto-shredded.
+test('a result commitment carries ok, and it tracks the outcome', async () => {
+  const { collector } = await fresh();
+  assert.equal(rec(collector.action(tx({ correlation: 'c-1' }))).result.ok, true);
+  assert.equal(rec(collector.action(tx({ correlation: 'c-2', outcome: 'error' }))).result.ok, false);
+  assert.equal(rec(collector.action(tx({ correlation: 'c-3', outcome: 'timeout' }))).result.ok, false);
+});
