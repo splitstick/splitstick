@@ -31,10 +31,11 @@
  * The result bytes to commit.
  *
  * OMA's `ToolResultContent` is `string | ToolResultContentPart[]`, and a part
- * need not be text — an image result is still a result. Returning undefined for
- * anything non-textual would make FR-06 fail silently for exactly the tools
- * whose output matters most, so a non-text payload is serialised rather than
- * dropped.
+ * need not be text. When every part is text they are joined, which keeps the
+ * stored payload readable and lets FR-55 find a reference in it. When ANY part
+ * is not text the whole content is serialised instead: joining the text and
+ * returning dropped the image, so a material part of the observed result was
+ * absent from the evidence while the record claimed to commit to the result.
  * @param {any} result
  * @returns {string|undefined}
  */
@@ -43,9 +44,13 @@ function resultBytes(result) {
   const content = result.content;
   if (typeof content === 'string') return content.length ? content : undefined;
   if (!Array.isArray(content)) return content === undefined ? undefined : JSON.stringify(content);
-  const text = content.filter(p => p && p.type === 'text').map(p => p.text).join('');
-  if (text.length) return text;
-  return content.length ? JSON.stringify(content) : undefined;
+  if (content.length === 0) return undefined;
+  const allText = content.every(p => p && p.type === 'text' && typeof p.text === 'string');
+  if (allText) {
+    const text = content.map(p => p.text).join('');
+    return text.length ? text : undefined;
+  }
+  return JSON.stringify(content);
 }
 
 /**
@@ -69,6 +74,21 @@ function toolOf(content) {
   return (content && content.kind) || 'approval';
 }
 
+/**
+ * Where a swallowed failure goes by default.
+ *
+ * Fail-open is right about the RUN — losing the audit trail must never stop an
+ * agent — but it is not a reason to lose the failure too. A no-op default meant
+ * a ReferenceError in this module silently recorded nothing at all, which is
+ * exactly how it behaved until a test went looking. A caller that wants silence
+ * can pass its own handler.
+ * @param {unknown} err
+ */
+function warn(err) {
+  const message = err instanceof Error ? (err.stack ?? err.message) : String(err);
+  process.emitWarning(`@splitstick/collect-oma dropped a record: ${message}`, 'SplitstickCaptureError');
+}
+
 export class SplitstickRunJournal {
   /**
    * @param {object} o
@@ -79,7 +99,7 @@ export class SplitstickRunJournal {
   constructor({ collector, journal, onError }) {
     this.collector = collector;
     this.inner = journal;
-    this.onError = onError || (() => {});
+    this.onError = onError || warn;
     /** @type {Map<string, Pending>} */
     this.pendingCalls = new Map();
     /** @type {Map<string, { tool: string, request: Uint8Array, run: string|null, correlation: string, consequential: boolean }>} */
@@ -110,9 +130,17 @@ export class SplitstickRunJournal {
       const input = e.call && e.call.input;
       const args = input === undefined ? undefined : Buffer.from(JSON.stringify(input));
       const name = (e.call && e.call.name) || 'unknown';
-      const { correlation, attempt } = this.collector.correlate(name, args);
+      // One observed call, one logical action. OMA does not express retry
+      // lineage — a retry there is a new tool call with a new id — so the
+      // adapter cannot infer it and does not guess. Keying correlation on the
+      // tool and the argument bytes reported two independent transfers of the
+      // same amount as attempt 1 and attempt 2 of one action, and because
+      // DES-13 retains `correlation` after erasure, it also told a reader that
+      // those two actions had byte-identical arguments once the arguments
+      // themselves were gone.
+      const correlation = this.collector.constructor.newCorrelation();
       this.pendingCalls.set(e.call && e.call.id, {
-        tool: name, args, correlation, attempt, run: e.runId || null,
+        tool: name, args, correlation, attempt: 1, run: e.runId || null,
       });
       return;
     }
@@ -127,7 +155,7 @@ export class SplitstickRunJournal {
         ...(text === undefined ? {} : { result: Buffer.from(text) }),
         outcome: resultFailed(e) ? 'error' : 'ok',
         attempt: (p && p.attempt) || 1,
-        correlation: (p && p.correlation) || this.collector.correlate(e.toolCallId, undefined).correlation,
+        correlation: (p && p.correlation) || this.collector.constructor.newCorrelation(),
       });
       return;
     }
@@ -137,7 +165,7 @@ export class SplitstickRunJournal {
         tool: toolOf(r.content),
         request: Buffer.from(JSON.stringify(r.content)),
         run: r.runId || null,
-        correlation: this.collector.correlate('approval', Buffer.from(r.id)).correlation,
+        correlation: this.collector.constructor.newCorrelation(),
         // DES-01 wants the tool's own declaration, and OMA's tool-call approval
         // content carries it. Taking it from there beats assuming true.
         consequential: typeof (r.content && r.content.consequential) === 'boolean'
@@ -150,7 +178,12 @@ export class SplitstickRunJournal {
       return;
     }
     if (e.type === 'run/end') {
-      this.#settleOutstanding();
+      // Only this run's own work. Settling everything meant ending run A wrote
+      // a timeout for a call still in flight in run B — and when B's result
+      // arrived its pending entry was gone, so the record that described the
+      // real outcome named `tool: 'unknown'`. One call produced two records and
+      // the surviving account of it was wrong.
+      this.#settleOutstanding(e.runId || null);
       return;
     }
     // Every other RunEvent is execution state OMA already keeps. Recording a
@@ -176,8 +209,7 @@ export class SplitstickRunJournal {
       },
       outcome: approved ? 'ok' : 'denied',
       attempt: 1,
-      correlation: (p && p.correlation)
-        || this.collector.correlate('approval', Buffer.from(String(decision.requestId))).correlation,
+      correlation: (p && p.correlation) || this.collector.constructor.newCorrelation(),
     });
   }
 
@@ -187,9 +219,14 @@ export class SplitstickRunJournal {
    * A call that never returned may already have caused an external side effect,
    * so it stays independently accountable (FR-62). Dropping it would make the
    * one case that matters most the one case with no record.
+   *
+   * @param {string|null|undefined} run settle only this run's work; pass
+   *   undefined to settle everything, which is what close() does.
    */
-  #settleOutstanding() {
+  #settleOutstanding(run) {
+    const mine = (/** @type {string|null} */ owner) => run === undefined || owner === run;
     for (const [id, p] of [...this.pendingCalls]) {
+      if (!mine(p.run)) continue;
       this.pendingCalls.delete(id);
       try {
         this.collector.action({
@@ -199,6 +236,7 @@ export class SplitstickRunJournal {
       } catch (err) { this.onError(err); }
     }
     for (const [id, p] of [...this.pendingApprovals]) {
+      if (!mine(p.run)) continue;
       this.pendingApprovals.delete(id);
       try {
         this.collector.action({
@@ -215,7 +253,7 @@ export class SplitstickRunJournal {
   }
 
   async close() {
-    this.#settleOutstanding();
+    this.#settleOutstanding(undefined);   // everything, whatever run it belonged to
     if (this.inner) await this.inner.close();
   }
 
@@ -246,7 +284,7 @@ export class SplitstickApprovalStore {
   constructor({ store, collector, onError }) {
     this.store = store;
     this.journal = new SplitstickRunJournal({ collector, onError });
-    this.onError = onError || (() => {});
+    this.onError = onError || warn;
     if (typeof store.compareAndSet === 'function') {
       this.compareAndSet = async (
         /** @type {string} */ k, /** @type {string|null} */ expected,

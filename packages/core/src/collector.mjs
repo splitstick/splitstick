@@ -15,7 +15,7 @@
  * interleave; heartbeats carry no run at all.
  */
 
-import { createHash, randomBytes } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
 import { chainEntry, genesis } from './chain.mjs';
 import { newSalt } from './leaf.mjs';
 import { treeRoot } from './merkle.mjs';
@@ -77,28 +77,33 @@ export class Collector {
   /**
    * Correlate an attempt with the logical action it belongs to — FR-62.
    *
-   * This lives in core rather than in each adapter for two reasons. DES-14 says
-   * an adapter may not touch cryptography, and grouping needs a digest of the
-   * arguments; and attempt numbering is record semantics, so two adapters
-   * deriving it separately would produce packs that disagree about what one
-   * logical action was.
+   * The caller supplies an identifier for the logical action; it is NOT derived
+   * from the payload. Keying on the tool and the argument bytes grouped two
+   * independent transfers of the same amount as attempt 1 and attempt 2 of one
+   * action — a repeated transaction is not a retry — and because DES-13
+   * retains `correlation` after erasure, two records sharing one also told a
+   * reader that those actions had byte-identical arguments once the arguments
+   * themselves had been shredded. A retained field must carry nothing, and that
+   * one carried payload equality.
    *
-   * Keyed on the tool and the exact arguments, because a retry re-sends them.
-   * The key is kept in memory only: the correlation identifier itself is
-   * retained after erasure (DES-13), so it is a random value looked up in a
-   * table that is not retained, never a digest of the payload.
+   * An integration that knows its own retry lineage passes the same key for
+   * each attempt. One that does not — OMA expresses none, since a retry there
+   * is a new tool call with a new id — asks for a fresh correlation instead and
+   * reports one attempt each, which is what it actually observed.
    *
-   * @param {string} tool
-   * @param {Uint8Array} [args]
+   * The key is held in memory only and never written.
+   *
+   * @param {string} actionKey an identifier for one logical action, from the source
    * @returns {{ correlation: string, attempt: number }}
    */
-  correlate(tool, args) {
-    const key = createHash('sha256').update(tool).update('\u0000')
-      .update(args ?? Buffer.alloc(0)).digest('hex');
-    const seen = this.#actions.get(key);
+  correlate(actionKey) {
+    if (typeof actionKey !== 'string' || actionKey === '') {
+      throw new TypeError('a logical-action key is required; pass one from the source, or use newCorrelation()');
+    }
+    const seen = this.#actions.get(actionKey);
     if (seen) { seen.attempts += 1; return { correlation: seen.correlation, attempt: seen.attempts }; }
     const correlation = Collector.newCorrelation();
-    this.#actions.set(key, { correlation, attempts: 1 });
+    this.#actions.set(actionKey, { correlation, attempts: 1 });
     return { correlation, attempt: 1 };
   }
 

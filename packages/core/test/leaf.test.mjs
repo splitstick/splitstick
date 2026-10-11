@@ -80,9 +80,9 @@ test('FR-52: mutating any field at any depth moves the leaf', () => {
   const base = leafDigest(salt, action()).toString('hex');
   const mutations = [
     action({ tool: 'transfer_fund' }),
-    action({ args: { cid: 'sha256:bbbc', bytes: 61 } }),
-    action({ args: { cid: 'sha256:bbbb', bytes: 62 } }),
-    action({ result: { cid: 'sha256:cccc', bytes: 54, ok: false } }),
+    action({ args: { cid: 'sha256:bbbcbbbcbbbcbbbcbbbcbbbcbbbcbbbcbbbcbbbcbbbcbbbcbbbcbbbcbbbcbbbc', bytes: 61 } }),
+    action({ args: { cid: 'sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', bytes: 62 } }),
+    action({ result: { cid: 'sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc', bytes: 54, ok: false } }),
     action({ consequential: false }),
     action({ outcome: 'error' }),
     action({ attempt: 2 }),

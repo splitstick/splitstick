@@ -6,9 +6,9 @@ import { RECORD_KINDS, validateRecord, RecordError, leafPaths } from '../src/rec
 const base = () => ({
   v: 1, collector: 'host-1', run: 'r-1', record_seq: 1, source_seq: 1,
   ts: '2026-10-11T10:00:00.000Z', kind: 'tool_call', tool: 'transfer_funds',
-  agent: { cid: 'sha256:aaaa' },
-  args: { cid: 'sha256:bbbb', bytes: 61 },
-  result: { cid: 'sha256:cccc', bytes: 54, ok: true },
+  agent: { cid: 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' },
+  args: { cid: 'sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', bytes: 61 },
+  result: { cid: 'sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc', bytes: 54, ok: true },
   approval: null, consequential: true,
   outcome: 'ok', attempt: 1, correlation: 'c-0001',
 });
@@ -44,11 +44,16 @@ test('FR-62: outcome, attempt and correlation are required on an action', () => 
 
 test('FR-56: non-action kinds carry source_seq null, never a repeated value', () => {
   const hb = { v: 1, collector: 'host-1', run: null, record_seq: 2, source_seq: null,
-    ts: '2026-10-11T10:00:05.000Z', kind: 'heartbeat', build: 'sha256:dddd',
-    suite: 'SS1', policy: 'sha256:eeee', heartbeat_interval: '5s',
-    counts: { tool_call: 1 } };
+    ts: '2026-10-11T10:00:05.000Z', kind: 'heartbeat',
+    build: 'sha256:' + 'dd'.repeat(32), policy: 'sha256:' + 'ee'.repeat(32) };
   assert.doesNotThrow(() => validateRecord(hb));
   assert.throws(() => validateRecord({ ...hb, source_seq: 5 }), RecordError);
+  // This fixture used to carry suite, heartbeat_interval and counts, which
+  // nothing defines — `suite` belongs to the checkpoint (DES-16) and coverage
+  // counts arrive with DES-10 in M4. Extending the schema is now an explicit
+  // act rather than something a writer can do by accident.
+  assert.throws(() => validateRecord({ ...hb, suite: 'SS1' }), RecordError);
+  assert.throws(() => validateRecord({ ...hb, counts: { tool_call: 1 } }), RecordError);
 });
 
 test('FR-69: a padding record has a nonce, no payload fields and null source_seq', () => {
@@ -101,7 +106,7 @@ test('FR-52: mutating any field at any depth changes the canonical bytes', () =>
 
 test('FR-52: the nested args commitment is inside the digest', () => {
   const a = base(), b = base();
-  b.args = { ...b.args, cid: 'sha256:0000' };
+  b.args = { ...b.args, cid: 'sha256:0000000000000000000000000000000000000000000000000000000000000000' };
   assert.notEqual(canonicalize(a), canonicalize(b));
 });
 
@@ -115,9 +120,9 @@ test('SEC-12: a policy record must carry both policy digests', () => {
     ts: '2026-10-11T10:00:00.000Z', kind: 'policy',
   };
   assert.throws(() => validateRecord(base), RecordError, 'neither digest');
-  assert.throws(() => validateRecord({ ...base, previous_policy: 'sha256:aa' }), RecordError, 'no next');
-  assert.throws(() => validateRecord({ ...base, next_policy: 'sha256:bb' }), RecordError, 'no previous');
-  assert.throws(() => validateRecord({ ...base, previous_policy: 'aa', next_policy: 'sha256:bb' }),
+  assert.throws(() => validateRecord({ ...base, previous_policy: 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' }), RecordError, 'no next');
+  assert.throws(() => validateRecord({ ...base, next_policy: 'sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' }), RecordError, 'no previous');
+  assert.throws(() => validateRecord({ ...base, previous_policy: 'aa', next_policy: 'sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' }),
     RecordError, 'not a digest');
   assert.doesNotThrow(() => validateRecord({
     ...base, previous_policy: 'sha256:' + 'aa'.repeat(32), next_policy: 'sha256:' + 'bb'.repeat(32),
@@ -163,4 +168,59 @@ test('FR-56: run is required and is a string or null, never absent', () => {
   assert.throws(() => validateRecord({ ...base(), run: '' }), RecordError);
   assert.doesNotThrow(() => validateRecord({ ...base(), run: null }));
   assert.doesNotThrow(() => validateRecord({ ...base(), run: 'r-1' }));
+});
+
+/**
+ * Review finding P1-5. The validator restricted a few fields and checked the
+ * commitments it knew about, but it had no exhaustive allowed-field set, so a
+ * record could carry any extra field it liked — including plaintext.
+ *
+ * PRIV-02 claims the record format structurally excludes payloads. With an
+ * open schema that claim rested on the collector being the only writer, which
+ * is exactly the assumption a tamper-evidence product may not make: the schema
+ * and the verifier are reusable, and a pack arrives from somewhere else.
+ */
+test('PRIV-02: an undeclared field is refused on every kind', () => {
+  const beat = {
+    v: 1, collector: 'host-1', run: null, record_seq: 1, source_seq: null,
+    ts: '2026-10-11T10:00:00.000Z', kind: 'heartbeat',
+    build: 'sha256:' + 'aa'.repeat(32), policy: 'sha256:' + 'bb'.repeat(32),
+  };
+  assert.doesNotThrow(() => validateRecord(beat));
+  assert.throws(() => validateRecord({ ...beat, iban: 'DE89370400440532013000' }),
+    /not permitted|unknown field/i, 'a heartbeat must not carry plaintext');
+  assert.throws(() => validateRecord({ ...beat, note: 'anything at all' }), RecordError);
+
+  // And on an action, where the temptation to add "just one more field" lives.
+  assert.throws(() => validateRecord({ ...base(), amount: 2000000 }), RecordError);
+  assert.throws(() => validateRecord({ ...base(), raw_args: '{"amount":2000000}' }), RecordError);
+});
+
+test('PRIV-02: a field belonging to another kind is refused, not ignored', () => {
+  assert.throws(() => validateRecord({ ...base(), pad: 'a'.repeat(32) }), RecordError,
+    'pad belongs to a padding record');
+  assert.throws(() => validateRecord({ ...base(), from_source_seq: 1, to_source_seq: 2 }), RecordError,
+    'a span belongs to a gap record');
+});
+
+test('a commitment must be a full-length SHA-256 digest', () => {
+  // A four-character "digest" is not a commitment to anything: it has 16 bits
+  // of collision resistance, and the whole substitution argument rests on the
+  // cid moving when the bytes move.
+  for (const bad of ['sha256:' + 'aa'.repeat(2), 'sha256:' + 'aa'.repeat(16),
+                     'sha256:' + 'AA'.repeat(32), 'sha1:' + 'aa'.repeat(20), 'aa'.repeat(32)]) {
+    assert.throws(() => validateRecord({ ...base(), args: { cid: bad, bytes: 1 } }),
+      RecordError, bad);
+  }
+  assert.doesNotThrow(() => validateRecord({ ...base(), args: { cid: 'sha256:' + 'ab'.repeat(32), bytes: 1 } }));
+});
+
+test('nested commitment fields are allowlisted too', () => {
+  const withApproval = (approval) => validateRecord({ ...base(), approval });
+  const cid = 'sha256:' + 'cd'.repeat(32);
+  assert.doesNotThrow(() => withApproval({ decision: 'approve', reviewer: { cid } }));
+  assert.throws(() => withApproval({ decision: 'approve', reviewer: { cid }, email: 'ops@example.com' }),
+    RecordError, 'an undeclared field inside approval');
+  assert.throws(() => withApproval({ decision: 'approve', reviewer: { cid, name: 'ops' } }),
+    RecordError, 'an undeclared field inside a commitment');
 });

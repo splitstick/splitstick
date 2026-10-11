@@ -124,7 +124,7 @@ function repairChain(root) {
 async function reSign(root, signer, seq = 1) {
   const leaves = lines(root).map((l) => Buffer.from(l.leaf, 'hex'));
   const text = checkpointText({ origin: ORIGIN, tree_size: leaves.length, root: treeRoot(leaves) });
-  fs.writeFileSync(path.join(root, 'checkpoints', `${seq}.note`),
+  fs.writeFileSync(path.join(root, 'checkpoints', COLLECTOR, `${seq}.note`),
     encodeNote(text, [await signNote(text, signer)]));
 }
 
@@ -200,7 +200,7 @@ const attacks = [
       const ls = lines(ctx.root);
       ls.pop();
       write(ctx.root, ls);
-      const dir = path.join(ctx.root, 'checkpoints');
+      const dir = path.join(ctx.root, 'checkpoints', COLLECTOR);
       for (const f of fs.readdirSync(dir)) fs.rmSync(path.join(dir, f));
       await reSign(ctx.root, ctx.signer, 1);
     },

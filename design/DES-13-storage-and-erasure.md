@@ -10,7 +10,7 @@
 splitstick/
   chain/<collector>.jsonl  append-only; records, leaves, heads.  NEVER DELETED
   salts/<collector>.jsonl  record_seq -> salt.  DELETABLE per record            [DES-03]
-  checkpoints/<n>.note     C2SP notes with every signature line                 [DES-07]
+  checkpoints/<collector>/<n>.note  C2SP notes, scoped like the chain          [DES-07]
   content/<cid>.bin        every payload, encrypted.  DELETABLE
   content/<cid>.salt       per-content salt.  DELETABLE
   keys/<cid>.key           per-content encryption keys.  DELETABLE

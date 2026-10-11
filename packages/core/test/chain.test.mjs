@@ -65,7 +65,7 @@ test('FR-56: two runs and a heartbeat form one contiguous collector-scoped chain
 // SEC-06 / AC-1 / red-team A — alter the recorded action.
 test('SEC-06: altering a recorded argument is LEAF_MISMATCH', () => {
   const entries = log();
-  entries[1].record.args = { cid: 'sha256:dddd', bytes: 61 };
+  entries[1].record.args = { cid: 'sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd', bytes: 61 };
   const r = recomputeChain(entries);
   assert.equal(r.ok, false);
   assert.equal(r.findings[0].code, 'LEAF_MISMATCH');
@@ -109,7 +109,7 @@ test('a reordered pair is SEQ_BROKEN', () => {
 // repair propagates and every later head diverges from what was recorded.
 test('SEC-07: altering an event and repairing the next prev is still detected', () => {
   const entries = log();
-  entries[1].record.args = { cid: 'sha256:dddd', bytes: 61 };
+  entries[1].record.args = { cid: 'sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd', bytes: 61 };
   entries[1].leaf = leafDigest(entries[1].salt, entries[1].record);   // re-leaf
   entries[1].head = chainHead(entries[1].prev, entries[1].leaf);      // repair own head
   entries[2].prev = entries[1].head;                                  // repair the citation
@@ -124,7 +124,7 @@ test('a fully rewritten chain is internally perfect — only a pinned head expos
   const pinned = original.at(-1).head;
 
   const rewritten = original.map(e => ({ ...e, record: { ...e.record } }));
-  rewritten[1].record.args = { cid: 'sha256:dddd', bytes: 61 };
+  rewritten[1].record.args = { cid: 'sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd', bytes: 61 };
   let prev = genesis();
   for (const e of rewritten) {
     e.leaf = leafDigest(e.salt, e.record);
@@ -206,4 +206,46 @@ test('a chain whose first observation is source_seq 1 reports no gap', () => {
   push(heartbeat({ record_seq: 1 }));
   push(action({ record_seq: 2, source_seq: 1, correlation: 'c-1' }));
   assert.equal(recomputeChain(entries).ok, true, 'a heartbeat first is normal');
+});
+
+/**
+ * Review finding P2-6. The head check sat in an `else if` after the leaf check,
+ * so a record whose salt had been lawfully erased had its chain head checked by
+ * nothing. For a record in the middle the break surfaced one position later, as
+ * the successor's prev; for the LAST record nothing followed it, so altering
+ * the head of a shredded final record was undetectable.
+ *
+ * The two checks are independent: a leaf needs its salt, a head needs only the
+ * prev and the leaf that are already stored. Erasure takes the first away and
+ * leaves the second perfectly checkable.
+ */
+test('the chain head is checked even when the leaf salt is gone', () => {
+  const entries = log();
+  entries[3].salt = null;                         // lawfully erased
+  entries[3].head = Buffer.alloc(32, 0xff);       // and then altered
+  const r = recomputeChain(entries);
+  assert.equal(r.ok, false);
+  assert.ok(r.findings.some(f => f.code === 'LEAF_INCONCLUSIVE'), 'erasure is still inconclusive');
+  const broken = r.findings.find(f => f.code === 'CHAIN_BROKEN');
+  assert.ok(broken, `the altered head must be caught: ${JSON.stringify(r.findings)}`);
+  assert.equal(broken.record_seq, 4, 'and attributed to the record it was altered in');
+});
+
+test('an erased record with an intact head is inconclusive and nothing more', () => {
+  const entries = log();
+  entries[1].salt = null;
+  const r = recomputeChain(entries);
+  assert.deepEqual(r.findings.map(f => f.code), ['LEAF_INCONCLUSIVE'],
+    'lawful erasure must not produce a chain finding');
+});
+
+test('an erased record in the middle with an altered head is caught at that record', () => {
+  const entries = log();
+  entries[1].salt = null;
+  entries[1].head = Buffer.alloc(32, 7);
+  entries[2].prev = entries[1].head;              // repair the citation too
+  const r = recomputeChain(entries);
+  const broken = r.findings.filter(f => f.code === 'CHAIN_BROKEN');
+  assert.ok(broken.length >= 1);
+  assert.equal(broken[0].record_seq, 2, 'the finding belongs to the record that was altered');
 });

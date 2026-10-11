@@ -105,7 +105,13 @@ test('PRIV-02: nothing OMA handed us appears in the chain', async () => {
 });
 
 // FR-62 — retries of one logical action.
-test('FR-62: a retry is a second record sharing one correlation', async () => {
+// FR-62 — OMA expresses no retry lineage: a retry there is a new tool call with
+// a new id, indistinguishable from an unrelated call carrying the same
+// arguments. So the adapter records what it observed — two attempts of two
+// logical actions — rather than inferring a relationship it cannot see. A
+// review found the earlier behaviour reporting two independent transfers of the
+// same amount as attempt 1 and attempt 2 of one action.
+test('FR-62: two calls OMA cannot link are two logical actions', async () => {
   const { journal, store } = await wired();
   await journal.append([
     call(1, 'tc-1', 'transfer_funds', { amount: 2000000 }),
@@ -116,11 +122,10 @@ test('FR-62: a retry is a second record sharing one correlation', async () => {
   const recs = store.readChain().map(e => fld(e.record));
   assert.equal(recs.length, 2);
   assert.deepEqual(recs.map(r => r.outcome), ['error', 'ok']);
-  assert.deepEqual(recs.map(r => r.source_seq), [1, 2], 'strictly increasing across attempts');
-  assert.deepEqual(recs.map(r => r.attempt), [1, 2]);
-  assert.equal(recs[0].correlation, recs[1].correlation,
-    'identical tool and arguments are one logical action');
-  assert.notEqual(recs[0].args.cid, recs[1].args.cid, 'but each has its own content salt');
+  assert.deepEqual(recs.map(r => r.source_seq), [1, 2], 'both attempts are counted');
+  assert.deepEqual(recs.map(r => r.attempt), [1, 1], 'neither is an attempt OF the other');
+  assert.notEqual(recs[0].correlation, recs[1].correlation);
+  assert.notEqual(recs[0].args.cid, recs[1].args.cid, 'and each has its own content salt');
 });
 
 test('FR-62: two different actions do not share a correlation', async () => {
@@ -376,4 +381,162 @@ test('FR-06: a result with no text part is still committed rather than lost', as
   const r = fld(store.readChain()[0].record);
   assert.ok(r.result, 'an image result is a result; dropping it would fail FR-06 silently');
   assert.ok(store.content.get(r.result.cid).toString().includes('iVBORw0K'));
+});
+
+/**
+ * Review finding P1-1. correlate() was keyed on the tool name and the argument
+ * bytes, never retired after success and never scoped to a run, so two
+ * independent calls with identical arguments were reported as attempt 1 and
+ * attempt 2 of one logical action. A repeated transfer is not a retry.
+ *
+ * OMA does not express retry lineage at all — a retry there is a new tool call
+ * with a new id — so the adapter cannot infer it and no longer tries. Each
+ * observed call gets a fresh correlation, and attempt stays 1 unless an
+ * integration can actually supply the lineage.
+ *
+ * There was a privacy consequence too, which the schema makes plain: DES-13
+ * retains `correlation` after erasure. Grouping by argument equality meant two
+ * retained correlations told a reader those two actions had byte-identical
+ * arguments, long after the arguments themselves were shredded.
+ */
+test('FR-62: two identical successful calls are two logical actions, not a retry', async () => {
+  const { journal, store } = await wired();
+  await journal.append([call(1, 'tc-1', 'transfer_funds', { amount: 100 }), result(2, 'tc-1', 'OK')]);
+  await journal.append([call(3, 'tc-2', 'transfer_funds', { amount: 100 }), result(4, 'tc-2', 'OK')]);
+
+  const recs = store.readChain().map(e => fld(e.record));
+  assert.equal(recs.length, 2);
+  assert.notEqual(recs[0].correlation, recs[1].correlation,
+    'identical arguments are not evidence of a retry');
+  assert.deepEqual(recs.map(r => r.attempt), [1, 1]);
+  assert.deepEqual(recs.map(r => r.source_seq), [1, 2], 'but both attempts are still counted');
+});
+
+test('FR-62: identical calls in different runs stay independent', async () => {
+  const { journal, store } = await wired();
+  await journal.append([
+    ev(1, 'tool/call', { runId: 'run-A', call: { type: 'tool_use', id: 'a', name: 'transfer_funds', input: { amount: 100 } } }),
+    ev(2, 'tool/result', { runId: 'run-A', toolCallId: 'a', result: { type: 'tool_result', toolUseId: 'a', content: 'OK' } }),
+    ev(3, 'tool/call', { runId: 'run-B', call: { type: 'tool_use', id: 'b', name: 'transfer_funds', input: { amount: 100 } } }),
+    ev(4, 'tool/result', { runId: 'run-B', toolCallId: 'b', result: { type: 'tool_result', toolUseId: 'b', content: 'OK' } }),
+  ]);
+  const recs = store.readChain().map(e => fld(e.record));
+  assert.deepEqual(recs.map(r => r.run), ['run-A', 'run-B']);
+  assert.notEqual(recs[0].correlation, recs[1].correlation);
+});
+
+test('a correlation no longer reveals that two actions had the same arguments', async () => {
+  const { journal, store } = await wired();
+  const same = { amount: 2000000, iban: 'DE89370400440532013000' };
+  await journal.append([call(1, 'tc-1', 'transfer_funds', same), result(2, 'tc-1', 'OK')]);
+  await journal.append([call(3, 'tc-2', 'transfer_funds', same), result(4, 'tc-2', 'OK')]);
+  const [a, b] = store.readChain().map(e => fld(e.record));
+  assert.notEqual(a.correlation, b.correlation,
+    'correlation is retained after erasure, so equal payloads must not make it equal');
+});
+
+/**
+ * Review finding P1-2. #settleOutstanding() took no run id, so ending run A
+ * wrote a timeout for a call still in flight in run B — and when B's result
+ * arrived its pending entry was gone, so the record was written with
+ * `tool: 'unknown'`. One in-flight call produced two records, and the one that
+ * described the real outcome named the wrong tool.
+ */
+test('ending one run leaves another run\'s in-flight call alone', async () => {
+  const { journal, store } = await wired();
+  await journal.append([
+    ev(1, 'tool/call', { runId: 'run-B', call: { type: 'tool_use', id: 'tc-B', name: 'transfer_funds', input: { amount: 1 } } }),
+    ev(2, 'run/end', { runId: 'run-A', status: { code: 'ok' } }),
+  ]);
+  assert.equal(store.readChain().length, 0, 'run A ending says nothing about run B');
+
+  await journal.append([
+    ev(3, 'tool/result', { runId: 'run-B', toolCallId: 'tc-B', result: { type: 'tool_result', toolUseId: 'tc-B', content: 'OK: done' } }),
+  ]);
+  const recs = store.readChain().map(e => fld(e.record));
+  assert.equal(recs.length, 1, 'one call, one record');
+  assert.equal(recs[0].tool, 'transfer_funds', 'and it names the tool that actually ran');
+  assert.equal(recs[0].outcome, 'ok');
+  assert.equal(recs[0].run, 'run-B');
+});
+
+test('ending a run settles only its own outstanding calls', async () => {
+  const { journal, store } = await wired();
+  await journal.append([
+    ev(1, 'tool/call', { runId: 'run-A', call: { type: 'tool_use', id: 'a', name: 'transfer_funds', input: {} } }),
+    ev(2, 'tool/call', { runId: 'run-B', call: { type: 'tool_use', id: 'b', name: 'refund', input: {} } }),
+    ev(3, 'run/end', { runId: 'run-A', status: { code: 'ok' } }),
+  ]);
+  let recs = store.readChain().map(e => fld(e.record));
+  assert.deepEqual(recs.map(r => `${r.run}/${r.tool}/${r.outcome}`), ['run-A/transfer_funds/timeout']);
+
+  await journal.close();
+  recs = store.readChain().map(e => fld(e.record));
+  assert.equal(recs.length, 2, 'close settles whatever is left');
+  assert.equal(recs[1].run, 'run-B');
+  assert.equal(recs[1].outcome, 'timeout');
+});
+
+test('an approval left undecided is settled by its own run ending', async () => {
+  const { journal, store } = await wired();
+  const request = createApprovalRequest({
+    runId: 'run-A', scope: 'tool_call', boundary: 'tc-1',
+    content: toolCallContent('tc-1', { amount: 1 }),
+    requestedAt: new Date('2026-10-11T10:00:00.000Z'),
+  });
+  await journal.append([
+    ev(1, 'approval/request', { request }),
+    ev(2, 'run/end', { runId: 'run-B', status: { code: 'ok' } }),
+  ]);
+  assert.equal(store.readChain().length, 0, 'a different run ending must not settle it');
+  await journal.append([ev(3, 'run/end', { runId: 'run-A', status: { code: 'ok' } })]);
+  assert.equal(fld(store.readChain()[0].record).outcome, 'timeout');
+});
+
+/**
+ * Review finding P1-4. resultBytes() joined the text parts and returned, so an
+ * image or any other non-text part was absent from the commitment. A material
+ * part of the observed result was simply not in the evidence.
+ */
+test('FR-06: a mixed text-and-image result is committed in full', async () => {
+  const { journal, store } = await wired();
+  await journal.append([
+    call(1, 'tc-1', 'render_chart', {}),
+    ev(2, 'tool/result', {
+      toolCallId: 'tc-1',
+      result: { type: 'tool_result', toolUseId: 'tc-1', content: [
+        { type: 'text', text: 'chart attached' },
+        { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'iVBORw0KGgoAAA' } },
+      ] },
+    }),
+  ]);
+  const r = fld(store.readChain()[0].record);
+  const committed = store.content.get(r.result.cid).toString();
+  assert.match(committed, /chart attached/, 'the text is there');
+  assert.match(committed, /iVBORw0KGgoAAA/, 'and so is the image');
+});
+
+test('FR-06: an all-text result is still committed as plain text', async () => {
+  const { journal, store } = await wired();
+  await journal.append([
+    call(1, 'tc-1', 'transfer_funds', {}),
+    ev(2, 'tool/result', { toolCallId: 'tc-1',
+      result: { type: 'tool_result', toolUseId: 'tc-1', content: [
+        { type: 'text', text: 'OK: transferred ' }, { type: 'text', text: 'ref=TX-77814' }] } }),
+  ]);
+  const r = fld(store.readChain()[0].record);
+  assert.equal(store.content.get(r.result.cid).toString(), 'OK: transferred ref=TX-77814');
+  assert.deepEqual(store.content.findByRef('TX-77814'), [r.result.cid]);
+});
+
+test('FR-06: an image-only result is committed rather than dropped', async () => {
+  const { journal, store } = await wired();
+  await journal.append([
+    call(1, 'tc-1', 'screenshot', {}),
+    ev(2, 'tool/result', { toolCallId: 'tc-1',
+      result: { type: 'tool_result', toolUseId: 'tc-1', content: [
+        { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'iVBORw0K' } }] } }),
+  ]);
+  const r = fld(store.readChain()[0].record);
+  assert.match(store.content.get(r.result.cid).toString(), /iVBORw0K/);
 });

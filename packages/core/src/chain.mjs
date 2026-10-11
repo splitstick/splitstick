@@ -147,14 +147,30 @@ export function recomputeChain(entries) {
       });
     }
 
+    // HEAD — always checkable, and checked unconditionally. It needs only the
+    // prev and the leaf, both of which are stored; erasure removes neither.
+    // This used to hang off the leaf check, so a record whose salt had been
+    // lawfully erased had its head verified by nothing — and for the LAST
+    // record, with no successor to cite it, an altered head was invisible.
+    if (!chainHead(e.prev, e.leaf).equals(e.head)) {
+      findings.push({
+        code: 'CHAIN_BROKEN', record_seq: seq,
+        detail: 'head is not the hash of its own prev and leaf',
+      });
+    }
+
     // LEAF — a missing salt is inconclusive, never a failure, because lawful
     // erasure under DES-13 deletes exactly that (DES-12 check 4).
     if (e.salt === undefined || e.salt === null) {
-      findings.push({ code: 'LEAF_INCONCLUSIVE', record_seq: seq, detail: 'salt absent: shredded or lost, so this leaf cannot be reproduced' });
+      findings.push({
+        code: 'LEAF_INCONCLUSIVE', record_seq: seq,
+        detail: 'salt absent: shredded or lost, so this leaf cannot be reproduced',
+      });
     } else if (!leafDigest(e.salt, e.record).equals(e.leaf)) {
-      findings.push({ code: 'LEAF_MISMATCH', record_seq: seq, detail: "this record's content is not what was committed" });
-    } else if (!chainHead(e.prev, e.leaf).equals(e.head)) {
-      findings.push({ code: 'CHAIN_BROKEN', record_seq: seq, detail: 'head is not the hash of its own prev and leaf' });
+      findings.push({
+        code: 'LEAF_MISMATCH', record_seq: seq,
+        detail: "this record's content is not what was committed",
+      });
     }
 
     prev = e.head;

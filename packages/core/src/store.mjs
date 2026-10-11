@@ -1,9 +1,9 @@
 /**
  * The on-disk store — DES-13.
  *
- *   chain/<collector>.jsonl   records, leaves, heads.  NEVER DELETED
- *   salts/<collector>.jsonl   record_seq -> salt.      DELETABLE per record
- *   checkpoints/<n>.note      C2SP notes                          [DES-07]
+ *   chain/<collector>.jsonl       records, leaves, heads.  NEVER DELETED
+ *   salts/<collector>.jsonl       record_seq -> salt.      DELETABLE per record
+ *   checkpoints/<collector>/<n>.note   C2SP notes                 [DES-07]
  *   content/<cid>.bin         every payload, encrypted. DELETABLE
  *   content/<cid>.salt        per-content salt.         DELETABLE
  *   content/refs.idx          counterparty references.  DELETABLE [DES-19]
@@ -43,9 +43,15 @@ export class Store {
   constructor(root, collector) {
     this.root = root;
     this.collector = collector;
-    for (const d of ['chain', 'salts', 'checkpoints', 'queue']) {
+    for (const d of ['chain', 'salts', 'queue']) {
       mkdirSync(join(root, d), { recursive: true });
     }
+    // Checkpoints are scoped to the collector, like the chain and the salts.
+    // A shared directory meant two honest collectors in one store each verified
+    // as `fail`, because each was asked to account for the other's signed
+    // notes — and the ordinals collided besides.
+    this.checkpointDir = join(root, 'checkpoints', collector);
+    mkdirSync(this.checkpointDir, { recursive: true });
     this.chainPath = join(root, 'chain', `${collector}.jsonl`);
     this.saltsPath = join(root, 'salts', `${collector}.jsonl`);
     this.content = new ContentStore(root);
@@ -214,7 +220,32 @@ export class Store {
 
   /** @param {number} seq @param {string} blob */
   writeCheckpoint(seq, blob) {
-    writeFileSync(join(this.root, 'checkpoints', `${seq}.note`), blob, { mode: 0o600 });
+    writeFileSync(join(this.checkpointDir, `${seq}.note`), blob, { mode: 0o600 });
+  }
+
+  /** @returns {{ seq: number, blob: string }[]} this collector's checkpoints, in order */
+  readCheckpoints() {
+    if (!existsSync(this.checkpointDir)) return [];
+    return readdirSync(this.checkpointDir)
+      .map(f => ({ m: /^([0-9]+)\.note$/.exec(f), f }))
+      .filter(x => x.m !== null)
+      .map(x => ({
+        seq: Number(/** @type {RegExpExecArray} */ (x.m)[1]),
+        blob: readFileSync(join(this.checkpointDir, x.f), 'utf8'),
+      }))
+      .sort((a, b) => a.seq - b.seq);
+  }
+
+  /**
+   * Notes sitting directly in checkpoints/, belonging to no collector. Reported
+   * rather than ignored: evidence that cannot be attributed is still evidence,
+   * and silently skipping it would hide it from a reader.
+   * @returns {string[]}
+   */
+  unattributedCheckpoints() {
+    const dir = join(this.root, 'checkpoints');
+    if (!existsSync(dir)) return [];
+    return readdirSync(dir).filter(f => f.endsWith('.note'));
   }
 
   /**
@@ -223,10 +254,6 @@ export class Store {
    * @returns {number}
    */
   lastCheckpointSeq() {
-    const dir = join(this.root, 'checkpoints');
-    if (!existsSync(dir)) return 0;
-    return readdirSync(dir)
-      .map(f => /^([0-9]+)\.note$/.exec(f))
-      .reduce((max, m) => (m ? Math.max(max, Number(m[1])) : max), 0);
+    return this.readCheckpoints().reduce((max, c) => Math.max(max, c.seq), 0);
   }
 }

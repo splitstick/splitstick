@@ -86,6 +86,24 @@ cannot verify that a human with that name decided anything. The field means "the
 asserted this reviewer", and DES-18's practice statement says so. Authenticated approval is a
 control-plane feature, not a 1.0 claim.
 
+## The schema is a closed allowlist
+
+Each kind declares the exhaustive set of fields it may carry, and anything else
+is refused. `PRIV-02` claims the record format excludes payloads; with an open
+schema that claim rested on the collector being the only writer, which is the
+one assumption a tamper-evidence product may not make — both the schema and the
+verifier are reusable, and a pack arrives from somewhere else. A review
+demonstrated a heartbeat carrying an IBAN that validated cleanly.
+
+Commitment identifiers are full-length lower-case SHA-256 digests. A shortened
+`cid` is not a commitment: `FR-35`'s substitution argument rests entirely on the
+identifier moving when the bytes move, and sixteen bits of collision resistance
+does not carry it.
+
+Extending a kind is therefore a deliberate act. `DES-10`'s coverage counts will
+add fields to `heartbeat` in M4 by amending the allowlist, not by writing them
+and hoping the validator stays quiet.
+
 ## Consequences
 
 - The capture boundary (DES-14) must produce this shape from both collectors, so the record format

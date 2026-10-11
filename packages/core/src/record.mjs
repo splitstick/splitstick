@@ -31,10 +31,41 @@ const OBSERVATION_KINDS = new Set(['tool_call', 'approval']);
 /** Chain metadata must never appear inside the canonicalised subject — FR-59. */
 const FORBIDDEN = Object.freeze(['leaf', 'prev', 'head', 'salt']);
 
+/** Fields every record carries. */
+const ENVELOPE = ['v', 'collector', 'run', 'record_seq', 'source_seq', 'ts', 'kind'];
+
+/**
+ * The exhaustive set of fields each kind may carry — PRIV-02.
+ *
+ * An open schema made PRIV-02's claim depend on the collector being the only
+ * writer, which is precisely the assumption a tamper-evidence product cannot
+ * make: both the schema and the verifier are reusable, and a pack arrives from
+ * somewhere else. A field that is not here is refused, so "the record format
+ * excludes payloads" is a property of the format rather than of our own
+ * discipline in writing it.
+ */
+const ALLOWED = Object.freeze({
+  tool_call: [...ENVELOPE, 'tool', 'consequential', 'agent', 'args', 'result', 'approval',
+    'outcome', 'attempt', 'correlation'],
+  approval: [...ENVELOPE, 'tool', 'consequential', 'agent', 'args', 'result', 'approval',
+    'outcome', 'attempt', 'correlation'],
+  heartbeat: [...ENVELOPE, 'build', 'policy'],
+  gap: [...ENVELOPE, 'from_source_seq', 'to_source_seq', 'reason'],
+  gap_unknown: [...ENVELOPE, 'from_ts', 'to_ts', 'last_checkpoint_source_seq'],
+  policy: [...ENVELOPE, 'previous_policy', 'next_policy'],
+  padding: [...ENVELOPE, 'pad'],
+});
+
+/** Fields an approval object may carry. */
+const APPROVAL_FIELDS = ['decision', 'reviewer', 'request'];
+
 export const OUTCOMES = Object.freeze(['ok', 'error', 'timeout', 'denied']);
 
 const HEX32 = /^[0-9a-f]{32}$/;
-const CID = /^sha256:[0-9a-f]{4,64}$/;
+// A full-length digest, lower-case. A shortened "cid" is not a commitment: the
+// substitution argument in FR-35 rests entirely on the identifier moving when
+// the bytes move, and 16 bits of collision resistance does not carry it.
+const CID = /^sha256:[0-9a-f]{64}$/;
 const RFC3339 = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 const DIGEST = /^sha256:[0-9a-f]{64}$/;
 
@@ -64,7 +95,9 @@ function assertCommitment(v, field) {
   if (typeof v.cid !== 'string' || !CID.test(v.cid)) throw new RecordError(`${field}.cid must be a sha256 commitment`);
   if ('bytes' in v && !Number.isInteger(v.bytes)) throw new RecordError(`${field}.bytes must be an integer`);
   for (const k of Object.keys(v)) {
-    if (!['cid', 'bytes', 'ok'].includes(k)) throw new RecordError(`${field}.${k} is not permitted: payloads are externalised`);
+    if (!['cid', 'bytes', 'ok'].includes(k)) {
+      throw new RecordError(`${field}.${k} is not permitted: payloads are externalised`);
+    }
   }
 }
 
@@ -100,7 +133,18 @@ export function validateRecord(rec) {
   if (typeof r.kind !== 'string' || !RECORD_KINDS.includes(r.kind)) {
     throw new RecordError(`unknown kind ${String(r.kind)}: the enum is closed (DES-01)`);
   }
-  const kind = r.kind;
+  const kind = /** @type {keyof typeof ALLOWED} */ (r.kind);
+
+  // The allowlist, before anything kind-specific: an unexpected field is
+  // refused rather than validated around.
+  const allowed = ALLOWED[kind];
+  for (const k of Object.keys(r)) {
+    if (!allowed.includes(k)) {
+      throw new RecordError(
+        `field ${JSON.stringify(k)} is not permitted on a ${kind} record: the schema is a closed `
+        + 'allowlist so that PRIV-02 is a property of the format, not of the writer (PRIV-02)');
+    }
+  }
 
   // source_seq: present on an observation, null on everything else. Null states
   // "this record is not an observation", which is checkable; a repeated value
@@ -136,6 +180,11 @@ export function validateRecord(rec) {
 
     if (r.approval !== undefined && r.approval !== null) {
       if (!isObj(r.approval)) throw new RecordError('approval must be null or an object');
+      for (const k of Object.keys(r.approval)) {
+        if (!APPROVAL_FIELDS.includes(k)) {
+          throw new RecordError(`approval.${k} is not permitted: the schema is a closed allowlist (PRIV-02)`);
+        }
+      }
       if (r.approval.decision !== 'approve' && r.approval.decision !== 'deny') {
         throw new RecordError('approval.decision must be approve or deny');
       }

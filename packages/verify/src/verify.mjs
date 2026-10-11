@@ -25,7 +25,7 @@
  * plain words what this set of evidence cannot establish.
  */
 
-import { readFileSync, existsSync, readdirSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { Store } from '@splitstick/core/store';
 import { recomputeChain } from '@splitstick/core/chain';
@@ -87,6 +87,16 @@ export async function verifyStore(root, opts = {}) {
   const checks = [];
   /** @param {string} name @param {Verdict} verdict @param {string} [detail] */
   const check = (name, verdict, detail) => { checks.push({ name, verdict, ...(detail ? { detail } : {}) }); };
+
+  const stray = store.unattributedCheckpoints();
+  if (stray.length > 0) {
+    findings.push({
+      code: 'CHECKPOINTS_UNATTRIBUTED', verdict: 'inconclusive',
+      detail: `${stray.length} note(s) sit directly in checkpoints/ and belong to no collector `
+        + `(${stray.join(', ')}); they were not checked against this chain, because a note that `
+        + 'cannot be attributed cannot be evidence about a particular log',
+    });
+  }
 
   const { entries, torn, malformed } = store.readChainDetailed();
 
@@ -160,7 +170,7 @@ export async function verifyStore(root, opts = {}) {
     contentVs.length ? undefined : 'no commitments to reproduce');
 
   // 5 TREE, 6 OP-SIG — over the checkpoints on disk.
-  const notes = readCheckpoints(root);
+  const notes = store.readCheckpoints();
   /** @type {Verdict[]} */
   const treeVs = [];
   /** @type {Verdict[]} */
@@ -323,7 +333,9 @@ function report(tree_size, anchored, checks, findings, notes, collector, vkey) {
   const summary = {
     passed: checks.filter(c => c.verdict === 'ok').length,
     unanswered: checks.filter(c => c.verdict === 'inconclusive').length,
-    failed: checks.filter(c => c.verdict === 'fail').length,
+    // A finding may fail without its check being marked, so both are counted.
+    failed: checks.filter(c => c.verdict === 'fail').length
+      + findings.filter(f => f.verdict === 'fail' && !checks.some(c => c.verdict === 'fail')).length,
   };
 
   // FR-57 — derived from the proof types actually present, not from
@@ -333,13 +345,24 @@ function report(tree_size, anchored, checks, findings, notes, collector, vkey) {
   /** @type {{ id: string, type: string, establishes: string }[]} */
   const witnesses = [];
 
+  // An affirmative capability must rest on a check that actually passed. This
+  // block used to assert chain integrity whenever any record existed, so a
+  // verification that FAILED still printed "no record was altered" directly
+  // under the word FAIL. For a project whose thesis is not claiming more than
+  // the evidence supports, that was the worst possible place to overclaim.
+  /** @param {string} name */
+  const passed = name => checks.find(c => c.name === name)?.verdict === 'ok';
+
   const can = [];
   const cannot = [];
-  if (tree_size > 0) {
+  if (summary.failed > 0) {
+    cannot.push('this evidence contradicts itself, so it establishes nothing about the records it contains — the findings above say which checks failed');
+  } else if (tree_size > 0 && passed('FORMAT') && passed('SEQUENCE') && passed('CHAIN') && passed('LEAF')) {
     can.push('ordering and content integrity of every record in this chain');
     can.push('that no record was altered, inserted, removed or reordered within it');
+    if (passed('CONTENT')) can.push('that every retained payload still reproduces the commitment in its record');
   }
-  if (notes.length && vkey) {
+  if (summary.failed === 0 && notes.length && vkey && passed('OP-SIG') && passed('TREE')) {
     can.push(`that the operator identity ${collector} signed the tree size and root it claims`);
   }
   // The height is the number a reader needs, and DES-12's own example prints
@@ -379,14 +402,4 @@ function commitments(record) {
   return out;
 }
 
-/** @param {string} root @returns {{ seq: number, blob: string }[]} */
-function readCheckpoints(root) {
-  const dir = join(root, 'checkpoints');
-  if (!existsSync(dir)) return [];
-  return readdirSync(dir)
-    .map(f => ({ m: /^([0-9]+)\.note$/.exec(f), f }))
-    .filter(x => x.m)
-    .map(x => ({ seq: Number(/** @type {RegExpExecArray} */ (x.m)[1]), blob: readFileSync(join(dir, x.f), 'utf8') }))
-    .sort((a, b) => a.seq - b.seq);
-}
 
