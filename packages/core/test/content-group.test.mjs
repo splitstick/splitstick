@@ -179,6 +179,7 @@ test('writing does not materialise the key map, and a later read still sees ever
 test('extractRefs does not need an exception per plain-text result', () => {
   // Behavioural guard for the allocation fix: plain text, text that starts like
   // JSON but is not, and real JSON must all behave.
+  /** @type {[string, string[]][]} */
   const cases = [
     ['transfer complete', []],
     ['{not json at all', []],

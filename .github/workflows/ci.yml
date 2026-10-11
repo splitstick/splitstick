@@ -18,14 +18,55 @@ jobs:
         with:
           node-version: '20'
       - run: npm ci
-      - name: Tamper suite
-        run: npm test
+      - name: Tamper suite against OMA's own verifier
+        run: npm run generate && npm run redteam
+      - name: Tamper suite against splitstick verify
+        run: npm run redteam:splitstick
       - name: Requirements traceability
         run: npm run backlog
       - name: Specification review gate
         run: npm run review
       - name: Generated files are up to date
         run: git diff --exit-code -- requirements/MATRIX.md requirements/PLAN.md requirements/DESIGN.md
+
+  # NFR-08 — Node 20 and later, tested across supported majors rather than
+  # asserted. The unit suite is where the record format, the chain, the tree and
+  # the verifier are pinned to their conformance vectors.
+  unit:
+    name: unit tests · node ${{ matrix.node }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['20', '22', '24']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - run: npm ci
+      - name: Types
+        run: npm run typecheck
+      - name: Unit tests
+        run: npm run test:unit
+
+  # NFR-01, NFR-02 — measured, not assumed. The budgets are reported rather than
+  # gated: a laptop and a shared runner disagree with each other by a factor of
+  # two at p99, so a hard threshold here would fail for reasons that have nothing
+  # to do with the change under review. The numbers are in the log for every run.
+  budgets:
+    name: performance budgets
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm ci
+      - name: Append overhead
+        run: node bench/append.mjs --events 20000 --repeat 3
+      - name: Added run latency
+        run: node bench/run-latency.mjs --runs 60
 
   # GOV-02 — DCO. Pull requests only: commits predating adoption are unsigned,
   # and their sole author affirms them in CONTRIBUTING.md rather than rewriting

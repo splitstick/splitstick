@@ -5,9 +5,12 @@
 A tamper-evident record of what AI agents actually did: chained, signed, independently
 countersigned, and verifiable offline by anyone holding the bytes and a public key.
 
-> **Status: pre-build.** No product code exists yet. This repository currently holds the
-> evidence that motivated the project, the scope it commits to, and the plan to build it.
-> Every figure in the release notes is a target to be met, not a measurement.
+> **Status: M1 built, M3a next.** Local integrity ships: records are canonicalised,
+> salted, chained, batched into an RFC 6962 tree and signed, and `splitstick verify`
+> reads it all back from files alone. Attack classes AC-1 and AC-2 are closed and the
+> suite proves it. Everything that needs a second party — countersignatures,
+> truncation detection, coverage attestation — is still ahead, and the verifier says so
+> in its own output rather than leaving you to read the roadmap.
 
 ## Why this exists
 
@@ -31,21 +34,80 @@ and the suite exits non-zero whenever an observation changes in either direction
 | [`docs/`](docs/) | [Threat model](docs/threat-model.md) · [draft release notes](docs/splitstick-1.0-release-notes.md) — the scope commitment, rev. 8 |
 | [`design/`](design/) | One spec per design element — [index and traceability](requirements/DESIGN.md) |
 | [`requirements/`](requirements/) | [Backlog](requirements/MATRIX.md), [delivery plan](requirements/PLAN.md) and [design traceability](requirements/DESIGN.md) — gated by attack class. Counts live in the generated matrices, never in prose. |
-| [`packages/`](packages/) | Shipped code. Empty until M1. |
-| [`spec/`](spec/) | Wire format and conformance vectors. Empty until M6. |
+| [`packages/`](packages/) | Shipped code: [`core`](packages/core) (record, canonical encoding, leaf, chain, tree, signer, store), [`collect-oma`](packages/collect-oma) (OMA journal and approval store), [`verify`](packages/verify) (the verifier and its CLI) |
+| [`spec/vectors/`](spec/vectors/) | Conformance vectors — [RFC 8785](spec/vectors/jcs.json), [RFC 6962](spec/vectors/merkle.json), [C2SP note key ids](spec/vectors/note.json) |
+| [`bench/`](bench/) | The performance budgets, measured rather than asserted |
 
 ## Working on it
 
 ```bash
 npm install
-npm test        # generate a fixture, run the tamper suite
-npm run backlog # revalidate requirements and regenerate the matrix and plan
+npm test          # generate a fixture, then both tamper suites
+npm run test:unit # the unit and conformance suites
+npm run typecheck # JSDoc types over plain ESM, no build step
+npm run bench     # the NFR-01 and NFR-02 budgets
+npm run backlog   # revalidate requirements, regenerate the matrix and plan
 ```
+
+Node 20 or later. No build step: plain `.mjs` with JSDoc types checked by `tsc --checkJs`.
+One runtime dependency in `core` (`yaml`, pinned exactly) and none in the verifier.
 
 The backlog is data, not prose. `requirements/*.json` is the source of truth; `MATRIX.md`
 and `PLAN.md` are generated. The validator rejects any requirement without a release-notes
 section behind it and any release-1.0 requirement not assigned to a milestone — a
 requirement cannot exist without a promise.
+
+## What M1 closes, and what it does not
+
+Two tamper suites run on every change. The first alters a genuine OMA journal and asks
+OMA's own `verifyRun()`; the second builds a real Splitstick store from that same journal
+and asks `splitstick verify`.
+
+```
+gate AC-1   HELD   (A1, A2, A3, B, E)
+gate AC-2   HELD   (C)
+
+8 of 11 tampers are detected by splitstick verify from files alone.
+3 are not, and each names the milestone that closes it: C2, D, F2.
+```
+
+The three that are not detected are in the suite on purpose:
+
+| | Attack | Why it stands | Closed by |
+|---|---|---|---|
+| C2 | Edit, repair the chain, **re-sign** the checkpoint | The operator holds the key. Nothing local can refuse this. | M2 non-exportable custody + M3a countersignature |
+| D | Truncate the tail and drop the checkpoints above it | A chain over a prefix is internally perfect. | M3a witness + cross-pack comparison |
+| F2 | Erase a record, renumber, repair and re-sign | The action never appears at all. | M3a + counterparty reconciliation |
+
+None of them needs new cryptography. Each needs a second party, which is the shape of the
+problem rather than a gap in the implementation.
+
+This is also why a clean 1.0 store verifies **INCONCLUSIVE** rather than `ok`. Four of the
+verifier's ten checks cannot be answered without a countersignature, and `ok` means every
+check that could run, ran, and passed. A bare `ok` here would claim more than was checked:
+
+```
+verdict     INCONCLUSIVE  (7 checks passed, 4 could not be answered, 0 failed)
+capability  ordering and content integrity of every record in this chain
+            NOT: truncation of the tail is not detectable from this evidence alone
+            NOT: nothing here establishes WHEN any record was written
+trusting    the cryptographic primitives (SHA-256, Ed25519)
+            the operator for the completeness of what was captured
+```
+
+## Measured, not asserted
+
+`npm run bench` prints the budgets with the filesystem's own numbers beside them, because a
+percentile without attribution invites widening the budget instead of finding the cause.
+
+- **NFR-02, added agent run latency — met.** A real A/B through OMA's orchestrator puts the
+  overhead below the measurement noise floor.
+- **NFR-01, append overhead — p50 and p95 met, p99 not.** 0.28 ms p50 and 0.42 ms p95
+  against a 1 ms budget; 2.0 ms at p99. The residual tail is garbage collection, not I/O.
+  Measuring this in M1 rewrote the storage layout three times: cryptography costs 0.03 ms
+  per record, while creating one file costs 0.19 ms at p50 and 1.0 ms at p99 — so nothing
+  on the append path creates a file. The p99 figure needs a defined measurement
+  environment, which the requirement does not yet name.
 
 ## Resourcing
 

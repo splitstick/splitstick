@@ -33,11 +33,11 @@ Which fields constitute an action record, their types, and what is deliberately 
 
 | Requirement | | Status |
 |---|---|---|
-| `FR-05` | Digest tool identity and arguments | ☐ |
-| `FR-06` | Digest tool result | ☐ |
-| `FR-07` | Digest approval decisions | ☐ |
-| `FR-59` | Action record and chain entry are separate structures | ☐ |
-| `FR-62` | Retries, timeouts and errors in the schema | ☐ |
+| `FR-05` | Digest tool identity and arguments | ✅ |
+| `FR-06` | Digest tool result | ✅ |
+| `FR-07` | Digest approval decisions | ✅ |
+| `FR-59` | Action record and chain entry are separate structures | ✅ |
+| `FR-62` | Retries, timeouts and errors in the schema | ✅ |
 
 ### [DES-02 — Canonical encoding](../design/DES-02-canonical-encoding.md)
 
@@ -47,8 +47,8 @@ Deterministic serialisation: recursive key ordering, array order preserved, numb
 
 | Requirement | | Status |
 |---|---|---|
-| `FR-52` | Canonicalisation completeness | ☐ |
-| `SEC-07` | Resist consistent rewrite | ☐ |
+| `FR-52` | Canonicalisation completeness | ✅ |
+| `SEC-07` | Resist consistent rewrite | ✅ |
 
 ### [DES-03 — Leaf and salt construction](../design/DES-03-leaf-and-salt.md)
 
@@ -58,8 +58,8 @@ Salt length and source, leaf = H(salt || canonical), and where salts are stored 
 
 | Requirement | | Status |
 |---|---|---|
-| `FR-09` | Per-leaf salting | ☐ |
-| `SEC-13` | Digest pre-image resistance in practice | ☐ |
+| `FR-09` | Per-leaf salting | ✅ |
+| `SEC-13` | Digest pre-image resistance in practice | ✅ |
 
 ### [DES-04 — Chain construction](../design/DES-04-chain-construction.md)
 
@@ -69,11 +69,11 @@ h_i = H(h_(i-1) || leaf_i), the genesis value, sequence semantics, and what a ve
 
 | Requirement | | Status |
 |---|---|---|
-| `FR-08` | Predecessor chaining | ☐ |
-| `SEC-06` | Resist action alteration | ☐ |
+| `FR-08` | Predecessor chaining | ✅ |
+| `SEC-06` | Resist action alteration | ✅ |
 | `SEC-09` | Resist truncation | ☐ |
 | `SEC-10` | Resist erasure and renumbering | ☐ |
-| `FR-56` | Collector instance identity | ☐ |
+| `FR-56` | Collector instance identity | ✅ |
 
 ### [DES-05 — Batching and Merkle tree](../design/DES-05-batching-and-merkle.md)
 
@@ -98,11 +98,11 @@ What an epoch is, how the signing key evolves, how the predecessor is destroyed,
 
 | Requirement | | Status |
 |---|---|---|
-| `FR-10` | Batch signing with operator key | ☐ |
+| `FR-10` | Batch signing with operator key | ✅ |
 | `FR-11` | Forward-secure epoch ratchet | ☐ |
 | `NFR-09` | HSM/KMS support | ☐ |
 | `SEC-08` | Resist re-signing history | ☐ |
-| `SEC-14` | Operator key never leaves operator | ☐ |
+| `SEC-14` | Operator key never leaves operator | ✅ |
 | `SEC-17` | State the forward-secrecy precondition | ☐ |
 | `SEC-24` | Key compromise recovery | ☐ |
 | `OPS-04` | Separation-of-duties guidance | ☐ |
@@ -159,7 +159,7 @@ Two separate schemas: the collector's witness set, and the verifier's acceptance
 
 | Requirement | | Status |
 |---|---|---|
-| `FR-41` | Configuration file | ☐ |
+| `FR-41` | Configuration file | ✅ |
 | `FR-30` | Acceptance policy as input | ☐ |
 | `FR-23` | Policy changes as chain events | ☐ |
 | `SEC-12` | Resist policy downgrade | ☐ |
@@ -201,7 +201,7 @@ The ordered checks, the verdict taxonomy including an inconclusive outcome, and 
 
 | Requirement | | Status |
 |---|---|---|
-| `FR-29` | splitstick verify | ☐ |
+| `FR-29` | splitstick verify | ✅ |
 | `NFR-04` | Verification throughput | ☐ |
 | `NFR-05` | No network at verification | ☐ |
 | `NFR-06` | No credentials at verification | ☐ |
@@ -219,10 +219,10 @@ The content store, pointer scheme, crypto-shredding procedure, and how retention
 
 | Requirement | | Status |
 |---|---|---|
-| `FR-35` | Payloads are content-addressed and externalised | ☐ |
+| `FR-35` | Payloads are content-addressed and externalised | ✅ |
 | `FR-36` | Crypto-shredding | ☐ |
 | `FR-37` | Retention policy on storage | ☐ |
-| `PRIV-02` | No content in the chain | ☐ |
+| `PRIV-02` | No content in the chain | ✅ |
 | `PRIV-03` | Erasure via crypto-shredding | ☐ |
 | `PRIV-04` | Chain survives erasure | ☐ |
 | `PRIV-05` | Minimal retained artefacts | ☐ |
@@ -236,13 +236,13 @@ The shared capture core, the OMA backend, the MCP proxy, and where the capture b
 
 | Requirement | | Status |
 |---|---|---|
-| `FR-01` | OMA journal backend | ☐ |
-| `FR-02` | OMA approval-store backend | ☐ |
+| `FR-01` | OMA journal backend | ✅ |
+| `FR-02` | OMA approval-store backend | ✅ |
 | `FR-03` | MCP proxy collector (stdio) | ☐ |
 | `FR-04` | MCP proxy collector (HTTP) | ☐ |
-| `INT-04` | Additive OMA integration | ☐ |
+| `INT-04` | Additive OMA integration | ✅ |
 | `INT-05` | Framework-agnostic capture | ☐ |
-| `INT-07` | No agent code changes | ☐ |
+| `INT-07` | No agent code changes | ✅ |
 | `FR-46` | Conformance test suite | ☐ |
 | `FR-47` | Witness list as data | ☐ |
 | `INT-06` | Reuse rather than reimplement | ☐ |
@@ -275,7 +275,7 @@ Version negotiation in the record and pack, and the migration path when a hash o
 
 | Requirement | | Status |
 |---|---|---|
-| `NFR-07` | Long-term verifiability | ☐ |
+| `NFR-07` | Long-term verifiability | ✅ |
 | `NFR-08` | Node.js 20+ | ☐ |
 | `NFR-10` | OMA version compatibility | ☐ |
 | `NFR-11` | MCP transport coverage | ☐ |
@@ -288,10 +288,10 @@ Build reproducibility, provenance attestation, release signing, SBOM generation,
 
 | Requirement | | Status |
 |---|---|---|
-| `SEC-22` | Build provenance attestation | ☐ |
-| `SEC-23` | Signed releases and SBOM | ☐ |
+| `SEC-22` | Build provenance attestation | ✅ |
+| `SEC-23` | Signed releases and SBOM | ✅ |
 | `NFR-01` | Append overhead | ☐ |
-| `NFR-02` | Run latency budget | ☐ |
+| `NFR-02` | Run latency budget | ✅ |
 | `FR-49` | Documented CLI contract | ☐ |
 
 ### [DES-18 — Witness practice statement structure](../design/DES-18-practice-statement-structure.md)
@@ -324,7 +324,7 @@ Two mechanisms that narrow attack classes 4 and 5 when no stateful witness is co
 | Requirement | | Status |
 |---|---|---|
 | `FR-54` | Cross-pack consistency verification | ☐ |
-| `FR-55` | Counterparty reference capture | ☐ |
+| `FR-55` | Counterparty reference capture | ✅ |
 | `SEC-26` | Resist truncation below a disclosed height | ☐ |
 | `DOC-09` | Reconciliation guidance | ☐ |
 

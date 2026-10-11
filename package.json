@@ -20,7 +20,8 @@
     "verify": "node packages/verify/src/cli.mjs",
     "redteam:splitstick": "node redteam/splitstick.mjs",
     "bench:append": "node bench/append.mjs",
-    "bench:latency": "node bench/run-latency.mjs"
+    "bench:latency": "node bench/run-latency.mjs",
+    "sbom": "npm sbom --sbom-format cyclonedx --sbom-type library --omit dev"
   },
   "dependencies": {
     "@open-multi-agent/core": "1.21.1",
