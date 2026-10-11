@@ -374,10 +374,12 @@ test('every record kind the collector emits validates', async () => {
   collector.gap({ from_source_seq: 3, to_source_seq: 7 });
   collector.gapUnknown({ last_checkpoint_source_seq: 2 });
   collector.policy({ previous: d('aa'), next: d('bb') });
+  collector.custody();
 
   const kinds = store.readChain().map(e => rec(e).kind);
   assert.deepEqual(kinds,
-    ['tool_call', 'approval', 'heartbeat', 'heartbeat', 'padding', 'gap', 'gap_unknown', 'policy']);
+    ['tool_call', 'approval', 'heartbeat', 'heartbeat', 'padding', 'gap', 'gap_unknown',
+      'policy', 'custody']);
   assert.deepEqual([...new Set(kinds)].sort(), [...RECORD_KINDS].sort(),
     'and between them they cover the whole enum, so none is unexercised');
   const r = recomputeChain(store.readChain());

@@ -167,9 +167,11 @@ export class Collector {
    * their declaration; see SEC-17 and docs/key-custody.md.
    *
    * @param {import('./signer.mjs').Signer} next the incoming epoch's signer
+   * @param {{ declare?: boolean }} [opts] `declare` emits the FR-65 custody
+   *   record for the new epoch, so that an epoch is never undeclared
    * @returns {Promise<{ epoch: number }>}
    */
-  async rotate(next) {
+  async rotate(next, opts = {}) {
     const degraded = this.#degraded;
     if (degraded) {
       throw new CollectorDegraded(
@@ -199,6 +201,8 @@ export class Collector {
     });
     this.signer = next;
     this.epoch = epoch;
+    // After the swap, so the declaration is about the epoch now in force.
+    if (opts.declare) this.custody();
     return { epoch };
   }
 
@@ -521,6 +525,26 @@ export class Collector {
     return this.#write(this.#envelope({
       run: null, source_seq: null, kind: 'policy',
       previous_policy: o.previous, next_policy: o.next,
+    }));
+  }
+
+  /**
+   * Declare how this epoch's signing key is held — FR-65.
+   *
+   * The declaration goes in the chain so that altering it later breaks the
+   * chain, and so a countersignature over the checkpoint above it fixes when it
+   * was made. What it establishes is that the operator asserted a class; it
+   * does not establish the class, and the record says so in `custody_basis`.
+   *
+   * @returns {import('./chain.mjs').ChainEntry}
+   */
+  custody() {
+    return this.#write(this.#envelope({
+      run: null, source_seq: null, kind: 'custody',
+      epoch: this.epoch,
+      public_key: this.signer.publicKey.toString('base64'),
+      custody_class: this.signer.custody,
+      custody_basis: 'operator-declared',
     }));
   }
 

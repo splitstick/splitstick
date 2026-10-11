@@ -8,6 +8,7 @@ export * from './merkle.mjs';
 export * from './note.mjs';
 export * from './der.mjs';
 export * from './rfc3161.mjs';
+export * from './attestation.mjs';
 export * from './signer.mjs';
 export * from './succession.mjs';
 export * from './content.mjs';

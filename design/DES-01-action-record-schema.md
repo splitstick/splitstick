@@ -19,9 +19,9 @@ record while `DES-02` said every field contributes.
   "collector": "treasury-host-1",          // scopes the chain and the log origin  FR-56
   "run": "bf10bc73-2c1b-442c-b3b2-c044678e03b6",   // null on a heartbeat
   "record_seq": 4812,                      // position in the COLLECTOR's log, from 1
-  "source_seq": 4817,                      // observed actions; null on heartbeat, policy, gap
+  "source_seq": 4817,                      // observed actions; null on heartbeat, policy, custody, gap
   "ts": "2026-10-10T10:40:36.907Z",        // collector clock, RFC 3339, always UTC, ms precision
-  "kind": "tool_call",                     // tool_call | approval | heartbeat | gap | gap_unknown | policy | padding
+  "kind": "tool_call",                     // tool_call | approval | heartbeat | gap | gap_unknown | policy | custody | padding
   "tool": "transfer_funds",               // a function name, not a person — retained
   "agent":  { "cid": "sha256:1a0d…" },     // a label that could identify — erasable
   "args":   { "cid": "sha256:9f2c…", "bytes": 61 },     // salted digest, FR-35
@@ -71,6 +71,8 @@ into a chain that is never deleted.
 | `approval` | `null`, or `{ "decision": "approve"\|"deny", "reviewer": { "cid": "sha256:…" }, "request": { "cid": "sha256:…" } }`. Both the reviewer and the reviewed request are **salted content commitments** using the same mechanism as every payload (`FR-35`), so both are erasable. An earlier draft wrote `request_hash` without defining it; a bare hash of an approval request is brute-forceable, because the request states the action — the amount, the counterparty — in a handful of guessable fields. `decision` is retained in the clear: approve or deny identifies nobody. |
 | `consequential` | Taken from the tool's own declaration. Never inferred from names or arguments. |
 | `outcome`, `attempt`, `correlation` | **FR-62.** A timeout or error is an outcome, not an absence. A retry is a *new record* sharing a `correlation`, never an overwrite — overwriting would make the chain a mutable store. **`source_seq` advances once per observed ATTEMPT**, and `correlation` is what groups attempts into a logical action. An earlier draft advanced it once per logical action; a review showed that breaks the counter — interleaved retries across two correlations make it move backwards — and, more importantly, a timed-out attempt may already have caused an external side effect, so every attempt must stay independently accountable. |
+
+| `custody` fields | **FR-65.** `source_seq: null`, `run: null`, and exactly `epoch`, `public_key`, `custody_class` and `custody_basis`. It is a record rather than a field on the checkpoint because a verifier cannot tell custody from a signature — an HSM signature and one produced from a PEM file on disk are byte-identical — so putting the declaration in the chain is what makes altering it later break the chain, and a countersignature over the checkpoint above it is what fixes when it was made. `custody_basis` admits exactly one value, `operator-declared`: *independently supported* is a conclusion a verifier reaches by validating a provider attestation against FR-70's five checks, never a claim an operator writes about itself. |
 
 ### What is deliberately absent
 

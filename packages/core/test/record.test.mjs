@@ -23,7 +23,7 @@ test('FR-59: no chain field may appear in the record', () => {
 // DES-01 — the enum is closed, and padding is in it (round-7 finding).
 test('the kind enum is closed and includes every kind the design defines', () => {
   assert.deepEqual([...RECORD_KINDS].sort(),
-    ['approval', 'gap', 'gap_unknown', 'heartbeat', 'padding', 'policy', 'tool_call'].sort());
+    ['approval', 'custody', 'gap', 'gap_unknown', 'heartbeat', 'padding', 'policy', 'tool_call'].sort());
   assert.throws(() => validateRecord({ ...base(), kind: 'something_new' }), RecordError);
 });
 
