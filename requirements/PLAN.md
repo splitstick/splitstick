@@ -121,7 +121,7 @@ Make yesterday's record unforgeable with today's key, and state the precondition
 | | ID | Requirement | Verified by |
 |---|---|---|---|
 | ☐ `FR-11` | **Forward-secure epoch ratchet** — Evolve the signing key per epoch and destroy the predecessor so prior entries cannot be re-signed with the current key. | Test: epoch N key cannot produce a valid epoch N-1 signature |
-| ☐ `NFR-09` | **HSM/KMS support** — Operate with a KMS or HSM offering non-exportable keys. | Integration test against at least one KMS and one HSM |
+| ☐ `NFR-09` | **HSM/KMS support** — Operate with a KMS or HSM offering non-exportable keys. | Integration test against at least one KMS and one HSM. The KMS half runs via npm run test:kms against a real ECC_NIST_EDWARDS25519 key and asserts the signature verifies under an independent Ed25519 implementation, not only under ours; it reports NOT VERIFIED and skips when no key is configured, so a green suite never reads as having verified it. |
 | ☐ `SEC-08` | **Resist re-signing history** — Re-signing rewritten history with the current key must be detectable under non-exportable custody. | Epoch ratchet test with HSM |
 | ☐ `SEC-17` | **State the forward-secrecy precondition** — Any forward-secrecy claim must state its non-exportable key custody precondition in the same place. | Documentation review |
 | ☐ `OPS-04` | **Separation-of-duties guidance** — Document the key-custody split between engineering and internal audit. | Guide published and reviewed |

@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, writeFileSync, readdirSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync, readdirSync, existsSync } from 'node:fs';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Collector } from '@splitstick/core/collector';
@@ -225,15 +226,75 @@ test('an empty store is inconclusive, not ok — there is nothing to attest', as
   assert.ok(r.findings.some(f => f.code === 'NO_EVIDENCE'));
 });
 
-// NFR-05, NFR-06 — offline by construction, enforced at the code level.
-test('NFR-05: the verifier package imports no network module', () => {
-  const dir = new URL('../src/', import.meta.url);
-  for (const f of readdirSync(dir)) {
-    const text = readFileSync(new URL(f, dir), 'utf8');
-    for (const m of ['node:http', 'node:https', 'node:net', 'node:dgram', 'node:tls', 'node:dns']) {
-      assert.ok(!text.includes(m), `${f} imports ${m}`);
+/**
+ * NFR-05, NFR-06 — offline by construction, enforced at the code level.
+ *
+ * This used to scan `packages/verify/src` alone, which left a hole found while
+ * writing M2's failure-mode inventory: a network import in `core` would leave
+ * the verifier passing its own offline test while transitively depending on
+ * networking. The guarantee is about what the verifier PULLS IN, not only what
+ * it contains, so the scan now follows the in-repository dependency graph from
+ * the verifier's entry point.
+ *
+ * It is also why the AWS KMS signer is its own package: core cannot acquire a
+ * cloud SDK without contradicting this.
+ */
+const NETWORK_MODULES = ['node:http', 'node:https', 'node:net', 'node:dgram', 'node:tls', 'node:dns', 'node:http2'];
+
+/** Every in-repo module the verifier reaches, transitively. @returns {Set<string>} */
+function reachableFromVerifier() {
+  const roots = [fileURLToPath(new URL('../src/index.mjs', import.meta.url)),
+                 fileURLToPath(new URL('../src/verify.mjs', import.meta.url)),
+                 fileURLToPath(new URL('../src/cli.mjs', import.meta.url))];
+  /** @type {Set<string>} */
+  const seen = new Set();
+  /** @param {string} file */
+  const visit = (file) => {
+    if (seen.has(file)) return;
+    seen.add(file);
+    const text = readFileSync(file, 'utf8');
+    for (const m of text.matchAll(/from\s+'([^']+)'/g)) {
+      const spec = /** @type {string} */ (m[1]);
+      let resolved = null;
+      if (spec.startsWith('.')) {
+        resolved = fileURLToPath(new URL(spec, pathToFileURL(file)));
+      } else if (spec.startsWith('@splitstick/')) {
+        // Workspace sibling: @splitstick/core/store -> packages/core/src/store.mjs
+        const [, pkg, ...rest] = spec.split('/');
+        const sub = rest.length ? rest.join('/') : 'index';
+        resolved = fileURLToPath(new URL(
+          `../../${pkg}/src/${sub}${sub.endsWith('.mjs') ? '' : '.mjs'}`, import.meta.url));
+      }
+      if (resolved && existsSync(resolved)) visit(resolved);
     }
-    assert.ok(!/\bfetch\s*\(/.test(text), `${f} calls fetch`);
+  };
+  roots.filter(existsSync).forEach(visit);
+  return seen;
+}
+
+test('NFR-05: nothing the verifier reaches imports a network module', () => {
+  const reached = reachableFromVerifier();
+  assert.ok(reached.size >= 8, `the walk should reach core, not just verify: ${reached.size} modules`);
+  assert.ok([...reached].some(f => f.includes('/core/src/')), 'core must be in the graph');
+
+  for (const file of reached) {
+    const text = readFileSync(file, 'utf8');
+    for (const m of NETWORK_MODULES) {
+      assert.ok(!text.includes(m), `${file} imports ${m}`);
+    }
+    assert.ok(!/\bfetch\s*\(/.test(text), `${file} calls fetch`);
+    assert.ok(!/@aws-sdk\//.test(text), `${file} imports an AWS SDK — the verifier must not`);
+  }
+});
+
+test('NFR-05: the offline scan would notice a network import in core', () => {
+  // The check that the check can fail. Previously it could not have: core was
+  // outside the scan entirely.
+  const reached = reachableFromVerifier();
+  const core = [...reached].filter(f => f.includes('/core/src/'));
+  assert.ok(core.length >= 5, `core modules reached: ${core.length}`);
+  for (const m of NETWORK_MODULES) {
+    assert.ok(!core.some(f => readFileSync(f, 'utf8').includes(m)), `a core module imports ${m}`);
   }
 });
 

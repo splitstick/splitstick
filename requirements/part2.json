@@ -83,7 +83,8 @@
     "title": "HSM/KMS support",
     "statement": "Operate with a KMS or HSM offering non-exportable keys.",
     "source": "Getting started — a KMS or HSM",
-    "verify": "Integration test against at least one KMS and one HSM"
+    "verify": "Integration test against at least one KMS and one HSM. The KMS half runs via npm run test:kms against a real ECC_NIST_EDWARDS25519 key and asserts the signature verifies under an independent Ed25519 implementation, not only under ours; it reports NOT VERIFIED and skips when no key is configured, so a green suite never reads as having verified it.",
+    "note": "M2 status: open. The KMS adapter is built and its failure paths are covered against a fake, but the interoperability test needs a real AWS key and has not run. The HSM half is blocked: of the products that sign Ed25519, AWS KMS issues no per-key attestation and GCP offers Ed25519 at software protection level only, so independently-supported custody needs hardware — and the YubiHSM 2 purchase is on hold until its attestation capability is confirmed. See docs/kms-capability-matrix.md."
   },
   {
     "id": "NFR-10",
