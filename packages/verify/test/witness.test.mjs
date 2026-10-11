@@ -88,6 +88,28 @@ const policy = (ws, quorum = 1) => ({
   })),
 });
 
+/**
+ * A constructed OpenTimestamps proof over `digest`, pending at a calendar.
+ * Placeholder bytes used to pass here only because nothing walked the proof;
+ * now that FR-22 does, a fixture has to be a real proof or it is credited with
+ * nothing — which is the correct treatment of noise.
+ * @param {Buffer} digest
+ */
+function otsProof(digest) {
+  const varuint = (/** @type {number} */ n) => {
+    const out = [];
+    for (;;) { if (n < 0x80) { out.push(n); break; } out.push((n & 0x7f) | 0x80); n = Math.floor(n / 128); }
+    return Buffer.from(out);
+  };
+  const varbytes = (/** @type {Buffer} */ x) => Buffer.concat([varuint(x.length), x]);
+  const MAGIC = Buffer.from('004f70656e54696d657374616d7073000050726f6f6600bf89e2e884e89294', 'hex');
+  const PENDING = Buffer.from('83dfe30d2e906c6e', 'hex');
+  return Buffer.concat([
+    MAGIC, varuint(1), Buffer.from([0x08]), digest,
+    Buffer.from([0x00]), PENDING, varbytes(varbytes(Buffer.from('https://a.calendar.example', 'utf8'))),
+  ]);
+}
+
 const FIX = new URL('../../core/test/fixtures/rfc3161/', import.meta.url);
 const fix = (/** @type {string} */ n) => readFileSync(new URL(n, FIX));
 
@@ -163,10 +185,13 @@ test('row 30 / INT-02: a pack anchored only to third parties verifies', async ()
     adapter: {
       id: 'bitcoin', proof_type: /** @type {const} */ ('opentimestamps'),
       establishes: ['existence'], tier: /** @type {const} */ ('anchor'),
-      async submit() {
+      async submit(/** @type {string} */ note) {
+        const { createHash } = await import('node:crypto');
+        const digest = createHash('sha256').update(Buffer.from(note, 'utf8')).digest();
         return {
           type: /** @type {const} */ ('opentimestamps'), issuer: 'bitcoin',
-          covers: /** @type {const} */ ('note_digest'), proof: 'AAAA',
+          covers: /** @type {const} */ ('note_digest'),
+          proof: otsProof(digest).toString('base64'),
         };
       },
     },

@@ -36,6 +36,7 @@ import { successionReport } from '@splitstick/core/succession';
 import { validateFindings } from '@splitstick/core/findings';
 import { CAPABILITY_CLASSES } from '@splitstick/core/anchor';
 import { verifyTimeStampToken } from '@splitstick/core/rfc3161';
+import { describeOtsProof } from '@splitstick/core/opentimestamps';
 import { parseEnvelope } from '@splitstick/core/envelope';
 import * as nodeCrypto from 'node:crypto';
 import { noteKeyId } from '@splitstick/core/note';
@@ -845,15 +846,33 @@ async function verifyWitnesses({ envelopes, policy, leaves, findings, anchored }
         continue;
       }
 
-      // opentimestamps. Reported as claimed, never as confirmed.
+      // opentimestamps — FR-22. The proof is WALKED, which is the part that can
+      // be done offline: the operations are applied and the attestation read.
+      // What cannot be done offline is confirming the block header, so the
+      // result is a commitment reported rather than a fact confirmed.
+      const imprint = Buffer.from(String(env.note_digest).slice('sha256:'.length), 'hex');
+      const ots = describeOtsProof(Buffer.from(String(cs.entry.proof ?? ''), 'base64'), { imprint });
+      if (!ots.inconclusive) {
+        // Refuted: a valid proof about other bytes.
+        findings.push({
+          code: 'WITNESS_MISMATCH', verdict: 'fail',
+          detail: `checkpoint ${seq}: the OpenTimestamps proof from ${cs.issuer} commits a different `
+            + `digest — ${ots.detail}`,
+        });
+        witnesses.push({
+          id: cs.issuer, type: cs.type, establishes: classes.join('+'), accepted: false,
+          verdict: 'fail', detail: `checkpoint ${seq}: ${ots.detail}`,
+        });
+        continue;
+      }
       witnesses.push({
-        id: cs.issuer, type: cs.type, establishes: classes.join('+'), accepted: true,
-        verdict: 'inconclusive',
-        detail: `checkpoint ${seq}: an OpenTimestamps commitment from ${cs.issuer} over the note `
-          + 'digest. Confirming it needs a Bitcoin block header, which this offline verifier does '
-          + 'not retrieve, per NFR-05, so the commitment is reported and not confirmed',
+        id: cs.issuer, type: cs.type, establishes: classes.join('+'),
+        accepted: !ots.malformed,
+        verdict: 'inconclusive', detail: `checkpoint ${seq}: ${ots.detail}`,
       });
-      credit(credited, cs.issuer, classes);
+      // A mangled proof is credited with nothing, for the same reason an
+      // unparseable token is: there is no evidence anything was submitted.
+      if (!ots.malformed) credit(credited, cs.issuer, classes);
     }
   }
 
