@@ -4,6 +4,7 @@
  *   chain/<collector>.jsonl       records, leaves, heads.  NEVER DELETED
  *   salts/<collector>.jsonl       record_seq -> salt.      DELETABLE per record
  *   checkpoints/<collector>/<n>.note   C2SP notes                 [DES-07]
+ *   succession/<collector>.jsonl  the epoch chain.         NEVER DELETED
  *   content/<collector>/      payloads, encrypted.      DELETABLE
  *   keys/<collector>/         per-content keys.         DELETABLE
  *   queue/                    unwitnessed batches                 [DES-15]
@@ -42,7 +43,7 @@ export class Store {
   constructor(root, collector) {
     this.root = root;
     this.collector = collector;
-    for (const d of ['chain', 'salts', 'queue']) {
+    for (const d of ['chain', 'salts', 'queue', 'succession']) {
       mkdirSync(join(root, d), { recursive: true });
     }
     // Checkpoints are scoped to the collector, like the chain and the salts.
@@ -53,6 +54,10 @@ export class Store {
     mkdirSync(this.checkpointDir, { recursive: true });
     this.chainPath = join(root, 'chain', `${collector}.jsonl`);
     this.saltsPath = join(root, 'salts', `${collector}.jsonl`);
+    // Never deleted, like the chain. A retired epoch's public key is what keeps
+    // its old signatures verifiable, so erasing the succession journal would
+    // destroy the ability to check history rather than the history's content.
+    this.successionPath = join(root, 'succession', `${collector}.jsonl`);
     // One lock per collector, covering the journals AND the content store.
     // Holding it only inside ContentStore.putGroup() left every record that
     // externalises nothing — heartbeat, gap, policy, padding — unprotected, so
@@ -93,6 +98,51 @@ export class Store {
 
     this.#writeAll(this.#saltsFd, salt, this.saltsPath);
     this.#writeAll(this.#chainFd, line, this.chainPath);
+  }
+
+  /**
+   * Append one epoch to the succession journal — FR-11.
+   *
+   * Not under the journal descriptors: this is written once per epoch, not once
+   * per record, so there is nothing to amortise and an open descriptor would
+   * only widen the window in which a crash could tear it.
+   * @param {import('./succession.mjs').SuccessionEntry} entry
+   */
+  appendEpoch(entry) {
+    this.lock.claim();
+    const fd = openSync(this.successionPath, 'a', 0o600);
+    try {
+      this.#writeAll(fd, JSON.stringify(entry) + '\n', this.successionPath);
+    } finally {
+      closeSync(fd);
+    }
+  }
+
+  /** @returns {import('./succession.mjs').SuccessionEntry[]} */
+  readSuccession() { return this.readSuccessionDetailed().entries; }
+
+  /**
+   * The newline is the commit marker here as it is for the chain: an entry
+   * without one was being written when the process died, and parsing half of
+   * it would invent an epoch.
+   * @returns {{ entries: import('./succession.mjs').SuccessionEntry[],
+   *             torn: boolean, malformed: number[] }}
+   */
+  readSuccessionDetailed() {
+    if (!existsSync(this.successionPath)) return { entries: [], torn: false, malformed: [] };
+    const raw = readFileSync(this.successionPath, 'utf8');
+    const torn = raw.length > 0 && !raw.endsWith('\n');
+    const lines = raw.split('\n');
+    if (torn) lines.pop();
+    /** @type {import('./succession.mjs').SuccessionEntry[]} */
+    const entries = [];
+    /** @type {number[]} */
+    const malformed = [];
+    lines.forEach((line, i) => {
+      if (line === '') return;
+      try { entries.push(JSON.parse(line)); } catch { malformed.push(i + 1); }
+    });
+    return { entries, torn, malformed };
   }
 
   /**

@@ -132,6 +132,36 @@ const SCENARIOS = {
     writeFileSync(join(ctx.root, 'checkpoints', 'host-1', '1.note'),
       encodeNote(text, [await signNote(text, other)]));
   },
+  async SUCCESSION_BROKEN(ctx) {
+    // Rotate twice, then remove the middle epoch from the journal. Every
+    // remaining endorsement is valid; the chain simply no longer walks.
+    const second = await generateDevSigner(ORIGIN);
+    await ctx.collector.rotate(second);
+    const third = await generateDevSigner(ORIGIN);
+    await ctx.collector.rotate(third);
+    await ctx.collector.checkpoint();
+    const p = join(ctx.root, 'succession', 'host-1.jsonl');
+    const es = readFileSync(p, 'utf8').trim().split('\n').map(l => JSON.parse(l));
+    writeFileSync(p, [es[0], es[2]].map(e => JSON.stringify(e)).join('\n') + '\n');
+  },
+  async OPSIG_EPOCH_REGRESSED(ctx) {
+    // Checkpoint 1 is signed by epoch 0 and checkpoint 2 by epoch 1. Re-signing
+    // checkpoint 1 with epoch 2's key makes the ordinals run forwards while the
+    // epochs run backwards. Two rotations are needed, not one: re-signing with
+    // the immediate successor would make both checkpoints epoch 1, and equal
+    // epochs are not a regression — which is the wholesale case this check
+    // deliberately does not claim to catch.
+    const second = await generateDevSigner(ORIGIN);
+    await ctx.collector.rotate(second);
+    ctx.collector.action(tx({ correlation: 'c-after-rotation' }));
+    await ctx.collector.checkpoint();
+    const third = await generateDevSigner(ORIGIN);
+    await ctx.collector.rotate(third);
+    const first = ctx.store.readCheckpoints().find((/** @type {any} */ n) => n.seq === 1);
+    const { parseNote } = await import('@splitstick/core/note');
+    const text = parseNote(first.blob).text;
+    ctx.store.writeCheckpoint(1, encodeNote(text, [await signNote(text, third)]));
+  },
   async OPSIG_UNCHECKED() {
     return { vkey: undefined };          // nothing pinned
   },

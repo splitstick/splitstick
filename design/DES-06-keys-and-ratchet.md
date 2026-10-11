@@ -83,6 +83,31 @@ A verifier walks the succession chain from a trusted root public key, so one pin
 validates every epoch that followed. Signatures from retired keys stay verifiable forever —
 rotation is not an amnesty for anything signed before it.
 
+### What a verifier can and cannot conclude from the chain
+
+A verifier walks the chain from the pinned root and attributes each checkpoint
+to an epoch by the key id on its signature line. Two findings come out of it:
+
+- **`SUCCESSION_BROKEN`** — the chain does not walk: an epoch is skipped, an
+  endorsement is not by the predecessor, an epoch endorses itself, two keys
+  claim one epoch, or the chain does not begin at the pinned root. Nothing is
+  attributed. The chain is never rebased onto whatever root was supplied,
+  because a walk from a root the writer chose is not evidence.
+
+- **`OPSIG_EPOCH_REGRESSED`** — the epochs run backwards as the checkpoint
+  ordinals run forwards. An epoch is retired before its successor exists, so an
+  earlier checkpoint signed by a later epoch than a later checkpoint means at
+  least one was re-signed after the fact. Each signature is individually valid;
+  only the ordering across them shows it.
+
+And the limit, stated here so no reader has to infer it: this catches a
+**partial** re-sign. Re-signing *every* checkpoint with the current key leaves
+the epochs equal, which is locally indistinguishable from an operator who
+rotated without checkpointing in between. That is AC-3. It closes against a
+countersignature over the original root in M3a, not here, and the verifier's
+capability statement says so in the report rather than leaving it to this
+document.
+
 ### The honest limit — SEC-17
 
 Forward security holds **only if the retired private key is genuinely gone**, and key

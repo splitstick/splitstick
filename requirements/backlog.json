@@ -115,7 +115,9 @@
       "title": "Forward-secure epoch ratchet",
       "statement": "Evolve the signing key per epoch and destroy the predecessor so prior entries cannot be re-signed with the current key.",
       "source": "Integrity — forward-secure epoch ratchet",
-      "verify": "Test: epoch N key cannot produce a valid epoch N-1 signature"
+      "verify": "Test: epoch N key cannot produce a valid epoch N-1 signature; the succession chain walks from a pinned root across 64 epochs, and a skipped epoch, a wrong-predecessor endorsement, a self-endorsement, a fork and an unpinned root are each refused",
+      "status": "done",
+      "evidence": "packages/core/src/succession.mjs (0x04 endorsement subject binding key AND epoch number, verifySuccession, successionReport); Collector.rotate endorses through the signer seam then journals, and the epoch is read off disk on open so a restart cannot fork it; Store.appendEpoch/readSuccessionDetailed with the newline as commit marker; the verifier attributes each checkpoint to an epoch by note key id, so ONE pinned root verifies every epoch. Tests: packages/core/test/succession.test.mjs (rows 12-17 of docs/m2-failure-modes.md), packages/core/test/ratchet.test.mjs, packages/verify/test/succession.test.mjs"
     },
     {
       "id": "FR-12",

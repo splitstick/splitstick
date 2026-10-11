@@ -48,14 +48,16 @@ test('a clean store has no failures and is inconclusive only for what it cannot 
   assert.equal(r.summary.failed, 0, JSON.stringify(r.findings, null, 1));
   assert.equal(r.verdict, 'inconclusive');
   assert.equal(r.tree_size, 4);
-  for (const name of ['FORMAT', 'SEQUENCE', 'CHAIN', 'LEAF', 'CONTENT', 'TREE', 'OP-SIG']) {
+  // SUCCESSION passes on a one-epoch log: the chain walks from the pinned root
+  // and has nothing else in it, which is a true answer rather than an absent one.
+  for (const name of ['FORMAT', 'SEQUENCE', 'CHAIN', 'LEAF', 'CONTENT', 'TREE', 'OP-SIG', 'SUCCESSION']) {
     assert.equal(r.checks.find(c => c.name === name).verdict, 'ok', name);
   }
   assert.deepEqual(
     r.checks.filter(c => c.verdict === 'inconclusive').map(c => c.name),
     ['WITNESS', 'ROLLUP', 'COVERAGE', 'POLICY'],
     'and exactly the checks that need a second party are the unanswered ones');
-  assert.equal(r.summary.passed, 7);
+  assert.equal(r.summary.passed, 8);
   assert.equal(r.summary.unanswered, 4);
 });
 
@@ -168,10 +170,12 @@ test('truncation above the last checkpoint is not detected, and the report says 
   assert.ok(below.findings.some(f => f.code === 'TREE_MISMATCH' || f.code === 'SIZE_REGRESSED'));
 
   // Now a log whose tail was never checkpointed.
-  const { root: r2, vkey: v2, store } = await evidence(4);
+  const { root: r2, vkey: v2, store, signer: s2 } = await evidence(4);
   let t = Date.parse('2026-10-11T11:00:00.000Z');
+  // The same epoch key: a reopened collector must present the live one, and a
+  // fresh key here would be refused rather than silently signing unendorsed.
   const c2 = new Collector({ store, config: parseConfig(CFG, r2),
-    signer: await generateDevSigner(ORIGIN), collector: 'host-1', origin: ORIGIN,
+    signer: s2, collector: 'host-1', origin: ORIGIN,
     now: () => new Date(t += 1000) });
   c2.action(tx({ correlation: 'c-tail' }));
   const full = await verifyStore(r2, { collector: 'host-1', vkey: v2 });

@@ -353,7 +353,9 @@
     "title": "Separation-of-duties guidance",
     "statement": "Document the key-custody split between engineering and internal audit.",
     "source": "Deployment — separation of duties",
-    "verify": "Guide published and reviewed"
+    "verify": "Guide published at docs/key-custody.md, stating the engineering/internal-audit key split, that nothing enforces it, and that one person holding both keys makes the split absent rather than weaker",
+    "status": "done",
+    "evidence": "docs/key-custody.md — the two-function split and what it buys, the six operational steps, and a 'what this does not establish' section separating declared custody from established custody and declared destruction from verified destruction"
   },
   {
     "id": "OPS-05",

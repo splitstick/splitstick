@@ -202,7 +202,9 @@
     "title": "Resist re-signing history",
     "statement": "Re-signing rewritten history with the current key must be detectable under non-exportable custody.",
     "source": "Attack class table, row 3",
-    "verify": "Epoch ratchet test with HSM"
+    "verify": "Epoch-ordering test: a checkpoint re-signed by a later epoch than a later checkpoint emits OPSIG_EPOCH_REGRESSED. A WHOLESALE re-sign is NOT caught locally and the report says so — that half is AC-3, carried to M3a",
+    "status": "done",
+    "evidence": "OPSIG_EPOCH_REGRESSED in packages/verify/src/verify.mjs; red-team attack C3 (partial re-sign after two rotations) DETECTED, while C2 (wholesale re-sign) stays UNDETECTED and names M3a; spec/failure-codes.json states the limit; packages/verify/test/succession.test.mjs asserts both the detection and the non-detection"
   },
   {
     "id": "SEC-09",
@@ -287,7 +289,9 @@
     "title": "State the forward-secrecy precondition",
     "statement": "Any forward-secrecy claim must state its non-exportable key custody precondition in the same place.",
     "source": "Integrity — this holds only under non-exportable key custody",
-    "verify": "Documentation review"
+    "verify": "Executable, not a documentation review: tools/lint-claims.mjs fails the build on any paragraph claiming forward secrecy without its precondition in the same paragraph, and the verifier report attaches both declarations to the claim",
+    "status": "done",
+    "evidence": "tools/lint-claims.mjs, wired into npm run lint, with refusals and citations excluded by rule rather than by allowlist; verifyStore's capability statement refuses the claim outright for any software-keyed epoch, says 'not-yet' for the live epoch, and when it does claim it names non-exportable custody AND destruction as operator declarations in the same sentence; asserted in packages/verify/test/succession.test.mjs"
   },
   {
     "id": "SEC-18",

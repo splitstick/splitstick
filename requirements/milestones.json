@@ -1,7 +1,7 @@
 {
   "gates": {
     "AC-1": {
-      "class": "Alter the recorded action \u2014 arguments, result, approval decision",
+      "class": "Alter the recorded action — arguments, result, approval decision",
       "redteam": "A",
       "kind": "local"
     },
@@ -14,7 +14,7 @@
       "class": "Re-sign rewritten history with the current key",
       "redteam": "ratchet suite",
       "kind": "local + HSM",
-      "note": "Carried from M2 to M3a. The ratchet makes yesterday's record unforgeable with today's key, but an operator holding the current key can still re-sign a rewritten history within the current epoch \u2014 and nothing local can refuse that. The countersignature over the original root is the half that contradicts it, so the class closes only when both exist. The red-team suite names both for attack C2 and always did; M2 claiming the gate alone would have been the plan disagreeing with the suite."
+      "note": "Carried from M2 to M3a. The ratchet makes yesterday's record unforgeable with today's key, but an operator holding the current key can still re-sign a rewritten history within the current epoch — and nothing local can refuse that. The countersignature over the original root is the half that contradicts it, so the class closes only when both exist. The red-team suite names both for attack C2 and always did; M2 claiming the gate alone would have been the plan disagreeing with the suite."
     },
     "AC-4": {
       "class": "Truncate the record's tail",
@@ -73,7 +73,7 @@
         "AC-2"
       ],
       "weeks": "3-4",
-      "exit": "Red-team A and C both DETECTED by splitstick verify; baseline still passes. p99 append overhead measured under 1 ms and run latency under 2% \u2014 measured, not assumed. Chain files contain no plaintext. First package published with a provenance attestation and an SBOM, so the build digest M4 relies on can be traced to its source.",
+      "exit": "Red-team A and C both DETECTED by splitstick verify; baseline still passes. p99 append overhead measured under 1 ms and run latency under 2% — measured, not assumed. Chain files contain no plaintext. First package published with a provenance attestation and an SBOM, so the build digest M4 relies on can be traced to its source.",
       "ids": [
         "FR-01",
         "FR-02",
@@ -121,7 +121,7 @@
         "SEC-17",
         "OPS-04"
       ],
-      "shipped": false
+      "shipped": true
     },
     {
       "id": "M3a",
@@ -177,7 +177,7 @@
       "carries": [
         {
           "id": "NFR-09",
-          "why": "M2 built and covered the AWS KMS signer, which satisfies the KMS half. The HSM half is blocked by evidence rather than effort: of the products that sign Ed25519, AWS KMS issues no per-key attestation and GCP offers the algorithm at software protection level only, so independently-supported custody requires hardware \u2014 and the YubiHSM 2 purchase is held until its attestation capability is confirmed. See docs/kms-capability-matrix.md.",
+          "why": "M2 built and covered the AWS KMS signer, which satisfies the KMS half. The HSM half is blocked by evidence rather than effort: of the products that sign Ed25519, AWS KMS issues no per-key attestation and GCP offers the algorithm at software protection level only, so independently-supported custody requires hardware — and the YubiHSM 2 purchase is held until its attestation capability is confirmed. See docs/kms-capability-matrix.md.",
           "closes": "A hardware signer behind the same sign(bytes) seam, with an integration test proving its signature verifies under an independent Ed25519 implementation, and FR-70's five checks exercised against a real attestation document rather than a constructed one. M3a is the right home because FR-65 and FR-70 already land there."
         }
       ],

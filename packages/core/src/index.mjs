@@ -6,6 +6,7 @@ export * from './chain.mjs';
 export * from './merkle.mjs';
 export * from './note.mjs';
 export * from './signer.mjs';
+export * from './succession.mjs';
 export * from './content.mjs';
 export * from './config.mjs';
 export * from './store.mjs';

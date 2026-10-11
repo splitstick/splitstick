@@ -121,6 +121,19 @@ function repairChain(root) {
   write(root, ls);
 }
 
+/**
+ * Re-sign ONE checkpoint at its own committed size, leaving the others alone.
+ * reSign() below rewrites it at the log's current size, which is a different
+ * attack: this one keeps the note's claim and changes only who signed it.
+ */
+async function reSignAt(root, signer, seq) {
+  const blob = fs.readFileSync(path.join(root, 'checkpoints', COLLECTOR, `${seq}.note`), 'utf8');
+  const { parseNote } = await import('@splitstick/core/note');
+  const text = parseNote(blob).text;
+  fs.writeFileSync(path.join(root, 'checkpoints', COLLECTOR, `${seq}.note`),
+    encodeNote(text, [await signNote(text, signer)]));
+}
+
 /** Re-sign the current log under the same key — the AC-3 escalation. */
 async function reSign(root, signer, seq = 1) {
   const leaves = lines(root).map((l) => Buffer.from(l.leaf, 'hex'));
@@ -191,6 +204,23 @@ const attacks = [
     async apply(ctx) {
       await attacks.find((a) => a.id === 'C').apply(ctx);
       await reSign(ctx.root, ctx.signer);
+    },
+  },
+  {
+    id: 'C3', gate: 'AC-3', expect: 'detected',
+    name: 'rewrite history and re-sign only the older checkpoint with the current epoch key',
+    note: 'What M2 actually buys, demonstrated. The operator rotated twice, so the retired keys are gone and they can only re-sign with today\'s. Doing it to one checkpoint leaves the epochs running backwards as the ordinals run forwards, which no honest sequence produces. Doing it to ALL of them — C2 — leaves the epochs equal and is still undetected locally.',
+    async apply(ctx) {
+      // Two rotations, with a checkpoint taken from the middle epoch, so the
+      // re-signed note is attributable to an epoch LATER than the one after it.
+      const second = await generateDevSigner(ORIGIN);
+      await ctx.collector.rotate(second);
+      ctx.collector.heartbeat();
+      await ctx.collector.checkpoint();
+      const third = await generateDevSigner(ORIGIN);
+      await ctx.collector.rotate(third);
+      await attacks.find((a) => a.id === 'C').apply(ctx);
+      await reSignAt(ctx.root, third, 1);
     },
   },
   {

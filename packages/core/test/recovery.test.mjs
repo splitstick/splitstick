@@ -14,11 +14,25 @@ const CFG = 'version: 1\nstore: ./s\n';
 const chainPath = (root) => join(root, 'chain', 'host-1.jsonl');
 const saltsPath = (root) => join(root, 'salts', 'host-1.jsonl');
 
+/**
+ * One signer per store root, because a reopened collector must present the live
+ * epoch key — handing it a fresh key is now refused (FR-11), and refusing is
+ * the point: signing with a key the succession journal does not endorse would
+ * produce checkpoints nothing could attribute.
+ * @type {Map<string, import('../src/signer.mjs').Signer>}
+ */
+const signers = new Map();
+
 async function open(root, id = 'host-1') {
   const store = new Store(root, id);
+  let signer = signers.get(`${root}:${id}`);
+  if (!signer) {
+    signer = await generateDevSigner('o');
+    signers.set(`${root}:${id}`, signer);
+  }
   let t = Date.parse('2026-10-11T10:00:00.000Z');
   return { store, collector: new Collector({
-    store, config: parseConfig(CFG, root), signer: await generateDevSigner('o'),
+    store, config: parseConfig(CFG, root), signer,
     collector: id, origin: 'o', now: () => new Date(t += 1000) }) };
 }
 

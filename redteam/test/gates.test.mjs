@@ -15,7 +15,7 @@ const plan = JSON.parse(fs.readFileSync('requirements/milestones.json', 'utf8'))
 const SUITE = [
   ['A1', 'AC-1', 'detected'], ['A2', 'AC-1', 'detected'], ['A3', 'AC-1', 'detected'],
   ['B', 'AC-1', 'detected'], ['E', 'AC-1', 'detected'],
-  ['C', 'AC-2', 'detected'], ['C2', 'AC-3', 'undetected'],
+  ['C', 'AC-2', 'detected'], ['C2', 'AC-3', 'undetected'], ['C3', 'AC-3', 'detected'],
   ['D', 'AC-4', 'undetected'], ['D2', 'AC-4', 'detected'],
   ['F', 'AC-5', 'detected'], ['F2', 'AC-5', 'detected'], ['F3', 'AC-5', 'undetected'],
 ];

@@ -45,7 +45,7 @@ test('a clean store exits 1 for inconclusive, with no failures', async () => {
   const { root, vkey } = await evidence();
   const r = await run([root, '--collector', 'host-1', '--key', vkey]);
   assert.equal(r.code, 1);
-  assert.match(r.stdout, /verdict\s+INCONCLUSIVE\s+\(7 checks passed, 4 could not be answered, 0 failed\)/);
+  assert.match(r.stdout, /verdict\s+INCONCLUSIVE\s+\(8 checks passed, 4 could not be answered, 0 failed\)/);
   assert.match(r.stdout, /\[ ok \] CHAIN/);
   assert.match(r.stdout, /\[ ok \] OP-SIG/);
   assert.match(r.stdout, /\[ \?\? \] WITNESS/);

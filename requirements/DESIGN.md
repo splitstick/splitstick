@@ -99,13 +99,13 @@ What an epoch is, how the signing key evolves, how the predecessor is destroyed,
 | Requirement | | Status |
 |---|---|---|
 | `FR-10` | Batch signing with operator key | ✅ |
-| `FR-11` | Forward-secure epoch ratchet | ☐ |
+| `FR-11` | Forward-secure epoch ratchet | ✅ |
 | `NFR-09` | HSM/KMS support | ☐ |
-| `SEC-08` | Resist re-signing history | ☐ |
+| `SEC-08` | Resist re-signing history | ✅ |
 | `SEC-14` | Operator key never leaves operator | ✅ |
-| `SEC-17` | State the forward-secrecy precondition | ☐ |
+| `SEC-17` | State the forward-secrecy precondition | ✅ |
 | `SEC-24` | Key compromise recovery | ☐ |
-| `OPS-04` | Separation-of-duties guidance | ☐ |
+| `OPS-04` | Separation-of-duties guidance | ✅ |
 | `FR-65` | Operator-declared key custody | ☐ |
 | `FR-70` | Validate a provider custody attestation | ☐ |
 

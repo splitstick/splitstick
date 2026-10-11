@@ -32,6 +32,8 @@ import { recomputeChain } from '@splitstick/core/chain';
 import { treeRoot, consistencyProof, verifyConsistency } from '@splitstick/core/merkle';
 import { parseNote, parseCheckpointText, parseVkey, SUITES } from '@splitstick/core/note';
 import { verifyNoteSignature } from '@splitstick/core/signer';
+import { successionReport } from '@splitstick/core/succession';
+import { noteKeyId } from '@splitstick/core/note';
 
 /** @typedef {'ok'|'fail'|'inconclusive'} Verdict */
 
@@ -63,6 +65,7 @@ function combine(vs) {
  *   witnesses: { id: string, type: string, establishes: string }[],
  *   capability: { can: string[], cannot: string[] },
  *   trusting: string[],
+ *   succession: ReturnType<typeof successionReport>|null,
  * }>}
  */
 export async function verifyStore(root, opts = {}) {
@@ -175,9 +178,64 @@ export async function verifyStore(root, opts = {}) {
   const treeVs = [];
   /** @type {Verdict[]} */
   const sigVs = [];
+  /** @type {{ seq: number, epoch: number }[]} which epoch signed which checkpoint */
+  const signedBy = [];
   const pinned = opts.vkey ? parseVkey(opts.vkey) : null;
   const leaves = entries.map(e => e.leaf);
   let anchored = 0;
+
+  // FR-11 — the succession chain, walked from the pinned root before any
+  // signature is checked, because it decides WHICH keys may sign at all.
+  //
+  // In M1 a verifier pinned one key and demanded every checkpoint carry its
+  // signature. With a ratchet that is wrong: later checkpoints are signed by
+  // later epoch keys, and the pinned root's job is to endorse a path to them
+  // rather than to sign everything itself. One pinned key, every epoch
+  // attributed — that is the property, and it is what makes rotation possible
+  // without re-pinning.
+  const succRaw = store.readSuccessionDetailed();
+  /** @type {ReturnType<typeof successionReport>|null} */
+  let succession = null;
+  /** @type {Map<string, { epoch: number, publicKey: Buffer }>} keyId hex -> epoch */
+  const epochKeys = new Map();
+  if (succRaw.torn) {
+    findings.push({
+      code: 'TORN_WRITE', verdict: 'inconclusive',
+      detail: 'the succession journal ends mid-entry, so the newest epoch it was recording is not readable',
+    });
+  }
+  for (const line of succRaw.malformed) {
+    findings.push({
+      code: 'MALFORMED_RECORD', verdict: 'fail',
+      detail: `succession journal line ${line} is not readable, so the epoch chain cannot be walked past it`,
+    });
+  }
+  if (succRaw.entries.length === 0) {
+    check('SUCCESSION', 'inconclusive',
+      'no succession journal in this store: one epoch, or a store written before the ratchet (FR-11)');
+  } else if (!pinned) {
+    check('SUCCESSION', 'inconclusive',
+      'a succession chain is present but no operator identity was pinned, so it is walked from nothing');
+  } else {
+    succession = successionReport(pinned.publicKey, succRaw.entries);
+    for (const f of succession.findings) {
+      findings.push({
+        code: f.code,
+        verdict: 'fail',
+        detail: f.detail,
+      });
+    }
+    check('SUCCESSION', succession.ok ? 'ok' : 'fail',
+      succession.ok
+        ? `${succession.epochs.length} epoch(s) attributed to the pinned root`
+        : 'the epoch chain does not walk from the pinned root');
+    if (succession.ok) {
+      for (const e of succession.epochs) {
+        const publicKey = Buffer.from(e.public_key, 'base64');
+        epochKeys.set(noteKeyId(pinned.name, publicKey).toString('hex'), { epoch: e.epoch, publicKey });
+      }
+    }
+  }
 
   if (notes.length === 0) {
     treeVs.push('inconclusive');
@@ -253,13 +311,58 @@ export async function verifyStore(root, opts = {}) {
     if (!sig) {
       sigVs.push('fail');
       findings.push({ code: 'OPSIG_INVALID', verdict: 'fail', detail: `checkpoint ${seq} carries no signature line for ${pinned.name}` });
-    } else if (await verifyNoteSignature(note.text, sig, { name: pinned.name, publicKey: pinned.publicKey, keyId: pinned.keyId })) {
+      continue;
+    }
+    // Which key signed this note is read off the note's own key id, then
+    // looked up in the walked chain. A signature by a key the chain does not
+    // contain is not a weaker signature: it is an unattributable one.
+    const attributed = epochKeys.size > 0
+      ? epochKeys.get(sig.keyId.toString('hex'))
+      : (sig.keyId.equals(pinned.keyId) ? { epoch: 0, publicKey: pinned.publicKey } : undefined);
+    if (!attributed) {
+      sigVs.push('fail');
+      findings.push({
+        code: 'OPSIG_INVALID', verdict: 'fail',
+        detail: epochKeys.size > 0
+          ? `checkpoint ${seq} is signed by a key that is not any epoch in the succession chain walked from the pinned root`
+          : `checkpoint ${seq} is not signed by the operator identity it claims`,
+      });
+      continue;
+    }
+    if (await verifyNoteSignature(note.text, sig,
+      { name: pinned.name, publicKey: attributed.publicKey, keyId: noteKeyId(pinned.name, attributed.publicKey) })) {
       sigVs.push('ok');
+      signedBy.push({ seq, epoch: attributed.epoch });
     } else {
       sigVs.push('fail');
       findings.push({
         code: 'OPSIG_INVALID', verdict: 'fail',
-        detail: `checkpoint ${seq} is not signed by the operator identity it claims`,
+        detail: `checkpoint ${seq} declares a key id from epoch ${attributed.epoch} but the signature does not verify under that epoch's key`,
+      });
+    }
+  }
+
+  // SEC-08 — epochs run forwards as ordinals do.
+  //
+  // A checkpoint re-signed with a later key is attributed to a later epoch
+  // than one that comes after it, which no honest sequence produces: an epoch
+  // is retired before its successor exists. Each signature is individually
+  // valid, so only the ordering across them shows the rewrite.
+  //
+  // This catches a PARTIAL re-sign. It does not catch re-signing everything
+  // with the live key, which leaves the epochs equal and is locally
+  // indistinguishable from rotating without checkpointing in between. That gap
+  // is AC-3, and it closes in M3a against a countersignature over the original
+  // root — not here. The capability statement says so rather than leaving a
+  // reader to assume this check reaches further than it does.
+  signedBy.sort((a, b) => a.seq - b.seq);
+  for (let i = 1; i < signedBy.length; i += 1) {
+    const prev = /** @type {{ seq: number, epoch: number }} */ (signedBy[i - 1]);
+    const cur = /** @type {{ seq: number, epoch: number }} */ (signedBy[i]);
+    if (cur.epoch < prev.epoch) {
+      findings.push({
+        code: 'OPSIG_EPOCH_REGRESSED', verdict: 'fail',
+        detail: `checkpoint ${cur.seq} is signed by epoch ${cur.epoch} but the earlier checkpoint ${prev.seq} is signed by epoch ${prev.epoch}: an epoch is retired before its successor exists, so signing order cannot run backwards unless a checkpoint was re-signed later`,
       });
     }
   }
@@ -309,7 +412,7 @@ export async function verifyStore(root, opts = {}) {
   check('COVERAGE', 'inconclusive', 'heartbeat continuity is not yet reconciled (DES-10 ships in M4)');
   check('POLICY', 'inconclusive', 'policy-change reconciliation ships with DES-09 enforcement');
 
-  return report(entries.length, anchored, checks, findings, notes, collector, opts.vkey);
+  return report(entries.length, anchored, checks, findings, notes, collector, opts.vkey, succession);
 }
 
 /**
@@ -320,8 +423,9 @@ export async function verifyStore(root, opts = {}) {
  * @param {{ seq: number, blob: string }[]} notes
  * @param {string} collector
  * @param {string} [vkey]
+ * @param {ReturnType<typeof successionReport>|null} [succession]
  */
-function report(tree_size, anchored, checks, findings, notes, collector, vkey) {
+function report(tree_size, anchored, checks, findings, notes, collector, vkey, succession = null) {
   const verdict = combine([...checks.map(c => c.verdict), ...findings.map(f => f.verdict)]);
 
   // DES-12's own shape: a verdict is reported with how many checks could and
@@ -364,6 +468,60 @@ function report(tree_size, anchored, checks, findings, notes, collector, vkey) {
   }
   if (summary.failed === 0 && notes.length && vkey && passed('OP-SIG') && passed('TREE')) {
     can.push(`that the operator identity ${collector} signed the tree size and root it claims`);
+    if (passed('SUCCESSION') && succession && succession.epochs.length > 1) {
+      can.push(
+        `that all ${succession.epochs.length} epochs of signing keys descend from the one root `
+        + 'key you pinned, each endorsed by its predecessor (FR-11)',
+      );
+    }
+  }
+
+  // SEC-17 — the forward-secrecy claim and its precondition in the same place.
+  //
+  // Not in a document beside the report: a reader acting on the report is the
+  // one who needs the precondition, and a claim whose caveat lives elsewhere
+  // is read without it. So the claim carries both declarations it rests on, or
+  // it is not made at all.
+  if (succession && succession.ok && succession.epochs.length > 0) {
+    const software = succession.epochs.filter(e => e.custody === 'software');
+    const retired = succession.epochs.filter(e => e.retired);
+    if (software.length > 0) {
+      cannot.push(
+        `forward secrecy is NOT claimed for this log: ${software.length === 1 ? 'epoch' : 'epochs'} `
+        + `${software.map(e => `epoch ${e.epoch}`).join(', ')} ${software.length === 1 ? 'is' : 'are'} `
+        + 'declared software-keyed, so the private key existed outside any module and may have been '
+        + 'copied before rotation. One such epoch is enough: the question a reader asks is whether '
+        + "yesterday's record can be re-signed with today's key, and for this log the answer is yes",
+      );
+    } else if (retired.length === 0) {
+      cannot.push(
+        'forward secrecy is NOT claimed: no epoch has been retired yet, and a key that is never '
+        + 'rotated has no forward secrecy whatever its custody class',
+      );
+    } else {
+      const classes = [...new Set(retired.map(e => e.custody))].join(' and ');
+      can.push(
+        `forward secrecy for ${retired.length} retired epoch(s), ONLY under its precondition: the `
+        + `operator DECLARES ${classes} custody with non-exportable keys, and DECLARES each retired `
+        + 'private key destroyed. Both are declarations. Key destruction is not externally '
+        + 'verifiable by anyone, and this claim is exactly as strong as those declarations',
+      );
+    }
+    cannot.push(
+      'the custody class of every epoch here is operator-declared, not established: an HSM '
+      + 'signature and a signature from a key file are byte-identical, and no provider attestation '
+      + 'is present to check against (FR-70)',
+    );
+    cannot.push(
+      'a wholesale re-sign — every checkpoint re-signed with the current key after rewriting the '
+      + 'records — leaves the epochs equal and is NOT detectable from this evidence alone; a '
+      + 'countersignature over the original root is what contradicts it, and there is none here',
+    );
+  } else if (succession === null && vkey) {
+    cannot.push(
+      'no succession journal is present, so nothing here says whether the signing key was ever '
+      + 'rotated; the epoch ratchet (FR-11) establishes no forward secrecy for this log',
+    );
   }
   // The height is the number a reader needs, and DES-12's own example prints
   // it. Without it, DES-19's cross-pack comparison has nothing to key on.
@@ -377,10 +535,16 @@ function report(tree_size, anchored, checks, findings, notes, collector, vkey) {
   const trusting = ['the cryptographic primitives (SHA-256, Ed25519)'];
   if (vkey) trusting.push(`the operator identity ${vkey.split('+')[0]} to be the one you meant`);
   trusting.push('the operator for the completeness of what was captured, until a witness is configured');
+  if (succession && succession.ok && succession.epochs.some(e => e.custody !== 'software')) {
+    trusting.push(
+      'the operator\'s declaration of key custody, and their declaration that retired private keys '
+      + 'were destroyed — neither is verifiable from this evidence',
+    );
+  }
 
   return {
     verdict, summary, tree_size, anchored_tree_size: anchored,
-    checks, findings, witnesses, capability: { can, cannot }, trusting,
+    checks, findings, witnesses, capability: { can, cannot }, trusting, succession,
   };
 }
 
