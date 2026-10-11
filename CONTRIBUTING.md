@@ -13,6 +13,14 @@ Signed-off-by: Your Name <your@email.example>
 
 `git commit -s` adds it for you. CI rejects commits without it.
 
+Enable the repository hooks once per clone so an unsigned commit is refused where you make
+it, rather than after it is pushed — fixing it at that point means rewriting published
+history:
+
+```
+git config core.hooksPath .githooks
+```
+
 This is the [Developer Certificate of Origin 1.1](https://developercertificate.org/): by
 signing off you state that you wrote the contribution, or have the right to submit it under
 the project's licence. **We do not ask for a CLA.** You keep the copyright in your
