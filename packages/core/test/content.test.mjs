@@ -1,10 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, writeFileSync, existsSync, readdirSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { ContentStore, contentCid, CONTENT_DOMAIN, extractRefs, ContentMissing } from '../src/content.mjs';
+import { walkFiles } from './walk.mjs';
 
 const fresh = () => new ContentStore(mkdtempSync(join(tmpdir(), 'splitstick-content-')));
 
@@ -53,10 +54,9 @@ test('PRIV-02: the plaintext appears nowhere in the stored bytes', () => {
   const s = fresh();
   const secret = 'EUR 2000000 to IBAN DE89370400440532013000';
   const { cid } = s.put(Buffer.from(secret));
-  for (const f of readdirSync(s.root, { recursive: true, withFileTypes: true })) {
-    if (!f.isFile()) continue;
-    const bytes = readFileSync(join(f.parentPath ?? f.path, f.name));
-    assert.ok(!bytes.includes(secret), `${f.name} must not contain the payload`);
+  s.close();
+  for (const path of walkFiles(s.root)) {
+    assert.ok(!readFileSync(path).includes(secret), `${path} must not contain the payload`);
   }
   assert.equal(s.get(cid).toString(), secret, 'and it is still recoverable with the key');
 });
@@ -125,8 +125,8 @@ test('the reference index is never written into the chain directory', () => {
   s.put(plain, { refs: extractRefs(plain) });
   const chain = join(s.root, 'chain');
   if (existsSync(chain)) {
-    for (const f of readdirSync(chain)) {
-      assert.ok(!readFileSync(join(chain, f)).includes('TX-77814'));
+    for (const path of walkFiles(chain)) {
+      assert.ok(!readFileSync(path).includes('TX-77814'));
     }
   }
   assert.ok(existsSync(join(s.root, 'content', 'refs.idx')));

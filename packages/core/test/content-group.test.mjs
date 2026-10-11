@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, existsSync, readFileSync, readdirSync } from 'node:fs';
+import { mkdtempSync, existsSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ContentStore, ContentMissing, extractRefs } from '../src/content.mjs';
@@ -8,14 +8,12 @@ import { Collector } from '../src/collector.mjs';
 import { Store } from '../src/store.mjs';
 import { parseConfig } from '../src/config.mjs';
 import { generateDevSigner } from '../src/signer-file.mjs';
+import { walkFiles } from './walk.mjs';
 
 const fresh = () => new ContentStore(mkdtempSync(join(tmpdir(), 'splitstick-group-')));
 
-/** Every file under a store root, relative-ish, for counting. */
-const files = (root) =>
-  readdirSync(root, { recursive: true, withFileTypes: true })
-    .filter(d => d.isFile())
-    .map(d => join(d.parentPath ?? d.path, d.name));
+/** Every file under a store root, for counting. */
+const files = walkFiles;
 
 /**
  * Payloads are appended to one encrypted blob — NFR-01.
