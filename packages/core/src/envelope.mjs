@@ -21,6 +21,7 @@
 
 import { createHash } from 'node:crypto';
 import { parseNote, parseCheckpointText } from './note.mjs';
+import { validateFindings } from './findings.mjs';
 
 export class EnvelopeError extends Error {
   /** @param {string} m */
@@ -135,7 +136,8 @@ export function parseEnvelope(raw, opts = {}) {
   const issuers = new Set();
   const no = () => ({
     ok: false, note: null, note_digest: null, tree_size: null,
-    countersignatures: [], issuers, unwitnessed: true, findings,
+    countersignatures: [], issuers, unwitnessed: true,
+    findings: validateFindings(findings, 'parseEnvelope'),
   });
   /** @param {string} code @param {string} detail */
   const bad = (code, detail) => { findings.push({ code, detail }); return no(); };
@@ -253,6 +255,6 @@ export function parseEnvelope(raw, opts = {}) {
     countersignatures,
     issuers,
     unwitnessed: countersignatures.length === 0,
-    findings,
+    findings: validateFindings(findings, 'parseEnvelope'),
   };
 }

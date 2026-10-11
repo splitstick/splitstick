@@ -28,6 +28,7 @@
 
 import { verify as cryptoVerify } from 'node:crypto';
 import { publicKeyFromRaw, CUSTODY_CLASSES } from './signer.mjs';
+import { validateFindings } from './findings.mjs';
 
 /** 0x04 — key succession. Distinct from 0x00, 0x01, 0x02 and 0x05. */
 export const SUCCESSION_DOMAIN = 0x04;
@@ -123,7 +124,7 @@ export async function endorse(signer, successorPublicKey, successorEpoch) {
 export function verifySuccession(rootPublicKey, entries) {
   /** @type {SuccessionFinding[]} */
   const findings = [];
-  const no = () => ({ ok: false, findings, epochs: [] });
+  const no = () => ({ ok: false, findings: validateFindings(findings, 'verifySuccession'), epochs: [] });
 
   if (!rootPublicKey || rootPublicKey.length !== 32) {
     findings.push({
@@ -226,7 +227,7 @@ export function verifySuccession(rootPublicKey, entries) {
     prev = cur;
   }
 
-  return { ok: true, findings, epochs: walked };
+  return { ok: true, findings: validateFindings(findings, 'verifySuccession'), epochs: walked };
 }
 
 /**

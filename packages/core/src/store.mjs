@@ -25,9 +25,11 @@
  * takes nothing away.
  */
 
-import { mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync, openSync, writeSync, closeSync } from 'node:fs';
+import { mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync, openSync, writeSync, closeSync, renameSync, unlinkSync } from 'node:fs';
+import { randomBytes } from 'node:crypto';
 import { join } from 'node:path';
 import { ContentStore } from './content.mjs';
+import { buildEnvelope, parseEnvelope } from './envelope.mjs';
 import { WriteLock } from './writelock.mjs';
 
 export class Store {
@@ -370,20 +372,93 @@ export class Store {
 
   /** @param {number} seq @param {string} blob */
   writeCheckpoint(seq, blob) {
-    writeFileSync(join(this.checkpointDir, `${seq}.note`), blob, { mode: 0o600 });
+    // The artefact on disk is a DES-20 envelope, with the note inside it. A
+    // bare note has nowhere to carry an RFC 3161 token or a .ots proof, and
+    // retrofitting one later would mean rewriting signed files.
+    this.writeCheckpointEnvelope(seq, buildEnvelope(blob));
   }
 
-  /** @returns {{ seq: number, blob: string }[]} this collector's checkpoints, in order */
+  /** @param {number} seq @returns {string} */
+  checkpointPath(seq) { return join(this.checkpointDir, `${seq}.json`); }
+
+  /**
+   * Replace a checkpoint envelope atomically — staging file, then rename.
+   *
+   * Anchoring updates an envelope that already exists, often while a verifier
+   * could be reading it. A reader must see the old envelope or the new one and
+   * never a prefix of either, because a truncated envelope is indistinguishable
+   * from a tampered one.
+   * @param {number} seq
+   * @param {import('./envelope.mjs').Envelope} env
+   */
+  writeCheckpointEnvelope(seq, env) {
+    const path = this.checkpointPath(seq);
+    const tmp = `${path}.${randomBytes(6).toString('hex')}.staging`;
+    try {
+      writeFileSync(tmp, JSON.stringify(env, null, 1) + '\n', { mode: 0o600 });
+      renameSync(tmp, path);
+    } catch (e) {
+      try { unlinkSync(tmp); } catch { /* the staging file may not exist */ }
+      throw e;
+    }
+  }
+
+  /** @param {number} seq @returns {string|null} the envelope JSON, or null */
+  readCheckpointEnvelope(seq) {
+    return this.readCheckpoints().find(c => c.seq === seq)?.blob ?? null;
+  }
+
+  /**
+   * This collector's checkpoints, in order.
+   *
+   * `blob` is always envelope JSON and `note` always the note bytes, whichever
+   * format is on disk. An M1 store holds bare `.note` files; those are wrapped
+   * on read rather than migrated, because DES-16 says an older format is not
+   * retroactively invalid and rewriting signed files to change their shape is
+   * the last thing this project should do.
+   *
+   * When BOTH formats exist for one ordinal, the envelope is authoritative and
+   * `legacy_note` carries the bare file beside it, so the verifier can compare
+   * them. Two artefacts for one checkpoint that disagree is exactly the "verify
+   * one thing and report on another" failure, and silently preferring either
+   * would hide it.
+   *
+   * @returns {{ seq: number, blob: string, note: string, format: 'envelope'|'note',
+   *             legacy_note?: string }[]}
+   */
   readCheckpoints() {
     if (!existsSync(this.checkpointDir)) return [];
-    return readdirSync(this.checkpointDir)
-      .map(f => ({ m: /^([0-9]+)\.note$/.exec(f), f }))
-      .filter(x => x.m !== null)
-      .map(x => ({
-        seq: Number(/** @type {RegExpExecArray} */ (x.m)[1]),
-        blob: readFileSync(join(this.checkpointDir, x.f), 'utf8'),
-      }))
-      .sort((a, b) => a.seq - b.seq);
+    /** @type {Map<number, string>} */
+    const bare = new Map();
+    for (const f of readdirSync(this.checkpointDir)) {
+      const m = /^([0-9]+)\.note$/.exec(f);
+      if (m) bare.set(Number(m[1]), readFileSync(join(this.checkpointDir, f), 'utf8'));
+    }
+    /** @type {{ seq: number, blob: string, note: string, format: 'envelope'|'note', legacy_note?: string }[]} */
+    const out = [];
+    for (const f of readdirSync(this.checkpointDir)) {
+      const m = /^([0-9]+)\.(note|json)$/.exec(f);
+      if (m === null) continue;
+      const seq = Number(m[1]);
+      const raw = readFileSync(join(this.checkpointDir, f), 'utf8');
+      if (m[2] === 'note') {
+        // Skipped when an envelope exists for the same ordinal: it is reported
+        // through that entry's legacy_note instead of as a second checkpoint.
+        if (existsSync(this.checkpointPath(seq))) continue;
+        out.push({ seq, blob: JSON.stringify(buildEnvelope(raw)), note: raw, format: 'note' });
+        continue;
+      }
+      // A damaged envelope still has to reach the verifier, which is the thing
+      // that knows how to report it. Returning the raw bytes and an empty note
+      // lets it emit a finding instead of this code deciding to drop evidence.
+      const p = parseEnvelope(raw);
+      const legacy = bare.get(seq);
+      out.push({
+        seq, blob: raw, note: p.note ?? '', format: 'envelope',
+        ...(legacy === undefined ? {} : { legacy_note: legacy }),
+      });
+    }
+    return out.sort((a, b) => a.seq - b.seq);
   }
 
   /**
@@ -395,7 +470,7 @@ export class Store {
   unattributedCheckpoints() {
     const dir = join(this.root, 'checkpoints');
     if (!existsSync(dir)) return [];
-    return readdirSync(dir).filter(f => f.endsWith('.note'));
+    return readdirSync(dir).filter(f => /\.(note|json)$/.test(f));
   }
 
   /**

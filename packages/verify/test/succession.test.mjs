@@ -109,7 +109,7 @@ async function resign(root, seq, with_) {
   const { signNote } = await import('@splitstick/core/signer');
   const found = store.readCheckpoints().find(n => n.seq === seq);
   if (!found) throw new Error(`no checkpoint ${seq}`);
-  const text = parseNote(found.blob).text;
+  const text = parseNote(found.note).text;
   store.writeCheckpoint(seq, encodeNote(text, [await signNote(text, with_)]));
   store.close();
 }

@@ -40,6 +40,7 @@ import { signNote } from '@splitstick/core/signer';
 import { leafDigest } from '@splitstick/core/leaf';
 import { chainHead, genesis } from '@splitstick/core/chain';
 import { treeRoot } from '@splitstick/core/merkle';
+import { noteDigest } from '@splitstick/core/envelope';
 import { SplitstickRunJournal } from '@splitstick/collect-oma';
 import { verifyStore } from '@splitstick/verify';
 import { evaluateGates, formatGates } from './gates.mjs';
@@ -127,20 +128,38 @@ function repairChain(root) {
  * attack: this one keeps the note's claim and changes only who signed it.
  */
 async function reSignAt(root, signer, seq) {
-  const blob = fs.readFileSync(path.join(root, 'checkpoints', COLLECTOR, `${seq}.note`), 'utf8');
+  const env = JSON.parse(
+    fs.readFileSync(path.join(root, 'checkpoints', COLLECTOR, `${seq}.json`), 'utf8'));
   const { parseNote } = await import('@splitstick/core/note');
-  const text = parseNote(blob).text;
-  fs.writeFileSync(path.join(root, 'checkpoints', COLLECTOR, `${seq}.note`),
-    encodeNote(text, [await signNote(text, signer)]));
+  const text = parseNote(env.note).text;
+  writeCheckpointBlob(root, seq, encodeNote(text, [await signNote(text, signer)]));
+}
+
+/**
+ * Replace a checkpoint's note, keeping the DES-20 envelope around it. The
+ * attacker controls the directory, so they can do this; what they cannot do is
+ * make the envelope's digest agree with a note they did not also rewrite.
+ */
+function writeCheckpointBlob(root, seq, blob) {
+  const p = path.join(root, 'checkpoints', COLLECTOR, `${seq}.json`);
+  // Attack D deletes the directory's contents first, so the envelope may be
+  // gone. An attacker writing a fresh one is exactly as able as an attacker
+  // editing one, and pretending otherwise would weaken the attack.
+  const env = fs.existsSync(p)
+    ? JSON.parse(fs.readFileSync(p, 'utf8'))
+    : { note: blob, note_digest: '', countersignatures: [] };
+  env.note = blob;
+  env.note_digest = noteDigest(blob);
+  fs.writeFileSync(p, JSON.stringify(env, null, 1) + '\n');
 }
 
 /** Re-sign the current log under the same key — the AC-3 escalation. */
 async function reSign(root, signer, seq = 1) {
   const leaves = lines(root).map((l) => Buffer.from(l.leaf, 'hex'));
   const text = checkpointText({ origin: ORIGIN, tree_size: leaves.length, root: treeRoot(leaves) });
-  fs.writeFileSync(path.join(root, 'checkpoints', COLLECTOR, `${seq}.note`),
-    encodeNote(text, [await signNote(text, signer)]));
+  writeCheckpointBlob(root, seq, encodeNote(text, [await signNote(text, signer)]));
 }
+
 
 const attacks = [
   {

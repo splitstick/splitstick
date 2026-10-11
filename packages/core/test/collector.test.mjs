@@ -171,7 +171,9 @@ test('FR-10: a checkpoint signs the note, and the note binds origin, size and ro
   const cp = await collector.checkpoint();
 
   assert.equal(cp.checkpoint_seq, 1, 'checkpoint_seq is an ordinal');
-  const blob = readFileSync(join(root, 'checkpoints', 'host-1', '1.note'), 'utf8');
+  // The artefact on disk is a DES-20 envelope; the note is inside it.
+  const blob = JSON.parse(
+    readFileSync(join(root, 'checkpoints', 'host-1', '1.json'), 'utf8')).note;
   const note = parseNote(blob);
   const text = parseCheckpointText(note.text);
   assert.equal(text.origin, 'splitstick.dev/host-1');

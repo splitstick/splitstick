@@ -2,7 +2,8 @@
   "note": "The verifier's whole vocabulary, and the single source of truth for it. Every code a verifier can emit is here with what a reader may conclude from it, its verdict class, and the milestone that implements it.\n\nTwo instruments keep this honest, because the halves need different ones. tools/lint-failure-codes.mjs checks STATICALLY that nothing unspecified is emitted, nothing specified-and-due goes unemitted, every delivered code is named in a design element, and every `code:` site is a string literal — the last of which is what makes the scan sound rather than merely plausible. Coverage is proved EXECUTABLY by packages/verify/test/failure-codes.test.mjs, where a table of scenarios must cover exactly the delivered codes and each must make a real verifier run emit its code with the verdict class promised here.\n\nThis file exists because M1 shipped ten codes that were specified nowhere — invented in code and never added to the design's vocabulary — and two capabilities that were specified, implemented, tested, and never called by the verifier at all. The lint first tried to prove coverage by searching test files for each code's name; a review pointed out that a comment satisfies that, and it did.",
   "delivered_milestones": [
     "M1",
-    "M2"
+    "M2",
+    "M3a"
   ],
   "verdict_rule": "A single fail makes the whole run fail. inconclusive never upgrades to fail and never downgrades to ok. ok means every check that could run, ran, and passed.",
   "codes": [
@@ -143,6 +144,24 @@
       "milestone": "M2",
       "verdict": "fail",
       "conclusion": "Checkpoints are signed by epochs that run backwards as the ordinals run forwards. An epoch is retired before its successor exists, so an earlier checkpoint signed by a LATER epoch than a later checkpoint means at least one was re-signed after the fact (SEC-08). Each signature may be individually valid; only the ordering across them shows it. This does NOT catch re-signing every checkpoint with the current key, which leaves the epochs equal — that is AC-3, and a countersignature over the original root is what contradicts it (M3a)."
+    },
+    {
+      "code": "ENVELOPE_DIGEST_MISMATCH",
+      "milestone": "M3a",
+      "verdict": "fail",
+      "conclusion": "A checkpoint envelope's note_digest is not the digest of the note beside it. Every countersignature in that envelope names the digest, so all of them vouch for bytes that are not present (DES-20). Nothing in the envelope is reported as verified once this holds."
+    },
+    {
+      "code": "ENVELOPE_NOTE_MISMATCH",
+      "milestone": "M3a",
+      "verdict": "fail",
+      "conclusion": "A checkpoint envelope carries a different note than the one it was checked against. A reader must never verify one artefact and report on another."
+    },
+    {
+      "code": "ENVELOPE_DUPLICATE_ISSUER",
+      "milestone": "M3a",
+      "verdict": "fail",
+      "conclusion": "One issuer appears more than once in a checkpoint envelope. Both entries are reported, because hiding one would hide a duplicate submission, but the issuer counts once towards any quorum: a quorum satisfied by one party submitting twice is not a quorum (FR-19)."
     },
     {
       "code": "WITNESS_SHORT",

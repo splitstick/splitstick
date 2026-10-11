@@ -154,7 +154,7 @@ test('TREE_MISMATCH: a checkpoint root that is not the root of this log', async 
   const { checkpointText, encodeNote } = await import('@splitstick/core/note');
   const { signNote } = await import('@splitstick/core/signer');
   const text = checkpointText({ origin: ORIGIN, tree_size: 4, root: Buffer.alloc(32, 7) });
-  writeFileSync(join(root, 'checkpoints', 'host-1', '1.note'), encodeNote(text, [await signNote(text, signer)]));
+  new Store(root, 'host-1').writeCheckpoint(1, encodeNote(text, [await signNote(text, signer)]));
   const r = await verifyStore(root, { collector: 'host-1', vkey });
   assert.equal(r.verdict, 'fail');
   assert.ok(r.findings.some(f => f.code === 'TREE_MISMATCH'), JSON.stringify(r.findings));
@@ -340,7 +340,8 @@ test('DES-14: the OMA adapter contains no cryptography', () => {
 // either knows it or refuses the batch.
 test('the checkpoint declares its algorithm suite and the verifier reads it', async () => {
   const { root, vkey } = await evidence();
-  const note = readFileSync(join(root, 'checkpoints', 'host-1', '1.note'), 'utf8');
+  const note = JSON.parse(
+    readFileSync(join(root, 'checkpoints', 'host-1', '1.json'), 'utf8')).note;
   assert.match(note, /\nsuite SS1\n/);
   const r = await verifyStore(root, { collector: 'host-1', vkey });
   assert.equal(r.summary.failed, 0);
@@ -357,7 +358,7 @@ test('an unknown suite is FORMAT_UNSUPPORTED, never partially verified', async (
   // Hand-built, because checkpointText refuses to emit an unknown suite — the
   // case under test is a note written by something else, or by a later release.
   const text = `${ORIGIN}\n${leaves.length}\n${treeRoot(leaves).toString('base64')}\nsuite SS9\n`;
-  writeFileSync(join(root, 'checkpoints', 'host-1', '1.note'), encodeNote(text, [await signNote(text, signer)]));
+  new Store(root, 'host-1').writeCheckpoint(1, encodeNote(text, [await signNote(text, signer)]));
 
   const r = await verifyStore(root, { collector: 'host-1', vkey });
   assert.equal(r.verdict, 'fail');
@@ -374,7 +375,7 @@ test('a checkpoint with no suite line is inconclusive, not assumed current', asy
   const { Store } = await import('@splitstick/core/store');
   const leaves = new Store(root, 'host-1').readChain().map(e => e.leaf);
   const text = checkpointText({ origin: ORIGIN, tree_size: leaves.length, root: treeRoot(leaves) });
-  writeFileSync(join(root, 'checkpoints', 'host-1', '1.note'), encodeNote(text, [await signNote(text, signer)]));
+  new Store(root, 'host-1').writeCheckpoint(1, encodeNote(text, [await signNote(text, signer)]));
 
   const r = await verifyStore(root, { collector: 'host-1', vkey });
   assert.equal(r.summary.failed, 0, 'an undeclared suite is not a contradiction');
@@ -434,7 +435,7 @@ test('a later checkpoint that does not extend an earlier one is CONSISTENCY_BROK
   const leaves = store.readChain().map(e => e.leaf);
   const forged = [Buffer.alloc(32, 9), ...leaves.slice(1)];
   const text = checkpointText({ origin: ORIGIN, tree_size: forged.length, root: treeRoot(forged), suite: 'SS1' });
-  writeFileSync(join(root, 'checkpoints', 'host-1', '2.note'), encodeNote(text, [await signNote(text, signer)]));
+  new Store(root, 'host-1').writeCheckpoint(2, encodeNote(text, [await signNote(text, signer)]));
 
   const r = await verifyStore(root, { collector: 'host-1', vkey });
   assert.equal(r.verdict, 'fail');
@@ -450,7 +451,7 @@ test('checkpoints must not go backwards in tree_size', async () => {
   const leaves = store.readChain().map(e => e.leaf);
   // Checkpoint 2 commits to fewer records than checkpoint 1 — a rollback.
   const text = checkpointText({ origin: ORIGIN, tree_size: 2, root: treeRoot(leaves.slice(0, 2)), suite: 'SS1' });
-  writeFileSync(join(root, 'checkpoints', 'host-1', '2.note'), encodeNote(text, [await signNote(text, signer)]));
+  new Store(root, 'host-1').writeCheckpoint(2, encodeNote(text, [await signNote(text, signer)]));
 
   const r = await verifyStore(root, { collector: 'host-1', vkey });
   assert.equal(r.verdict, 'fail');

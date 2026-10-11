@@ -66,13 +66,54 @@ const names = (haystack, code) => new RegExp(`\\b${code}\\b`).test(haystack);
 
 const srcFiles = walk('packages', f => f.endsWith('.mjs') && f.includes('/src/'));
 const designText = read(walk('design', f => f.endsWith('.md')));
-const srcText = read(srcFiles);
+/**
+ * Comments stripped before scanning. `@property {string} code` and
+ * `findings: { code: string }[]` in a typedef are type annotations, not
+ * emissions, and the dynamic-code check below flagged them as computed codes
+ * the moment M3a's typedefs arrived.
+ */
+const stripComments = (/** @type {string} */ t) =>
+  t.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:])\/\/[^\n]*/g, '$1');
 
-/** Codes a module emits: `code: 'X'`. @param {string} text */
-const emitted = (text) =>
-  new Set([...text.matchAll(/code:\s*'([A-Z_]+)'/g)].map(m => /** @type {string} */ (m[1])));
+const srcText = stripComments(read(srcFiles));
 
-const emittedCodes = emitted(srcText);
+/**
+ * The functions through which a finding may be constructed with its code as the
+ * first argument. Naming them rather than matching any call keeps the scan from
+ * reading `check('COVERAGE', ...)` — a check name, not a failure code — as an
+ * emission, which a general pattern did. A new helper has to be added here; the
+ * runtime guard in findings.mjs is what covers the window before someone does.
+ */
+const CONSTRUCTORS = ['finding', 'bad', 'forward'];
+
+/**
+ * Codes a module emits.
+ *
+ * `code: 'X'` was the only form until M3a. Now a code can also be the first
+ * argument of a constructor — `finding('X', ...)` — or of a module-local helper
+ * that calls one, as parseEnvelope's `bad('X', ...)` does. Matching only the
+ * object-literal form made two specified codes look unemitted when they were
+ * emitted through a helper, so this matches an uppercase single-quoted literal
+ * in either position.
+ *
+ * Deliberately a little loose: a code mentioned in src that is never actually
+ * emitted is a false negative for the "specified but never emitted" check,
+ * which the executable coverage test in
+ * packages/verify/test/failure-codes.test.mjs catches properly by making the
+ * verifier produce each one. This scan's real job is the other direction.
+ * @param {string} text
+ */
+const emitted = (text) => new Set([
+  ...[...text.matchAll(/code:\s*'([A-Z][A-Z_]+)'/g)].map(m => /** @type {string} */ (m[1])),
+  ...[...text.matchAll(new RegExp(`\\b(?:${CONSTRUCTORS.join('|')})\\(\\s*'([A-Z][A-Z_]+)'`, 'g'))]
+    .map(m => /** @type {string} */ (m[1])),
+]);
+
+// findings.mjs is the vocabulary, not an emission site: every code appears
+// there by definition, so counting it would make the scan vacuous.
+const emittedCodes = emitted(
+  stripComments(read(srcFiles.filter(f => !f.endsWith('findings.mjs')))),
+);
 
 // The static scan above is only sound if every code is a literal. A computed
 // one — `code: prefix + suffix`, or a code forwarded from a variable — would be
@@ -86,21 +127,41 @@ const emittedCodes = emitted(srcText);
 const dynamic = [...srcText.matchAll(/\bcode:\s*([^,\n}]+)/g)]
   .map(m => /** @type {string} */ (m[1]).trim())
   .filter(expr => expr !== '' && !/^['"]/.test(expr))
-  // `f.code` is the verifier forwarding a finding from recomputeChain, and the
-  // exemption is sound for a reason rather than by assumption: the origin of
-  // those codes is chain.mjs, which this scan also reads, which emits only
-  // literals, and whose five codes are all specified. The invariant is that
-  // every forwarding site's ORIGIN is scanned — not that forwarding is
-  // harmless. It fails the moment a code arrives from somewhere the scan does
-  // not reach, which M3a makes likely as witness and coverage codes arrive
-  // through more layers. docs/m1-follow-ups.md schedules the real fix: a frozen
-  // vocabulary that every finding is constructed through, so an unknown code
-  // throws instead of being printed.
-  .filter(expr => !/^f\.code$/.test(expr));
+  // Forwarding sites (`f.code`, and now `cs.code` and friends) used to be
+  // exempted with an argument: every forwarding site's ORIGIN was itself
+  // scanned. The retrospective recorded that the argument would stop holding in
+  // M3a, when codes start arriving through more layers — and it did.
+  //
+  // The exemption is gone. It is replaced by a runtime guarantee:
+  // packages/core/src/findings.mjs freezes the vocabulary and
+  // validateFindings() throws at every module's return boundary, so a code this
+  // project does not define cannot reach a reader whether or not this scan can
+  // see where it came from. What this lint now asserts is that the frozen list
+  // and the specification agree, which it can check exactly.
+  .filter(expr => !/^[A-Za-z_$][\w$]*\.code$/.test(expr));
 const specified = new Map(spec.codes.map((/** @type {any} */ c) => [c.code, c]));
 
 /** @type {string[]} */
 const errs = [];
+
+// The frozen vocabulary and the specification must be the same set. Either one
+// drifting from the other reintroduces exactly what this file exists to stop:
+// a code a reader is shown that nothing defines, or a code defined that nothing
+// can emit.
+const frozen = new Set(
+  [...stripComments(readFileSync('packages/core/src/findings.mjs', 'utf8'))
+    .matchAll(/'([A-Z][A-Z_]+)'/g)].map(m => /** @type {string} */ (m[1])),
+);
+for (const code of frozen) {
+  if (!specified.has(code)) {
+    errs.push(`${code} is frozen in packages/core/src/findings.mjs and specified in no document. Add it to spec/failure-codes.json with what a reader may conclude from it.`);
+  }
+}
+for (const code of specified.keys()) {
+  if (!frozen.has(code)) {
+    errs.push(`${code} is specified in spec/failure-codes.json but not in FAILURE_CODES in packages/core/src/findings.mjs, so nothing can construct it: finding() would throw.`);
+  }
+}
 
 // 1 — nothing undocumented reaches a reader.
 for (const code of emittedCodes) {
