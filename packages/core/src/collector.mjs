@@ -22,7 +22,7 @@ import { treeRoot } from './merkle.mjs';
 import { checkpointText, encodeNote } from './note.mjs';
 import { signNote } from './signer.mjs';
 import { extractRefs } from './content.mjs';
-import { SCHEMA_VERSION } from './record.mjs';
+import { SCHEMA_VERSION, SUITE } from './record.mjs';
 
 /** @param {unknown} v @returns {v is Uint8Array} */
 const isBytes = v => v instanceof Uint8Array;
@@ -286,7 +286,7 @@ export class Collector {
     const leaves = this.store.readChain().map(e => e.leaf);
     if (leaves.length === 0) throw new Error('nothing to checkpoint: the log is empty');
     const root = treeRoot(leaves);
-    const text = checkpointText({ origin: this.origin, tree_size: leaves.length, root });
+    const text = checkpointText({ origin: this.origin, tree_size: leaves.length, root, suite: SUITE });
     const note = encodeNote(text, [await signNote(text, this.signer)]);
     const checkpoint_seq = ++this.checkpointSeq;
     this.store.writeCheckpoint(checkpoint_seq, note);

@@ -31,6 +31,16 @@ export class NoteError extends Error {
 /** Ed25519, per the note format's algorithm registry. */
 export const ALG_ED25519 = 1;
 
+/**
+ * Named, frozen algorithm tuples — DES-16. SS1 is SHA-256, Ed25519, JCS,
+ * RFC 6962 and the 0x00-0x05 domain prefixes.
+ *
+ * There is no algorithm negotiation and no mix-and-match, because negotiation
+ * is where downgrade attacks live. SS2 would be a new named tuple published in
+ * the spec, and a verifier either knows a suite or refuses the batch.
+ */
+export const SUITES = Object.freeze(['SS1']);
+
 /** The signature-line marker is an em dash followed by a space. */
 const MARKER = '— ';
 
@@ -90,10 +100,10 @@ export function parseVkey(vkey) {
 }
 
 /**
- * @param {{ origin: string, tree_size: number, root: Uint8Array }} cp
+ * @param {{ origin: string, tree_size: number, root: Uint8Array, suite?: string }} cp
  * @returns {string} the note text, which is the signed subject
  */
-export function checkpointText({ origin, tree_size, root }) {
+export function checkpointText({ origin, tree_size, root, suite }) {
   if (typeof origin !== 'string' || origin.length === 0) throw new NoteError('origin is required');
   // An origin carrying a newline could otherwise forge a second line and move
   // the tree size a verifier reads.
@@ -102,12 +112,22 @@ export function checkpointText({ origin, tree_size, root }) {
     throw new NoteError(`tree_size must be a non-negative integer, got ${String(tree_size)}`);
   }
   if (root.length !== 32) throw new NoteError('root is a 32-byte digest');
-  return `${origin}\n${tree_size}\n${Buffer.from(root).toString('base64')}\n`;
+  let text = `${origin}\n${tree_size}\n${Buffer.from(root).toString('base64')}\n`;
+  if (suite !== undefined) {
+    if (!SUITES.includes(suite)) {
+      throw new NoteError(`unknown algorithm suite ${JSON.stringify(suite)}: a suite is a frozen tuple, not a negotiation (DES-16)`);
+    }
+    // An extension line, which the note format allows after the third. It rides
+    // in the signed subject so the suite a batch was signed under cannot be
+    // changed without invalidating the signature.
+    text += `suite ${suite}\n`;
+  }
+  return text;
 }
 
 /**
  * @param {string} text
- * @returns {{ origin: string, tree_size: number, root: Buffer, extra: string[] }}
+ * @returns {{ origin: string, tree_size: number, root: Buffer, suite: string|null, extra: string[] }}
  */
 export function parseCheckpointText(text) {
   if (!text.endsWith('\n')) throw new NoteError('note text must end with a newline');
@@ -117,7 +137,16 @@ export function parseCheckpointText(text) {
   if (!/^(0|[1-9][0-9]*)$/.test(size)) throw new NoteError(`tree_size is not a decimal integer: ${size}`);
   const root = Buffer.from(rootB64, 'base64');
   if (root.length !== 32) throw new NoteError('root does not decode to 32 bytes');
-  return { origin, tree_size: Number(size), root, extra: lines.slice(3) };
+  const extra = lines.slice(3);
+  // Unknown extension lines are preserved rather than dropped: the signature
+  // covers the text as a whole, so a verifier that silently discarded a line
+  // could not reproduce the bytes a witness signed.
+  const suiteLine = extra.find(l => l.startsWith('suite '));
+  return {
+    origin, tree_size: Number(size), root,
+    suite: suiteLine ? suiteLine.slice('suite '.length) : null,
+    extra,
+  };
 }
 
 /** @typedef {{ name: string, keyId: Buffer, signature: Buffer }} NoteSignature */

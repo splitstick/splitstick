@@ -30,7 +30,7 @@ import { join } from 'node:path';
 import { Store } from '@splitstick/core/store';
 import { recomputeChain } from '@splitstick/core/chain';
 import { treeRoot } from '@splitstick/core/merkle';
-import { parseNote, parseCheckpointText, parseVkey } from '@splitstick/core/note';
+import { parseNote, parseCheckpointText, parseVkey, SUITES } from '@splitstick/core/note';
 import { verifyNoteSignature } from '@splitstick/core/signer';
 
 /** @typedef {'ok'|'fail'|'inconclusive'} Verdict */
@@ -154,6 +154,23 @@ export async function verifyStore(root, opts = {}) {
     } catch (e) {
       treeVs.push('fail');
       findings.push({ code: 'FORMAT_UNSUPPORTED', verdict: 'fail', detail: `checkpoint ${seq}: ${e instanceof Error ? e.message : String(e)}` });
+      continue;
+    }
+
+    // DES-16 — a verifier either knows a suite or refuses the batch. An absent
+    // suite is inconclusive, not assumed to be the current one: a checkpoint
+    // that does not say what it was signed under cannot be read years later.
+    if (cp.suite === null) {
+      findings.push({
+        code: 'SUITE_UNDECLARED', verdict: 'inconclusive',
+        detail: `checkpoint ${seq} declares no algorithm suite, so which primitives it was signed under is not recorded`,
+      });
+    } else if (!SUITES.includes(cp.suite)) {
+      treeVs.push('fail');
+      findings.push({
+        code: 'FORMAT_UNSUPPORTED', verdict: 'fail',
+        detail: `checkpoint ${seq} declares algorithm suite ${cp.suite}, which this verifier does not implement: it never guesses and never partially verifies`,
+      });
       continue;
     }
 

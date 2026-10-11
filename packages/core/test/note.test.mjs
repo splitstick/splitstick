@@ -140,3 +140,39 @@ test('a vkey whose base64 contains + still parses', () => {
 test("a note identity containing '+' is refused rather than silently mis-split", () => {
   assert.throws(() => formatVkey('a+b', Buffer.alloc(32)), NoteError);
 });
+
+// DES-16 — three independently versioned things: the record schema (`v`), the
+// algorithm suite (per batch), and the pack format. The suite rides in the note
+// because the note is the batch's signed subject, and C2SP permits extension
+// lines after the third.
+test('the checkpoint note carries the algorithm suite as an extension line', () => {
+  const root = treeRoot([Buffer.from('a')]);
+  const text = checkpointText({ origin: 'splitstick.dev/host-1', tree_size: 1, root, suite: 'SS1' });
+  assert.equal(text, `splitstick.dev/host-1\n1\n${root.toString('base64')}\nsuite SS1\n`);
+  const back = parseCheckpointText(text);
+  assert.equal(back.suite, 'SS1');
+  assert.equal(back.tree_size, 1);
+  assert.equal(back.root.toString('hex'), root.toString('hex'));
+});
+
+test('a note with no suite line parses, and reports none rather than guessing', () => {
+  const root = treeRoot([Buffer.from('a')]);
+  const back = parseCheckpointText(checkpointText({ origin: 'o', tree_size: 1, root }));
+  assert.equal(back.suite, null, 'absent is not SS1 — a verifier must decide what to do about it');
+});
+
+test('an unrecognised suite is refused rather than assumed compatible', () => {
+  const root = treeRoot([Buffer.from('a')]);
+  assert.throws(() => checkpointText({ origin: 'o', tree_size: 1, root, suite: 'SS9' }), NoteError);
+  assert.throws(() => checkpointText({ origin: 'o', tree_size: 1, root, suite: 'bad suite' }), NoteError);
+});
+
+test('an unknown extension line is preserved, not dropped', () => {
+  // Forward compatibility for the note is right — a witness may add a line and
+  // the signature covers the text as a whole, so dropping one would break it.
+  const root = treeRoot([Buffer.from('a')]);
+  const text = `o\n1\n${root.toString('base64')}\nsuite SS1\nsomething-later yes\n`;
+  const back = parseCheckpointText(text);
+  assert.equal(back.suite, 'SS1');
+  assert.deepEqual(back.extra, ['suite SS1', 'something-later yes']);
+});

@@ -270,3 +270,49 @@ test('DES-14: the OMA adapter contains no cryptography', () => {
     }
   }
 });
+
+// DES-16 / NFR-07 — the suite travels in the signed subject, and a verifier
+// either knows it or refuses the batch.
+test('the checkpoint declares its algorithm suite and the verifier reads it', async () => {
+  const { root, vkey } = await evidence();
+  const note = readFileSync(join(root, 'checkpoints', '1.note'), 'utf8');
+  assert.match(note, /\nsuite SS1\n/);
+  const r = await verifyStore(root, { collector: 'host-1', vkey });
+  assert.equal(r.summary.failed, 0);
+  assert.ok(!r.findings.some(f => f.code === 'SUITE_UNDECLARED'));
+});
+
+test('an unknown suite is FORMAT_UNSUPPORTED, never partially verified', async () => {
+  const { root, signer, vkey } = await evidence();
+  const { encodeNote } = await import('@splitstick/core/note');
+  const { signNote } = await import('@splitstick/core/signer');
+  const { treeRoot } = await import('@splitstick/core/merkle');
+  const { Store } = await import('@splitstick/core/store');
+  const leaves = new Store(root, 'host-1').readChain().map(e => e.leaf);
+  // Hand-built, because checkpointText refuses to emit an unknown suite — the
+  // case under test is a note written by something else, or by a later release.
+  const text = `${ORIGIN}\n${leaves.length}\n${treeRoot(leaves).toString('base64')}\nsuite SS9\n`;
+  writeFileSync(join(root, 'checkpoints', '1.note'), encodeNote(text, [await signNote(text, signer)]));
+
+  const r = await verifyStore(root, { collector: 'host-1', vkey });
+  assert.equal(r.verdict, 'fail');
+  const f = r.findings.find(x => x.code === 'FORMAT_UNSUPPORTED');
+  assert.ok(f, JSON.stringify(r.findings));
+  assert.match(f.detail, /SS9/);
+});
+
+test('a checkpoint with no suite line is inconclusive, not assumed current', async () => {
+  const { root, signer, vkey } = await evidence();
+  const { encodeNote, checkpointText } = await import('@splitstick/core/note');
+  const { signNote } = await import('@splitstick/core/signer');
+  const { treeRoot } = await import('@splitstick/core/merkle');
+  const { Store } = await import('@splitstick/core/store');
+  const leaves = new Store(root, 'host-1').readChain().map(e => e.leaf);
+  const text = checkpointText({ origin: ORIGIN, tree_size: leaves.length, root: treeRoot(leaves) });
+  writeFileSync(join(root, 'checkpoints', '1.note'), encodeNote(text, [await signNote(text, signer)]));
+
+  const r = await verifyStore(root, { collector: 'host-1', vkey });
+  assert.equal(r.summary.failed, 0, 'an undeclared suite is not a contradiction');
+  assert.ok(r.findings.some(f => f.code === 'SUITE_UNDECLARED'));
+  assert.equal(r.verdict, 'inconclusive');
+});
