@@ -22,6 +22,53 @@ The operator's clock does not appear in the signed subject at all. Trustworthy t
 through a countersignature (`DES-20`), which is the honest position: `DES-01`'s `ts` is
 self-asserted and nothing should be built on it.
 
+## Which products can actually sign SS1
+
+Verified October 2026 and recorded in
+[`docs/kms-capability-matrix.md`](../docs/kms-capability-matrix.md), because the
+answer changed recently and will change again.
+
+**AWS KMS can** — `ECC_NIST_EDWARDS25519` with `ED25519_SHA_512` at
+`MessageType: RAW`, which is pure Ed25519 over the note bytes and interoperates
+with any other Ed25519 verifier. Its `ED25519_PH_SHA_512` variant is HashEdDSA
+and must never be used: the signature would be silently unverifiable elsewhere.
+
+**GCP Cloud KMS can, but only at SOFTWARE protection level.** Ed25519 is not
+available on Cloud HSM, so selecting GCP for Ed25519 yields a `software` custody
+class and no forward-secrecy claim. An operator may reasonably assume otherwise,
+so the configuration documentation has to say it.
+
+**Azure Key Vault and Managed HSM cannot** — no Edwards curve, and its sign
+operation signs a digest rather than the message, which PureEdDSA does not admit.
+
+### The consequence for FR-70
+
+FR-70 validates a provider attestation before custody may be reported as
+independently supported. For SS1 there is currently **no cloud path to it**: the
+product that issues per-key attestations (GCP Cloud HSM) cannot sign Ed25519,
+and the product that signs Ed25519 under HSM protection (AWS KMS) issues service
+compliance reports rather than a per-key attestation document.
+
+So *independently supported* custody presently requires an artefact that only
+hardware issues. This is a statement about attestation documents, not about key
+protection: AWS KMS keys are generated in and never leave FIPS-validated HSMs,
+and the absence of a per-key certificate means only that a third party cannot be
+handed one.
+
+YubiHSM 2's attestation is documented — an X.509 certificate over the attested
+public key, chaining through a Yubico intermediate to a published root, with
+key origin and capabilities in named extensions. What is not demonstrated is
+FR-70 conformance against a real certificate. Until it is, FR-70 is a correct
+validation procedure for which no instance has been produced, and nothing should
+claim otherwise.
+
+**And custody class alone does not determine forward secrecy.** Non-exportability
+bounds where a key could have gone. Whether yesterday's record can be re-signed
+with today's key depends additionally on the ratchet, on the succession
+protocol, and on destruction — which stays operator-declared in every
+configuration this design supports. A key in an HSM that is never rotated has no
+forward secrecy whatever its custody class.
+
 ## Epoch ratchet — FR-11, M2
 
 An **epoch** is a fixed span (default 24 hours). Each epoch has its own key pair. Succession is
