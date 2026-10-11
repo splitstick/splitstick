@@ -15,7 +15,7 @@
     "design": "node requirements/design.mjs",
     "review": "node requirements/review.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
-    "test:unit": "node --test packages/*/test/*.test.mjs bench/test/*.test.mjs",
+    "test:unit": "node --test packages/*/test/*.test.mjs bench/test/*.test.mjs redteam/test/*.test.mjs",
     "bench": "npm run bench:append:quick && npm run bench:latency",
     "verify": "node packages/verify/src/cli.mjs",
     "redteam:splitstick": "node redteam/splitstick.mjs",
@@ -23,7 +23,8 @@
     "bench:latency": "node bench/run-latency.mjs",
     "sbom": "npm sbom --sbom-format cyclonedx --sbom-type library --omit dev",
     "bench:append:quick": "node bench/append.mjs --events 20000 --repeat 3",
-    "lint": "node tools/lint-failure-codes.mjs"
+    "lint": "node tools/lint-failure-codes.mjs",
+    "test:kms": "node --test packages/signer-aws-kms/test/integration.test.mjs"
   },
   "dependencies": {
     "@open-multi-agent/core": "1.21.1",

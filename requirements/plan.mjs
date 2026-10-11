@@ -124,7 +124,7 @@ for (const m of milestones) {
     .sort((a,b)=>b[1]-a[1]).map(([k,v])=>`${k}×${v}`).join('  ');
   md += `\n### ${m.id} — ${m.name}\n\n`;
   md += `${m.goal}\n\n`;
-  md += `- **Gate:** ${m.gate.length ? m.gate.map(g=>`\`${g}\` — ${gates[g].class}`).join('; ') : 'none — unlocks adoption rather than closing an attack class'}\n`;
+  md += `- **Gate:** ${m.gate.length ? m.gate.map(g=>`\`${g}\` — ${gates[g].class}`).join('; ') : 'none on its own — see the exit criteria'}\n`;
   md += `- **Requirements:** ${m.ids.length} (${mix})\n`;
   md += `- **Effort:** weeks ${m.weeks}\n`;
   md += `- **Exit criteria:** ${m.exit}\n`;

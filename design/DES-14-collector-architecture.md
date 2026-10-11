@@ -12,8 +12,16 @@ how to notice that something happened.
    ├── @splitstick/collect-oma    RunJournal + approval-store impls        FR-01, FR-02
    ├── @splitstick/mcp-proxy      stdio + HTTP interception                FR-03, FR-04
    ├── @splitstick/verify         the verifier (depends on core, nothing else)
+   ├── @splitstick/signer-*       AWS KMS, PKCS#11 adapters                FR-10, NFR-09
    └── @splitstick/witness-*      TSA, OpenTimestamps, self-hosted, Rekor adapters
 ```
+
+A signer adapter is a separate package for the same reason a witness adapter is,
+and one more: it needs a cloud SDK, and `@splitstick/verify` depends on core.
+NFR-05 and NFR-06 require the verifier to be offline by construction, so a
+transitive SDK dependency in core would contradict that even if the verifier
+never called it. Core holds the `sign(bytes) → signature` seam and nothing that
+reaches a network.
 
 **An adapter may not touch cryptography.** It produces a DES-01 action record and hands it to
 core. This is what makes the record format adapter-independent, so a verifier never needs to know

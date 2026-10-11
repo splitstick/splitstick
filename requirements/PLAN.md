@@ -18,7 +18,7 @@ Every milestone runs the complete red-team suite, not only its own classes. A ga
 |---|---|---|---|
 | `AC-1` | Alter the recorded action — arguments, result, approval decision | M1 Local integrity | A (local) |
 | `AC-2` | Alter an event and repair the citing digest | M1 Local integrity | C (B must not regress) (local) |
-| `AC-3` | Re-sign rewritten history with the current key | M2 Key custody | ratchet suite (local + HSM) |
+| `AC-3` | Re-sign rewritten history with the current key | M3a Anchoring and sequencing | ratchet suite (local + HSM) |
 | `AC-4` | Truncate the record's tail | M3a Anchoring and sequencing | D (external) |
 | `AC-5` | Erase events and renumber into a clean stream | M3a Anchoring and sequencing | E, F (external) |
 | `AC-6` | Stop or patch the collector, then claim quiet | M4 Coverage attestation | G (new) (external) |
@@ -30,8 +30,8 @@ Every milestone runs the complete red-team suite, not only its own classes. A ga
 |---|---|---:|---|---|
 | **M0** Foundations and long-lead | — | 15 | 1-2, parallel to M1 | Start everything whose clock runs outside engineering, and turn the red-team suite into the acceptance harness. |
 | **M1** Local integrity | AC-1, AC-2 | 29 | 3-4 | Close the two attack classes that need no third party, and measure the performance budget before the design hardens. |
-| **M2** Key custody | AC-3 | 5 | 2 | Make yesterday's record unforgeable with today's key, and state the precondition honestly. |
-| **M3a** Anchoring and sequencing | AC-4, AC-5 | 38 | 5-7 | The first second party. Close truncation and erasure, which no amount of local cryptography can reach. |
+| **M2** Key custody | — | 5 | 2 | Make yesterday's record unforgeable with today's key, and state the precondition honestly. |
+| **M3a** Anchoring and sequencing | AC-3, AC-4, AC-5 | 38 | 5-7 | The first second party. Close truncation and erasure, which no amount of local cryptography can reach. |
 | **M3b** Practice statement and resilience | — | 22 | 3-4 | Say exactly what the countersignature means, and make sure losing a witness does not lose the evidence. |
 | **M4** Coverage attestation | AC-6, AC-7 | 11 | 3-4 | The differentiated claim: prove the record is complete, not merely unaltered. |
 | **M5** Disclosure and erasure | — | 17 | 3-4 | No new attack class. This is the milestone that makes the product buyable by a regulated, multi-customer organisation. |
@@ -45,7 +45,7 @@ Every milestone runs the complete red-team suite, not only its own classes. A ga
 
 Start everything whose clock runs outside engineering, and turn the red-team suite into the acceptance harness.
 
-- **Gate:** none — unlocks adoption rather than closing an attack class
+- **Gate:** none on its own — see the exit criteria
 - **Requirements:** 15 (GOV×7  TRC×3  SEC×3  LEG×1  DOC×1)
 - **Effort:** weeks 1-2, parallel to M1
 - **Exit criteria:** Trademark search returned and recorded. Counsel engagement deferred to a funded release. Threat model published. CI runs the canary, the DCO check and all three validators. Harness inverted so each attack class can assert DETECTED against our own verifier. Bounty adjudication removed rather than outsourced, so no arbiter is required.
@@ -113,15 +113,15 @@ Close the two attack classes that need no third party, and measure the performan
 
 Make yesterday's record unforgeable with today's key, and state the precondition honestly.
 
-- **Gate:** `AC-3` — Re-sign rewritten history with the current key
+- **Gate:** none on its own — see the exit criteria
 - **Requirements:** 5 (SEC×2  FR×1  NFR×1  OPS×1)
 - **Effort:** weeks 2
-- **Exit criteria:** An epoch-N key cannot produce a valid epoch-N-1 signature against a real HSM or KMS. The non-exportable custody precondition appears wherever the forward-secrecy claim does.
+- **Exit criteria:** An epoch-N key cannot produce a valid epoch-N-1 signature. The succession chain walks from a pinned root and a skipped or self-endorsing epoch is refused. The non-exportable custody precondition appears wherever the forward-secrecy claim does, and the verifier refuses the claim outright for any epoch declared software-keyed. M2 closes no attack class on its own: AC-3 needs the countersignature and is carried to M3a.
 
 | | ID | Requirement | Verified by |
 |---|---|---|---|
 | ☐ `FR-11` | **Forward-secure epoch ratchet** — Evolve the signing key per epoch and destroy the predecessor so prior entries cannot be re-signed with the current key. | Test: epoch N key cannot produce a valid epoch N-1 signature |
-| ☐ `NFR-09` | **HSM/KMS support** — Operate with a KMS or HSM offering non-exportable keys. | Integration test against at least one KMS and one HSM |
+| ☐ `NFR-09` | **HSM/KMS support** — Operate with a KMS or HSM offering non-exportable keys. | Integration test against at least one KMS and one HSM. The KMS half runs via npm run test:kms against a real ECC_NIST_EDWARDS25519 key and asserts the signature verifies under an independent Ed25519 implementation, not only under ours; it reports NOT VERIFIED and skips when no key is configured, so a green suite never reads as having verified it. |
 | ☐ `SEC-08` | **Resist re-signing history** — Re-signing rewritten history with the current key must be detectable under non-exportable custody. | Epoch ratchet test with HSM |
 | ☐ `SEC-17` | **State the forward-secrecy precondition** — Any forward-secrecy claim must state its non-exportable key custody precondition in the same place. | Documentation review |
 | ☐ `OPS-04` | **Separation-of-duties guidance** — Document the key-custody split between engineering and internal audit. | Guide published and reviewed |
@@ -130,10 +130,17 @@ Make yesterday's record unforgeable with today's key, and state the precondition
 
 The first second party. Close truncation and erasure, which no amount of local cryptography can reach.
 
-- **Gate:** `AC-4` — Truncate the record's tail; `AC-5` — Erase events and renumber into a clean stream
+- **Gate:** `AC-3` — Re-sign rewritten history with the current key; `AC-4` — Truncate the record's tail; `AC-5` — Erase events and renumber into a clean stream
 - **Requirements:** 38 (FR×25  SEC×7  INT×2  NFR×1  PRIV×1  SCOPE×1  DOC×1)
 - **Effort:** weeks 5-7
-- **Exit criteria:** Red-team D, E and F all DETECTED. A run with no configuration at all anchors to a public log the project does not operate. A rolled-back witness is detected. An auditor supplying their own acceptance policy verifies the same pack. Egress captured against real witness traffic, confirming no content leaves the host.
+- **Exit criteria:** Red-team C2, D, E and F all DETECTED. A run with no configuration at all anchors to a public log the project does not operate. A rolled-back witness is detected. An auditor supplying their own acceptance policy verifies the same pack. Egress captured against real witness traffic, confirming no content leaves the host. AC-3 closes here rather than in M2, because a re-signed history is contradicted by a countersignature over the original root and by nothing local.
+- **Carried in for closure:** `NFR-09`
+
+> **Carried from M2 — `NFR-09` HSM/KMS support**
+>
+> M2 built and covered the AWS KMS signer, which satisfies the KMS half. The HSM half is blocked by evidence rather than effort: of the products that sign Ed25519, AWS KMS issues no per-key attestation and GCP offers the algorithm at software protection level only, so independently-supported custody requires hardware — and the YubiHSM 2 purchase is held until its attestation capability is confirmed. See docs/kms-capability-matrix.md.
+>
+> *Closes when:* A hardware signer behind the same sign(bytes) seam, with an integration test proving its signature verifies under an independent Ed25519 implementation, and FR-70's five checks exercised against a real attestation document rather than a constructed one. M3a is the right home because FR-65 and FR-70 already land there.
 
 | | ID | Requirement | Verified by |
 |---|---|---|---|
@@ -180,7 +187,7 @@ The first second party. Close truncation and erasure, which no amount of local c
 
 Say exactly what the countersignature means, and make sure losing a witness does not lose the evidence.
 
-- **Gate:** none — unlocks adoption rather than closing an attack class
+- **Gate:** none on its own — see the exit criteria
 - **Requirements:** 22 (LEG×10  FR×7  NFR×2  OPS×2  SEC×1)
 - **Effort:** weeks 3-4
 - **Exit criteria:** Practice statement published, versioned and itself anchored, naming its time discipline. An agent run completes normally with every witness unreachable. Restore drill meets the stated recovery point objective. Countersignatures from a retired witness key still verify. Operator key compromise recoverable as a declared, countersigned discontinuity.
@@ -237,7 +244,7 @@ The differentiated claim: prove the record is complete, not merely unaltered.
 
 No new attack class. This is the milestone that makes the product buyable by a regulated, multi-customer organisation.
 
-- **Gate:** none — unlocks adoption rather than closing an attack class
+- **Gate:** none on its own — see the exit criteria
 - **Requirements:** 17 (PRIV×7  FR×6  NFR×3  INT×1)
 - **Effort:** weeks 3-4
 - **Exit criteria:** Verification passes after content and key deletion. A single-event disclosure verifies in isolation against a countersigned root. A 100,000-event run verifies in under 2 seconds with no network and no credentials. Both metadata leaks documented.
@@ -266,7 +273,7 @@ No new attack class. This is the milestone that makes the product buyable by a r
 
 Stop depending on one upstream project, and make the format genuinely somebody else's to implement.
 
-- **Gate:** none — unlocks adoption rather than closing an attack class
+- **Gate:** none on its own — see the exit criteria
 - **Requirements:** 19 (FR×6  GOV×4  NFR×3  INT×2  OPS×2  LEG×2)
 - **Effort:** weeks 4-6
 - **Exit criteria:** End-to-end capture against two non-OMA runtimes over both MCP transports. A third-party witness passes the published conformance suite. A fully self-hosted deployment verified at zero egress, with no account and no enrolment with us. The conformance suite fuzzes the canonicaliser rather than only driving fixed vectors, because a fixed-vector suite is exactly what missed the surrogate collision in M1.
@@ -304,7 +311,7 @@ Stop depending on one upstream project, and make the format genuinely somebody e
 
 Every promise that is a claim rather than a feature. This milestone is mostly about what we must not say.
 
-- **Gate:** none — unlocks adoption rather than closing an attack class
+- **Gate:** none on its own — see the exit criteria
 - **Requirements:** 37 (SCOPE×15  GOV×7  DOC×6  SEC×4  LEG×3  TRC×2)
 - **Effort:** weeks 2
 - **Exit criteria:** Claims audit clean across all sixteen scope guards. Every published figure has a passing benchmark behind it. Bounty terms published, stating plainly that recognition is non-cash while the project is unfunded. No surface anywhere claims conformity, certification, or tamper-proofing. NFR-01 has a qualifying acceptance measurement on the reference environment and NFR-02 has been re-measured against a real provider; neither may be reported as met on a development-machine number.
