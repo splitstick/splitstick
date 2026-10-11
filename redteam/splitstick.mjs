@@ -42,6 +42,7 @@ import { chainHead, genesis } from '@splitstick/core/chain';
 import { treeRoot } from '@splitstick/core/merkle';
 import { SplitstickRunJournal } from '@splitstick/collect-oma';
 import { verifyStore } from '@splitstick/verify';
+import { evaluateGates, formatGates } from './gates.mjs';
 import { JOURNAL_PATH } from './generate.mjs';
 
 if (!fs.existsSync(JOURNAL_PATH)) {
@@ -297,6 +298,8 @@ if (baseReport.summary.failed !== 0) {
 }
 
 let mismatches = 0;
+/** @type {import('./gates.mjs').Observation[]} */
+const observations = [];
 for (const attack of attacks) {
   const ctx = await build();
   await attack.apply(ctx);
@@ -306,6 +309,7 @@ for (const attack of attacks) {
   const label = observed === 'detected' ? 'DETECTED    ' : 'UNDETECTED >>';
   const drift = observed === attack.expect ? '' : '   <-- CHANGED from expected: ' + attack.expect;
   if (observed !== attack.expect) mismatches += 1;
+  observations.push({ id: attack.id, gate: attack.gate, expect: attack.expect, observed });
 
   console.log(`${label}  ${attack.id}. ${attack.name}   [${attack.gate}]${drift}`);
   console.log(`               ${attack.note}`);
@@ -320,31 +324,17 @@ console.log(`${detected.length} of ${attacks.length} tampers are detected by spl
 console.log(`${open.length} are not, and each names the milestone that closes it: ${open.map((a) => a.id).join(', ')}.`);
 console.log('None of those needs new cryptography. Each needs a second party, which is the shape of the problem.\n');
 
-// Which gates must hold is read from the plan, not restated here. An earlier
-// version listed them literally, and the plan and the suite could then disagree
-// about a gate — which is exactly what nearly happened with AC-3: it was
-// assigned to M2 while this suite had always named "M2 custody + M3a
-// countersignature" as what closes it. Deriving it means flipping a milestone's
-// `shipped` flag changes what this suite demands.
+// Which gates must hold is read from the plan, and whether they hold is read
+// from what the attacks actually did — not from what they declare. Both were
+// wrong in the first version: it listed the gates literally, and it treated a
+// declaration of "detected" as a result. See redteam/gates.mjs.
 const plan = JSON.parse(fs.readFileSync('requirements/milestones.json', 'utf8'));
-const shipped = plan.milestones.filter((m) => m.shipped);
-const due = new Set(shipped.flatMap((m) => m.gate));
-const later = plan.milestones
-  .filter((m) => !m.shipped)
-  .flatMap((m) => m.gate.map((g) => `${g} (${m.id})`));
-
-let unmet = 0;
-for (const gate of [...due].sort()) {
-  const required = attacks.filter((a) => a.gate === gate && a.expect === 'detected');
-  const held = required.length > 0;
-  if (!held) unmet += 1;
-  console.log(`gate ${gate}   ${held ? 'HELD' : 'NOT MET'}   (${required.map((a) => a.id).join(', ') || 'no detected attack in this suite'})`);
-}
-if (later.length) console.log(`\nscheduled   ${later.sort().join(', ')}`);
+const result = evaluateGates(plan, observations);
+console.log(formatGates(result));
 console.log();
 
-if (unmet > 0) {
-  console.error(`${unmet} gate(s) claimed by a shipped milestone are not held by this suite.`);
+if (result.unmet > 0) {
+  console.error(`${result.unmet} attack class(es) claimed by a shipped milestone are not closed.`);
   process.exit(1);
 }
 

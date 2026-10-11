@@ -19,6 +19,16 @@
  * @property {'software'|'kms'|'hsm'} custody OPERATOR-DECLARED. See below.
  * @property {(bytes: Uint8Array) => Promise<Buffer>} sign
  * @property {() => Verifier} verifier
+ * @property {string} [keyArn] OPTIONAL provenance: the immutable identity of the
+ *   key this signer resolved and pinned at construction. A remote signer may be
+ *   configured by a mutable name — a KMS alias can be repointed at another key
+ *   without the configuration changing — so a signer that resolves such a name
+ *   reports the immutable identity it actually signs with, and signs with that
+ *   identity rather than re-resolving per call. Absent for a signer whose
+ *   configuration already names the key immutably.
+ * @property {string} [configuredKeyId] OPTIONAL provenance: what the operator
+ *   configured, which may be an alias. Kept beside `keyArn` so a mismatch
+ *   between the two is visible rather than silently reconciled.
  *
  * @typedef {object} Verifier
  * @property {string} name

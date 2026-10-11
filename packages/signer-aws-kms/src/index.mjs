@@ -24,6 +24,16 @@
  * reader pins an identity that can verify nothing, and the failure would surface
  * on their machine, long after the fact.
  *
+ * **The identity validated at construction is the identity that signs.** A KMS
+ * alias is mutable — it can be repointed at a different key at any time — so
+ * the configured identifier is resolved once to the immutable ARN that
+ * DescribeKey returns, and that ARN is what every subsequent request names. The
+ * construction probe cannot protect against a repoint, because the repoint
+ * happens afterwards. An operator who configured an alias and had it moved
+ * would otherwise produce signatures that no longer verify under the identity a
+ * reader pinned, which a verifier reports as tampering — by accident, for an
+ * operator who did nothing wrong.
+ *
  * The private key never exists outside KMS, and nothing here can export it:
  * the module has no key-export API and the seam only ever returns signatures.
  */
@@ -67,7 +77,8 @@ function rawFromSpki(der) {
 /**
  * @param {object} o
  * @param {any} o.client a KMSClient, or anything with the same `send`
- * @param {string} o.keyId key id, alias or ARN
+ * @param {string} o.keyId key id, alias or ARN. An alias is resolved once to
+ *   the immutable ARN and retained only as configuration metadata.
  * @param {string} o.name the note identity, which is also the log origin
  * @param {string} [o.algorithm] only to be REFUSED if it is not the right one;
  *   it exists so a misconfiguration is an error rather than being ignored
@@ -98,6 +109,16 @@ export async function kmsSigner({ client, keyId, name, algorithm }) {
       `cannot describe ${keyId}: ${err instanceof Error ? err.message : String(err)}`, { cause: err });
   }
   if (!meta) throw new KmsSignerError(`${keyId} returned no key metadata`);
+
+  // Resolve to something that cannot move under us. An alias is mutable; an ARN
+  // and a key id are not. Everything after this point names the resolved value.
+  const resolved = meta.Arn ?? meta.KeyId;
+  if (typeof resolved !== 'string' || !resolved) {
+    throw new KmsSignerError(
+      `${keyId} returned neither an ARN nor a key id, so there is no immutable identity to `
+      + 'pin. An alias may be repointed at another key at any time, and a signer that keeps '
+      + 'using the alias would sign under a key its own public key does not match');
+  }
   if (meta.KeySpec !== ED25519_RAW.keySpec) {
     throw new KmsSignerError(
       `${keyId} has key spec ${meta.KeySpec}; SS1 needs ${ED25519_RAW.keySpec}`);
@@ -120,7 +141,7 @@ export async function kmsSigner({ client, keyId, name, algorithm }) {
   // 2 — the public key, fetched.
   let publicKey;
   try {
-    const { PublicKey } = await client.send(new GetPublicKeyCommand({ KeyId: keyId }));
+    const { PublicKey } = await client.send(new GetPublicKeyCommand({ KeyId: resolved }));
     if (!PublicKey) throw new KmsSignerError(`${keyId} returned no public key`);
     publicKey = rawFromSpki(PublicKey);
   } catch (err) {
@@ -139,7 +160,7 @@ export async function kmsSigner({ client, keyId, name, algorithm }) {
         + 'of a subject is worse than no signature');
     }
     const { Signature } = await client.send(new SignCommand({
-      KeyId: keyId,
+      KeyId: resolved,
       Message: Buffer.from(bytes),
       MessageType: ED25519_RAW.messageType,
       SigningAlgorithm: ED25519_RAW.algorithm,
@@ -172,6 +193,10 @@ export async function kmsSigner({ client, keyId, name, algorithm }) {
     algorithm: 'ed25519',
     publicKey,
     keyId: keyIdBytes,
+    /** The immutable identity that signs. */
+    keyArn: resolved,
+    /** What the operator configured, which may have been a mutable alias. */
+    configuredKeyId: keyId,
     // Operator-declared, like every custody class: an HSM signature and a file
     // signature are byte-identical (DES-06). FR-65 records the declaration and
     // FR-70 is the only route to independent support.

@@ -241,3 +241,100 @@ test('SEC-14: the signer exposes no key material', async () => {
   for (const k of Object.keys(signer)) assert.ok(!/private|secret|seed/i.test(k), k);
   assert.ok(!JSON.stringify(signer).includes('PRIVATE'));
 });
+
+/**
+ * Review finding P1-1. `kmsSigner` accepted a key id, alias or ARN and kept
+ * using the configured identifier for every SignCommand. An AWS KMS **alias is
+ * mutable**: it can be repointed at a different key after construction, and
+ * every signature after that would be made by a key other than the public key
+ * `verifier()` hands out.
+ *
+ * The construction probe cannot help — it runs before the repoint. And the
+ * damage lands where this product can least afford it: a legitimate operator
+ * using an alias gets signatures that no longer verify under the identity a
+ * reader pinned, which a verifier reports as OPSIG_INVALID. Tampering, by
+ * accident, for an operator who did nothing wrong.
+ *
+ * So the alias is resolved once, to the immutable ARN that DescribeKey returns,
+ * and that is what signs from then on. The alias survives only as configuration
+ * metadata.
+ */
+
+const RESOLVED_ARN = 'arn:aws:kms:eu-west-1:111122223333:key/11111111-2222-3333-4444-555555555555';
+const ALIAS = 'alias/splitstick-prod';
+
+/** A KMS whose alias can be repointed at a second key, as AWS allows. */
+function aliasedKms() {
+  const elsewhere = generateKeyPairSync('ed25519');
+  const state = { redirected: false, signedWith: [] };
+  return {
+    state,
+    async send(command) {
+      const name = command.constructor.name;
+      if (name === 'DescribeKeyCommand') {
+        return {
+          KeyMetadata: {
+            KeyId: '11111111-2222-3333-4444-555555555555',
+            Arn: RESOLVED_ARN,
+            KeySpec: 'ECC_NIST_EDWARDS25519',
+            KeyUsage: 'SIGN_VERIFY',
+            KeyState: 'Enabled',
+            SigningAlgorithms: ['ED25519_SHA_512'],
+          },
+        };
+      }
+      if (name === 'GetPublicKeyCommand') {
+        return { PublicKey: pair.publicKey.export({ format: 'der', type: 'spki' }) };
+      }
+      if (name === 'SignCommand') {
+        state.signedWith.push(command.input.KeyId);
+        // The alias now points at another key; the ARN still points at ours.
+        const useOther = state.redirected && command.input.KeyId === ALIAS;
+        return {
+          Signature: nodeSign(null, Buffer.from(command.input.Message),
+            useOther ? elsewhere.privateKey : pair.privateKey),
+        };
+      }
+      throw new Error(`unexpected ${name}`);
+    },
+  };
+}
+
+test('an alias is resolved to its immutable ARN, and that is what signs', async () => {
+  const kms = aliasedKms();
+  const signer = await kmsSigner({ client: kms, keyId: ALIAS, name: 'splitstick.dev/host-1' });
+
+  // Every request after resolution names the ARN, never the alias.
+  assert.ok(kms.state.signedWith.length >= 1, 'the construction probe signed');
+  assert.ok(kms.state.signedWith.every(k => k === RESOLVED_ARN),
+    `all signing used the resolved ARN, got ${JSON.stringify(kms.state.signedWith)}`);
+
+  // Now someone repoints the alias, which AWS permits at any time.
+  kms.state.redirected = true;
+
+  const subject = text();
+  const sig = await signNote(subject, signer);
+  assert.equal(await verifyNoteSignature(subject, sig, signer.verifier()), true,
+    'a repointed alias must not change which key signs');
+  assert.ok(kms.state.signedWith.every(k => k === RESOLVED_ARN));
+});
+
+test('the resolved identity is exposed, and the configured one is kept as metadata', async () => {
+  const signer = await kmsSigner({ client: aliasedKms(), keyId: ALIAS, name: 'o' });
+  assert.equal(signer.keyArn, RESOLVED_ARN);
+  assert.equal(signer.configuredKeyId, ALIAS);
+});
+
+test('a key with no ARN or key id in its metadata is refused', async () => {
+  const kms = {
+    async send(command) {
+      if (command.constructor.name === 'DescribeKeyCommand') {
+        return { KeyMetadata: { KeySpec: 'ECC_NIST_EDWARDS25519', KeyUsage: 'SIGN_VERIFY',
+          KeyState: 'Enabled', SigningAlgorithms: ['ED25519_SHA_512'] } };
+      }
+      throw new Error('should not get this far');
+    },
+  };
+  await assert.rejects(() => kmsSigner({ client: kms, keyId: ALIAS, name: 'o' }),
+    /immutable|ARN|key id/i);
+});

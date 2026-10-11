@@ -53,7 +53,7 @@ npm test
 `npm run generate` writes `out/journal.jsonl` through OMA's real orchestrator and
 asserts the baseline verifies. `npm run redteam` applies the six tampers above.
 `npm run redteam:splitstick` then builds a real Splitstick store from that same
-journal and applies eleven tampers to it, asking `splitstick verify` for a
+journal and applies twelve tampers to it, asking `splitstick verify` for a
 verdict on each.
 
 Every attack declares the outcome currently observed, and both suites **exit
@@ -68,9 +68,33 @@ acceptance harness for our own milestones: it declares three attacks as
 UNDETECTED, with the milestone that closes each, because a suite containing only
 its successes is marketing.
 
+### How a gate is held
+
+An attack class is claimed by a milestone in `requirements/milestones.json`, and
+the harness reads the claims from there rather than restating them. A class
+belonging to a shipped milestone is **held only when every attack assigned to it
+was observed as detected in that run**. Two consequences worth stating, because
+the first version of this check got both wrong:
+
+- A *declaration* of `detected` is not a result. The gate is decided by what the
+  run produced, so an attack that starts succeeding turns its class red even
+  though the suite still expects it to be caught.
+- One outstanding attack fails the class however many simpler ones pass. AC-5
+  has three attacks; F and F2 are detected and F3 is not, so AC-5 cannot be
+  claimed until M3a closes F3. A gate that reported HELD on the strength of the
+  easy two would be worse than no gate, because it would be read as assurance.
+
+A class a shipped milestone claims and no attack exercises is not held either.
+The logic lives in [gates.mjs](gates.mjs), separately from the harness, so
+[test/gates.test.mjs](test/gates.test.mjs) can assert it directly — including
+that marking M3a shipped today fails AC-3, AC-4 and AC-5 on exactly C2, D and
+F3.
+
 ```
-gate AC-1   HELD   (A1, A2, A3, B, E)
-gate AC-2   HELD   (C)
+gate AC-1   HELD      (A1, A2, A3, B, E)
+gate AC-2   HELD      (C)
+
+scheduled   AC-3 (M3a), AC-4 (M3a), AC-5 (M3a), AC-6 (M4), AC-7 (M4)
 
 9 of 12 tampers are detected by splitstick verify from files alone.
 3 are not, and each names the milestone that closes it: C2, D, F3.
