@@ -17,6 +17,7 @@
  * capability block says which checks went unanswered.
  */
 
+import { readFileSync } from 'node:fs';
 import { verifyStore } from './verify.mjs';
 
 const EXIT = { ok: 0, inconclusive: 1, fail: 2 };
@@ -25,6 +26,14 @@ const USAGE = `splitstick verify <store> [options]
 
   --collector <id>   the collector instance whose chain to read
   --key <vkey>       the operator identity you pin, as name+keyid+base64key
+  --policy <file>    your acceptance policy: which witnesses you accept, what
+                     each establishes, their keys or trust anchors, and the
+                     quorum you require. It is an INPUT, not a registry — two
+                     readers with different trust get different, internally
+                     consistent answers from the same pack (FR-30).
+  --disclosed <file> heights you already hold from another pack, as
+                     [{ "tree_size": N, "root": "<base64>" }], for the
+                     cross-pack comparison (FR-54, SEC-26)
   --json             machine-readable output
   --explain          print what the verdict depends on and nothing else
 
@@ -43,8 +52,24 @@ export async function main(argv) {
   const opts = {};
   /** @type {string[]} */
   const positional = [];
+  /**
+   * Flags are checked against this list. An unrecognised one used to be
+   * accepted and ignored, so `--vkey` — a plausible misremembering of `--key`,
+   * the flag that pins the identity everything else depends on — produced a
+   * clean-looking report saying no identity was pinned. Silently doing less
+   * than the reader asked for is the one failure mode this tool cannot have.
+   */
+  const FLAGS = new Set(['collector', 'key', 'policy', 'disclosed', 'json', 'explain']);
   for (let i = 0; i < args.length; i++) {
     const a = /** @type {string} */ (args[i]);
+    if (a.startsWith('--') && !FLAGS.has(a.slice(2))) {
+      process.stderr.write(
+        `${a} is not a flag this reads. Known flags: ${[...FLAGS].map(f => `--${f}`).join(', ')}.\n`
+        + 'Refusing rather than ignoring it: a misspelled flag that is skipped silently makes the '
+        + 'report answer a different question than the one asked.\n',
+      );
+      return 3;
+    }
     if (a === '--json' || a === '--explain') { opts[a.slice(2)] = true; continue; }
     if (a.startsWith('--')) {
       const v = args[i + 1];
@@ -59,9 +84,32 @@ export async function main(argv) {
   const root = positional[0];
   if (!root) { process.stderr.write(USAGE); return 3; }
 
+  /** @type {unknown} */
+  let policy;
+  /** @type {unknown} */
+  let disclosed;
+  for (const flag of /** @type {const} */ (['policy', 'disclosed'])) {
+    const value = opts[flag];
+    if (typeof value !== 'string') continue;
+    try {
+      const parsed = JSON.parse(readFileSync(value, 'utf8'));
+      if (flag === 'policy') policy = parsed; else disclosed = parsed;
+    } catch (e) {
+      // Refused rather than ignored, for the same reason as an unknown flag: a
+      // policy that failed to load would make the report say the reader
+      // trusted nobody, which is a different and much weaker answer.
+      process.stderr.write(
+        `--${flag} could not be read: ${e instanceof Error ? e.message : String(e)}\n`,
+      );
+      return 3;
+    }
+  }
+
   const report = await verifyStore(root, {
     ...(typeof opts.collector === 'string' ? { collector: opts.collector } : {}),
     ...(typeof opts.key === 'string' ? { vkey: opts.key } : {}),
+    ...(policy ? { policy: /** @type {any} */ (policy) } : {}),
+    ...(disclosed ? { disclosed: /** @type {any} */ (disclosed) } : {}),
   });
 
   if (opts.json) {
@@ -91,8 +139,26 @@ export async function main(argv) {
     }
     out.push('');
     out.push(report.witnesses.length
-      ? 'witnesses   ' + report.witnesses.map(w => `${w.id} (${w.type}, ${w.establishes})`).join('\n            ')
+      ? 'witnesses   ' + report.witnesses.map(w =>
+        `${w.accepted ? '' : '[not accepted] '}${w.id} (${w.type}, ${w.establishes})`
+        + `\n              ${w.detail}`).join('\n            ')
       : 'witnesses   none in this evidence');
+    // Quorum PER CLASS, printed as three numbers. One aggregate figure would
+    // let an operator look well-witnessed while unable to detect truncation at
+    // all, which is the failure DES-20's review named — so the shape of this
+    // line is load-bearing, not cosmetic.
+    if (report.witnesses.length) {
+      out.push('quorum      ' + Object.entries(report.quorum.observed)
+        .map(([k, n]) => `${k} ${n}/${report.quorum.required}${report.quorum.met[k] ? '' : ' (not met)'}`)
+        .join(', '));
+    }
+    if (report.succession) {
+      out.push('epochs      ' + report.succession.epochs.map(e =>
+        `${e.epoch}: custody ${e.custody} (${e.custody_basis}), forward secrecy ${e.forward_secrecy}`)
+        .join('\n            '));
+      out.push('            destruction is ' + report.succession.destruction_basis
+        + ' and is not verifiable by anyone');
+    }
   }
   out.push('');
   out.push('capability  ' + (report.capability.can[0] ?? 'nothing could be established'));

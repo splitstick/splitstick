@@ -540,7 +540,13 @@ function report(tree_size, anchored, checks, findings, notes, collector, vkey, s
     if (passed('CONTENT')) can.push('that every retained payload still reproduces the commitment in its record');
   }
   if (summary.failed === 0 && notes.length && vkey && passed('OP-SIG') && passed('TREE')) {
-    can.push(`that the operator identity ${collector} signed the tree size and root it claims`);
+    // The PINNED identity, not the collector id. They are different things —
+    // the collector scopes a chain within a store, the identity is what the
+    // reader pinned out of band — and naming the wrong one in the one sentence
+    // about identity is the sort of error a reader would reasonably rely on.
+    can.push(
+      `that the operator identity ${vkey.split('+')[0]} signed the tree size and root it claims`,
+    );
     if (passed('SUCCESSION') && succession && succession.epochs.length > 1) {
       can.push(
         `that all ${succession.epochs.length} epochs of signing keys descend from the one root `
@@ -551,8 +557,10 @@ function report(tree_size, anchored, checks, findings, notes, collector, vkey, s
 
   if (rollup && rollup.verdict === 'ok' && summary.failed === 0) {
     can.push(
-      `that ${rollup.covers} checkpoint(s) are covered by ${rollup.count} signed roll-up `
-      + 'summar(y|ies), so a single batch can be shown to be under one by an inclusion proof (FR-53)',
+      `that ${rollup.covers} checkpoint${rollup.covers === 1 ? '' : 's'} `
+      + `${rollup.covers === 1 ? 'is' : 'are'} covered by ${rollup.count} signed roll-up `
+      + `summar${rollup.count === 1 ? 'y' : 'ies'}, so a single batch can be shown to be under one `
+      + 'by an inclusion proof (FR-53)',
     );
   }
 
@@ -568,7 +576,7 @@ function report(tree_size, anchored, checks, findings, notes, collector, vkey, s
     if (software.length > 0) {
       cannot.push(
         `forward secrecy is NOT claimed for this log: ${software.length === 1 ? 'epoch' : 'epochs'} `
-        + `${software.map(e => `epoch ${e.epoch}`).join(', ')} ${software.length === 1 ? 'is' : 'are'} `
+        + `${software.map(e => e.epoch).join(', ')} ${software.length === 1 ? 'is' : 'are'} `
         + 'declared software-keyed, so the private key existed outside any module and may have been '
         + 'copied before rotation. One such epoch is enough: the question a reader asks is whether '
         + "yesterday's record can be re-signed with today's key, and for this log the answer is yes",
@@ -592,11 +600,20 @@ function report(tree_size, anchored, checks, findings, notes, collector, vkey, s
       + 'signature and a signature from a key file are byte-identical, and no provider attestation '
       + 'is present to check against (FR-70)',
     );
-    cannot.push(
-      'a wholesale re-sign — every checkpoint re-signed with the current key after rewriting the '
-      + 'records — leaves the epochs equal and is NOT detectable from this evidence alone; a '
-      + 'countersignature over the original root is what contradicts it, and there is none here',
-    );
+    // Conditional, because with an accepted countersignature over the original
+    // note this gap is CLOSED: the operator can rewrite the note but not forge
+    // the witness's signature over what the witness was shown. Printing the
+    // unconditional version understated the evidence in a report that had the
+    // countersignature listed four lines above — and red-team C2 is detected in
+    // exactly this configuration.
+    const sequenceWitnessed = witnesses.some(w => w.accepted && /sequence/.test(w.establishes));
+    cannot.push(sequenceWitnessed
+      ? 'a wholesale re-sign is detectable here only for the checkpoints a witness actually '
+        + 'countersigned: above the highest countersigned height, re-signing everything with the '
+        + 'current key leaves the epochs equal and nothing local contradicts it'
+      : 'a wholesale re-sign — every checkpoint re-signed with the current key after rewriting the '
+        + 'records — leaves the epochs equal and is NOT detectable from this evidence alone; a '
+        + 'countersignature over the original root is what contradicts it, and there is none here');
   } else if (succession === null && vkey) {
     cannot.push(
       'no succession journal is present, so nothing here says whether the signing key was ever '
@@ -641,7 +658,16 @@ function report(tree_size, anchored, checks, findings, notes, collector, vkey, s
   }
   const timeProofs = witnesses.filter(w => w.accepted && /time|existence/.test(w.establishes));
   if (timeProofs.length === 0) {
-    cannot.push('no countersignature is present, so nothing here establishes WHEN any record was written — the ts field is self-asserted');
+    // Distinguish "nobody countersigned" from "somebody did, and none of them
+    // bears a clock". Saying the first when the second is true is false in the
+    // report's own terms: the witnesses block above lists the countersignature
+    // it is denying exists.
+    cannot.push(witnesses.some(w => w.accepted)
+      ? 'no accepted countersignature here establishes TIME: the witnesses above establish sequence '
+        + 'or nothing, so nothing in this evidence says WHEN any record was written — the ts field '
+        + 'is self-asserted'
+      : 'no countersignature is present, so nothing here establishes WHEN any record was written — '
+        + 'the ts field is self-asserted');
   } else {
     cannot.push(
       `${timeProofs.length} time-bearing proof(s) are present but NOT confirmed by this verifier: `
@@ -1122,11 +1148,18 @@ async function verifyRollups({ store, notes, pinned, epochKeys, findings }) {
   }
 
   const verdict = combine(vs);
+  const failed = vs.filter(v => v === 'fail').length;
   return {
     verdict,
+    // Three branches, not two. With one roll-up present and no identity pinned
+    // the verdict is inconclusive and nothing failed, and the two-branch
+    // version printed "0 roll-up(s) do not check out" — a sentence that is both
+    // false and meaningless.
     detail: verdict === 'ok'
       ? `${rollups.length} roll-up(s) covering ${covers} checkpoint(s)`
-      : `${vs.filter(v => v === 'fail').length} roll-up(s) do not check out`,
+      : failed > 0
+        ? `${failed} of ${rollups.length} roll-up(s) do not check out`
+        : `${rollups.length} roll-up(s) present, but not checkable by this reader`,
     count: rollups.length,
     covers,
   };
