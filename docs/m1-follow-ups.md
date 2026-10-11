@@ -51,6 +51,39 @@ percentage. And the budget is expressed against an assumed 400 ms per model
 call; a materially faster model would tighten it. Worth re-measuring against a
 real provider once one is in the loop.
 
+## M6 — ship type declarations with the packages
+
+**Folded into M6's publishing work as an implementation detail, not a separate
+requirement.** The release workflow already exists from SEC-22 and SEC-23; this
+is a few lines in it.
+
+All three packages currently publish no `types` field and no `.d.ts`, so a
+TypeScript consumer importing `@splitstick/core` gets `any` for everything. The
+project authors plain `.mjs` with JSDoc checked by `tsc --checkJs` under `strict`
+and `noUncheckedIndexedAccess`, deliberately: with no build step the published
+artifact IS the source, which matters for a product whose SEC-22 attestation
+binds a package digest to the commit a reviewer read. A compile step would
+insert a transformation between the two.
+
+Declarations can be emitted without giving that up, and the output carries the
+doc comments through — verified before this was written down:
+
+```
+tsc -p tsconfig.json --declaration --emitDeclarationOnly --outDir <dir>
+→ export function leafDigest(salt: Uint8Array, record: unknown): Buffer;
+  export const SALT_BYTES: 16;
+```
+
+To close it: emit declarations in the release workflow, add `types` to each
+package manifest, include the `.d.ts` files in the published tarballs, and
+attest them alongside the tarballs as SEC-22 already does for the rest.
+
+This is ergonomics rather than a promise kept. `DES-11` is explicit that the
+spec, not our package, is what an independent implementer works from — which is
+why no release-notes line covers it and why it is not a requirement. It makes
+the thing third parties are invited to build against pleasant to build against,
+and nothing more.
+
 ## Ahead of M3a
 
 - **Fuzz the canonicaliser** rather than only driving fixed vectors. The
@@ -58,6 +91,22 @@ real provider once one is in the loop.
   in the component built to prevent exactly that, and FR-52's own property test
   walked past it because it only mutates values that round-trip through JSON.
   FR-46's conformance suite is the place for this.
+- **Guard the failure-code vocabulary at runtime, not only statically.**
+  `tools/lint-failure-codes.mjs` checks that every `code:` site is a string
+  literal, which is what makes its scan sound — but it exempts `f.code`, where
+  the verifier forwards findings produced by `recomputeChain`. That exemption is
+  safe today for a specific reason: every forwarding site's origin is itself
+  scanned, `chain.mjs` emits only literals, and all five are in the
+  specification. It stops being safe the moment a code arrives from somewhere
+  the scan does not reach.
+
+  M3a is when that changes, because the verifier gains witness, roll-up and
+  coverage codes and more layers to forward them through. The fix is a frozen
+  vocabulary in code that every finding is constructed through, so an unknown
+  code throws rather than being printed, with the lint asserting that the frozen
+  list and `spec/failure-codes.json` agree. A review raised this and correctly
+  declined to block the retrospective on it.
+
 - **Write the fault-injection cases first.** Of the findings across M1's reviews,
   almost none were in the cryptographic construction; they were in failure paths
   and concurrency. Two of them could not be reached by injection at all —

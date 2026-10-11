@@ -86,6 +86,16 @@ const emittedCodes = emitted(srcText);
 const dynamic = [...srcText.matchAll(/\bcode:\s*([^,\n}]+)/g)]
   .map(m => /** @type {string} */ (m[1]).trim())
   .filter(expr => expr !== '' && !/^['"]/.test(expr))
+  // `f.code` is the verifier forwarding a finding from recomputeChain, and the
+  // exemption is sound for a reason rather than by assumption: the origin of
+  // those codes is chain.mjs, which this scan also reads, which emits only
+  // literals, and whose five codes are all specified. The invariant is that
+  // every forwarding site's ORIGIN is scanned — not that forwarding is
+  // harmless. It fails the moment a code arrives from somewhere the scan does
+  // not reach, which M3a makes likely as witness and coverage codes arrive
+  // through more layers. docs/m1-follow-ups.md schedules the real fix: a frozen
+  // vocabulary that every finding is constructed through, so an unknown code
+  // throws instead of being printed.
   .filter(expr => !/^f\.code$/.test(expr));
 const specified = new Map(spec.codes.map((/** @type {any} */ c) => [c.code, c]));
 
