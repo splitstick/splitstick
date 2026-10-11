@@ -1,0 +1,183 @@
+{
+  "note": "The verifier's whole vocabulary, and the single source of truth for it. Every code a verifier can emit is here with what a reader may conclude from it, its verdict class, and the milestone that implements it.\n\nTwo instruments keep this honest, because the halves need different ones. tools/lint-failure-codes.mjs checks STATICALLY that nothing unspecified is emitted, nothing specified-and-due goes unemitted, every delivered code is named in a design element, and every `code:` site is a string literal \u2014 the last of which is what makes the scan sound rather than merely plausible. Coverage is proved EXECUTABLY by packages/verify/test/failure-codes.test.mjs, where a table of scenarios must cover exactly the delivered codes and each must make a real verifier run emit its code with the verdict class promised here.\n\nThis file exists because M1 shipped ten codes that were specified nowhere \u2014 invented in code and never added to the design's vocabulary \u2014 and two capabilities that were specified, implemented, tested, and never called by the verifier at all. The lint first tried to prove coverage by searching test files for each code's name; a review pointed out that a comment satisfies that, and it did.",
+  "delivered_milestones": [
+    "M1"
+  ],
+  "verdict_rule": "A single fail makes the whole run fail. inconclusive never upgrades to fail and never downgrades to ok. ok means every check that could run, ran, and passed.",
+  "codes": [
+    {
+      "code": "FORMAT_UNSUPPORTED",
+      "milestone": "M1",
+      "verdict": "fail",
+      "conclusion": "The record version, algorithm suite or pack format is not one this verifier implements. It stops rather than guessing or partially verifying (DES-16)."
+    },
+    {
+      "code": "MALFORMED_RECORD",
+      "milestone": "M1",
+      "verdict": "fail",
+      "conclusion": "A terminated line in a journal is unreadable. Every terminated line was committed, so this means the file was edited rather than a write cut short."
+    },
+    {
+      "code": "TORN_WRITE",
+      "milestone": "M1",
+      "verdict": "inconclusive",
+      "conclusion": "The last line of a journal has no terminator, which is what a crash during an append leaves. The records before it verify normally."
+    },
+    {
+      "code": "SEQ_BROKEN",
+      "milestone": "M1",
+      "verdict": "fail",
+      "conclusion": "An event was inserted, removed or reordered, or an observed attempt was never written. record_seq and source_seq are reported separately and never compared with each other."
+    },
+    {
+      "code": "CHAIN_BROKEN",
+      "milestone": "M1",
+      "verdict": "fail",
+      "conclusion": "A record or its predecessor was altered, or a head is not the hash of its own prev and leaf."
+    },
+    {
+      "code": "LEAF_MISMATCH",
+      "milestone": "M1",
+      "verdict": "fail",
+      "conclusion": "This record's content is not what was committed."
+    },
+    {
+      "code": "LEAF_INCONCLUSIVE",
+      "milestone": "M1",
+      "verdict": "inconclusive",
+      "conclusion": "The leaf salt is absent, so the leaf cannot be reproduced. Lawful erasure deletes exactly that, which is why it is never a failure (DES-13)."
+    },
+    {
+      "code": "CONTENT_MISMATCH",
+      "milestone": "M1",
+      "verdict": "fail",
+      "conclusion": "The stored payload does not reproduce the commitment in its record: it was substituted."
+    },
+    {
+      "code": "CONTENT_ABSENT",
+      "milestone": "M1",
+      "verdict": "inconclusive",
+      "conclusion": "A payload is not in the store. Shredded by design, retained elsewhere, or lost, and the pack cannot tell those apart."
+    },
+    {
+      "code": "TREE_MISMATCH",
+      "milestone": "M1",
+      "verdict": "fail",
+      "conclusion": "A checkpoint's root is not the root of the records it claims to cover."
+    },
+    {
+      "code": "SIZE_REGRESSED",
+      "milestone": "M1",
+      "verdict": "fail",
+      "conclusion": "A checkpoint commits to more records than the log holds: the tail was removed below a size already committed."
+    },
+    {
+      "code": "CONSISTENCY_BROKEN",
+      "milestone": "M1",
+      "verdict": "fail",
+      "conclusion": "Two signed checkpoints are not prefixes of one history, or a later one commits to fewer records than an earlier one. Append-only is checked, not assumed (DES-04 rule 4)."
+    },
+    {
+      "code": "UNANCHORED",
+      "milestone": "M1",
+      "verdict": "inconclusive",
+      "conclusion": "No checkpoint is present, so nothing commits to a tree size and the log's extent is fixed by nothing."
+    },
+    {
+      "code": "UNANCHORED_TAIL",
+      "milestone": "M1",
+      "verdict": "inconclusive",
+      "conclusion": "Records sit above the highest tree size any checkpoint commits to. The height is reported, because it bounds every truncation claim and is what cross-pack comparison keys on (DES-19)."
+    },
+    {
+      "code": "OPSIG_INVALID",
+      "milestone": "M1",
+      "verdict": "fail",
+      "conclusion": "A checkpoint is not signed by the operator identity it claims, or carries no signature for the pinned identity."
+    },
+    {
+      "code": "OPSIG_UNCHECKED",
+      "milestone": "M1",
+      "verdict": "inconclusive",
+      "conclusion": "A checkpoint is signed but no operator identity was pinned, so the signature means nothing to this reader."
+    },
+    {
+      "code": "IDENTITY_UNPINNED",
+      "milestone": "M1",
+      "verdict": "fail",
+      "conclusion": "The pack is signed under a key or origin the acceptance policy did not name. Nothing prevents an operator keeping a second log; this is how a reader who pinned an identity is told they are being shown another (FR-63)."
+    },
+    {
+      "code": "SUITE_UNDECLARED",
+      "milestone": "M1",
+      "verdict": "inconclusive",
+      "conclusion": "A checkpoint records no algorithm suite, so which primitives signed it is not stated and cannot be known years later (DES-16)."
+    },
+    {
+      "code": "MULTIPLE_COLLECTORS",
+      "milestone": "M1",
+      "verdict": "inconclusive",
+      "conclusion": "The store holds more than one collector chain and none was named. One was verified and the others were not, which a reader has to be told."
+    },
+    {
+      "code": "CHECKPOINTS_UNATTRIBUTED",
+      "milestone": "M1",
+      "verdict": "inconclusive",
+      "conclusion": "Notes sit outside any collector's directory and belong to no chain. They were not checked, because a note that cannot be attributed is not evidence about a particular log."
+    },
+    {
+      "code": "NO_EVIDENCE",
+      "milestone": "M1",
+      "verdict": "inconclusive",
+      "conclusion": "No chain was found for the collector named."
+    },
+    {
+      "code": "SUCCESSION_BROKEN",
+      "milestone": "M2",
+      "verdict": "fail",
+      "conclusion": "An epoch key is not endorsed by its predecessor, so the succession chain does not walk to the pinned root (DES-06)."
+    },
+    {
+      "code": "WITNESS_SHORT",
+      "milestone": "M3a",
+      "verdict": "fail",
+      "conclusion": "Fewer countersignatures than the acceptance policy requires."
+    },
+    {
+      "code": "WITNESS_MISMATCH",
+      "milestone": "M3a",
+      "verdict": "fail",
+      "conclusion": "The witness signed a different root. The strongest finding available: the operator re-signed history but could not forge the countersignature."
+    },
+    {
+      "code": "WITNESS_MISSING",
+      "milestone": "M3a",
+      "verdict": "inconclusive",
+      "conclusion": "A witness expected for this checkpoint has no proof in the pack. Absence is consistent with pending under fail-open, a slower roll-up tier, an unavailable witness, or a removed receipt, and nothing in the pack distinguishes them (FR-66)."
+    },
+    {
+      "code": "TRUNCATED_BELOW_DISCLOSED",
+      "milestone": "M3a",
+      "verdict": "fail",
+      "conclusion": "A pack already disclosed holds a countersigned checkpoint above where this record ends. Truncation, caught without a stateful witness (DES-19)."
+    },
+    {
+      "code": "DISCONTINUITY",
+      "milestone": "M3b",
+      "verdict": "inconclusive",
+      "conclusion": "A declared key-compromise break was crossed. Not a failure, and always surfaced: a verifier never silently bridges one (DES-06)."
+    },
+    {
+      "code": "COVERAGE_GAP",
+      "milestone": "M4",
+      "verdict": "fail",
+      "conclusion": "A window with no heartbeat and no declaration."
+    },
+    {
+      "code": "COVERAGE_UNKNOWN",
+      "milestone": "M4",
+      "verdict": "inconclusive",
+      "conclusion": "A gap_unknown record is present. The chain may be perfectly intact while the collector cannot say what was observed during the interval, so an otherwise flawless run containing one is not proof of complete capture."
+    }
+  ]
+}

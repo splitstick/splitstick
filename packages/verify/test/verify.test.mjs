@@ -558,3 +558,36 @@ test('an unattributable checkpoint is reported, not skipped', async () => {
     JSON.stringify(r.findings.map(f => f.code)));
   assert.equal(r.summary.failed, 0, 'a stray file is not a contradiction');
 });
+
+// CONTENT_ABSENT had no test until tools/lint-failure-codes.mjs asked for one.
+// A shredded payload must read as inconclusive, never as a substitution.
+test('CONTENT_ABSENT: a shredded payload is inconclusive, not a mismatch', async () => {
+  const { root, store, vkey } = await evidence(3);
+  const first = store.readChain()[0];
+  store.shredRecord(Number(/** @type {any} */ (first.record).record_seq));
+
+  const r = await verifyStore(root, { collector: 'host-1', vkey });
+  assert.equal(r.summary.failed, 0, 'erasure adds no failure');
+  assert.ok(r.findings.some(f => f.code === 'CONTENT_ABSENT'), JSON.stringify(r.findings.map(f => f.code)));
+  assert.ok(!r.findings.some(f => f.code === 'CONTENT_MISMATCH'));
+  assert.equal(r.verdict, 'inconclusive');
+});
+
+// UNANCHORED had no test either, and the lint's own substring bug had been
+// excusing it: a search for UNANCHORED was satisfied by UNANCHORED_TAIL.
+test('UNANCHORED: records with no checkpoint at all fix the log extent to nothing', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'splitstick-verify-'));
+  const store = new Store(root, 'host-1');
+  const signer = await generateDevSigner(ORIGIN);
+  const c = new Collector({ store, config: parseConfig(CFG, root), signer,
+    collector: 'host-1', origin: ORIGIN });
+  for (let i = 0; i < 3; i++) c.action(tx({ correlation: `c-${i}` }));
+  // Deliberately no checkpoint().
+  const r = await verifyStore(root, { collector: 'host-1', vkey: formatVkey(ORIGIN, signer.publicKey) });
+  assert.equal(r.summary.failed, 0, 'an unanchored log is not a contradiction');
+  assert.ok(r.findings.some(f => f.code === 'UNANCHORED'), JSON.stringify(r.findings.map(f => f.code)));
+  assert.equal(r.anchored_tree_size, 0);
+  assert.equal(r.verdict, 'inconclusive');
+  assert.ok(r.capability.cannot.some(s => /truncation anywhere/.test(s)),
+    'and with no committed height, truncation is undetectable anywhere');
+});

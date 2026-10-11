@@ -11,7 +11,7 @@
     "test": "npm run generate && npm run redteam && npm run redteam:splitstick",
     "requirements": "node requirements/build.mjs",
     "plan": "node requirements/plan.mjs",
-    "backlog": "npm run requirements && npm run plan && npm run design",
+    "backlog": "npm run requirements && npm run plan && npm run design && npm run lint",
     "design": "node requirements/design.mjs",
     "review": "node requirements/review.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
@@ -22,7 +22,8 @@
     "bench:append": "node bench/append.mjs --events 1000000 --repeat 3",
     "bench:latency": "node bench/run-latency.mjs",
     "sbom": "npm sbom --sbom-format cyclonedx --sbom-type library --omit dev",
-    "bench:append:quick": "node bench/append.mjs --events 20000 --repeat 3"
+    "bench:append:quick": "node bench/append.mjs --events 20000 --repeat 3",
+    "lint": "node tools/lint-failure-codes.mjs"
   },
   "dependencies": {
     "@open-multi-agent/core": "1.21.1",

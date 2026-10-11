@@ -62,6 +62,15 @@ Each carries what a reader may conclude, because "verification failed" is useles
 `IDENTITY_UNPINNED` | The pack is signed under a key or origin the acceptance policy did not name (`FR-63`). Nothing prevents an operator keeping a second log; this is how a reader who pinned an identity is told they are being shown another. |
 `WITNESS_MISSING` | A witness **expected for this checkpoint** — given its tier and cadence — has no proof in the pack (`FR-66`). **Inconclusive, not a finding of deletion.** Absence is consistent with pending under fail-open, a slower roll-up tier, an unavailable witness, or a removed receipt, and nothing in the pack distinguishes them. Demonstrating removal requires an earlier pack that held the proof, which is cross-pack comparison (`DES-19`). |
 `TRUNCATED_BELOW_DISCLOSED` | A pack already disclosed holds a countersigned checkpoint above where this record ends. **Truncation, caught without a stateful witness.** |
+`LEAF_INCONCLUSIVE` | The leaf salt is absent, so the leaf cannot be reproduced. **Inconclusive** — lawful erasure deletes exactly that (`DES-13`), and a shredded record must never read as a tamper. |
+`CONTENT_MISMATCH` | The stored payload does not reproduce the commitment in its record: it was substituted. |
+`CONTENT_ABSENT` | A payload is not in the store. **Inconclusive**: shredded by design, retained elsewhere, or lost, and the pack cannot tell those apart. |
+`SIZE_REGRESSED` | A checkpoint commits to more records than the log holds — the tail was removed below a size already committed. |
+`UNANCHORED` | No checkpoint is present at all, so nothing commits to a tree size. **Inconclusive.** |
+`OPSIG_UNCHECKED` | A checkpoint is signed, but no operator identity was pinned, so the signature means nothing to this reader. **Inconclusive.** |
+`SUITE_UNDECLARED` | A checkpoint records no algorithm suite, so which primitives signed it is not stated and cannot be recovered years later (`DES-16`). **Inconclusive.** |
+`CHECKPOINTS_UNATTRIBUTED` | Notes sit outside any collector's directory and belong to no chain. **Inconclusive** — they were not checked, because a note that cannot be attributed is not evidence about a particular log. |
+`NO_EVIDENCE` | No chain was found for the collector named. **Inconclusive.** |
 `CONSISTENCY_BROKEN` | Two signed checkpoints are not prefixes of one history, or a later one commits to fewer records than an earlier one. Append-only is checked, not assumed (`DES-04` rule 4). |
 `UNANCHORED_TAIL` | Records sit above the highest tree size any checkpoint commits to. **Inconclusive**, and the height is reported: it is what bounds every truncation claim, and what `DES-19`'s cross-pack comparison keys on. |
 `TORN_WRITE` | The last line of the chain is incomplete. **Inconclusive** — that is what a crash during an append leaves, and the records before it verify normally. A broken line anywhere else is `MALFORMED_RECORD` and fails, because only the end is explicable by a crash. |
