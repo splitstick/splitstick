@@ -15,7 +15,7 @@
  * interleave; heartbeats carry no run at all.
  */
 
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { chainEntry, genesis } from './chain.mjs';
 import { newSalt } from './leaf.mjs';
 import { treeRoot } from './merkle.mjs';
@@ -28,6 +28,9 @@ import { SCHEMA_VERSION } from './record.mjs';
 const isBytes = v => v instanceof Uint8Array;
 
 export class Collector {
+  /** @type {Map<string, { correlation: string, attempts: number }>} in-memory only */
+  #actions = new Map();
+
   /**
    * @param {object} o
    * @param {import('./store.mjs').Store} o.store
@@ -70,6 +73,34 @@ export class Collector {
 
   /** @returns {string} an opaque random correlation id — DES-13 requires it carry nothing. */
   static newCorrelation() { return randomBytes(12).toString('hex'); }
+
+  /**
+   * Correlate an attempt with the logical action it belongs to — FR-62.
+   *
+   * This lives in core rather than in each adapter for two reasons. DES-14 says
+   * an adapter may not touch cryptography, and grouping needs a digest of the
+   * arguments; and attempt numbering is record semantics, so two adapters
+   * deriving it separately would produce packs that disagree about what one
+   * logical action was.
+   *
+   * Keyed on the tool and the exact arguments, because a retry re-sends them.
+   * The key is kept in memory only: the correlation identifier itself is
+   * retained after erasure (DES-13), so it is a random value looked up in a
+   * table that is not retained, never a digest of the payload.
+   *
+   * @param {string} tool
+   * @param {Uint8Array} [args]
+   * @returns {{ correlation: string, attempt: number }}
+   */
+  correlate(tool, args) {
+    const key = createHash('sha256').update(tool).update('\u0000')
+      .update(args ?? Buffer.alloc(0)).digest('hex');
+    const seen = this.#actions.get(key);
+    if (seen) { seen.attempts += 1; return { correlation: seen.correlation, attempt: seen.attempts }; }
+    const correlation = Collector.newCorrelation();
+    this.#actions.set(key, { correlation, attempts: 1 });
+    return { correlation, attempt: 1 };
+  }
 
   /**
    * Externalise a payload and return its commitment.

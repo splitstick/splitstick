@@ -9,7 +9,8 @@
     "provenance": true
   },
   "exports": {
-    ".": "./src/index.mjs"
+    ".": "./src/index.mjs",
+    "./*": "./src/*.mjs"
   },
   "files": [
     "src",

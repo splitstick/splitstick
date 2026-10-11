@@ -56,6 +56,7 @@ export function noteKeyId(name, publicKey, algorithm = ALG_ED25519) {
  * @param {string} name @param {Uint8Array} publicKey @param {number} [algorithm]
  */
 export function formatVkey(name, publicKey, algorithm = ALG_ED25519) {
+  if (name.includes('+')) throw new NoteError("a note identity must not contain '+'");
   const id = noteKeyId(name, publicKey, algorithm).toString('hex');
   const body = Buffer.concat([Buffer.from([algorithm]), publicKey]).toString('base64');
   return `${name}+${id}+${body}`;
@@ -66,11 +67,17 @@ export function formatVkey(name, publicKey, algorithm = ALG_ED25519) {
  * @returns {{ name: string, algorithm: number, publicKey: Buffer, keyId: Buffer }}
  */
 export function parseVkey(vkey) {
-  const parts = vkey.split('+');
-  if (parts.length < 3) throw new NoteError('a vkey is name+keyid+key');
-  const body = /** @type {string} */ (parts.pop());
-  const id = /** @type {string} */ (parts.pop());
-  const name = parts.join('+');
+  // Split at the FIRST two separators, never the last. Standard base64 contains
+  // '+', so popping from the end mangles any key whose encoding happens to
+  // include one — which is one key in four and therefore a bug that would have
+  // shipped looking like an intermittent failure.
+  const i = vkey.indexOf('+');
+  const j = vkey.indexOf('+', i + 1);
+  if (i < 1 || j < 0) throw new NoteError('a vkey is name+keyid+key');
+  const name = vkey.slice(0, i);
+  const id = vkey.slice(i + 1, j);
+  const body = vkey.slice(j + 1);
+  if (!/^[0-9a-f]{8}$/.test(id)) throw new NoteError(`a vkey key id is 8 hex characters, got ${JSON.stringify(id)}`);
   const raw = Buffer.from(body, 'base64');
   if (raw.length !== 33) throw new NoteError('a vkey body is one algorithm byte and a 32-byte key');
   const algorithm = /** @type {number} */ (raw[0]);

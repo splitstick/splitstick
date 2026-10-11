@@ -254,3 +254,44 @@ test('the collector never receives key material, only a signing function', async
   }
   assert.ok(!JSON.stringify(signer).includes('PRIVATE KEY'));
 });
+
+// FR-62 — correlation lives in core, not in each adapter: DES-14 forbids an
+// adapter touching cryptography, and two adapters numbering attempts
+// independently would produce packs that disagree about one logical action.
+test('FR-62: correlate groups retries of one action and numbers the attempts', async () => {
+  const { collector } = await fresh();
+  const args = Buffer.from('{"amount":2000000}');
+  const a = collector.correlate('transfer_funds', args);
+  const b = collector.correlate('transfer_funds', args);
+  assert.equal(a.correlation, b.correlation);
+  assert.deepEqual([a.attempt, b.attempt], [1, 2]);
+
+  const other = collector.correlate('transfer_funds', Buffer.from('{"amount":25}'));
+  assert.notEqual(other.correlation, a.correlation);
+  assert.equal(other.attempt, 1);
+
+  const sameArgsOtherTool = collector.correlate('refund', args);
+  assert.notEqual(sameArgsOtherTool.correlation, a.correlation);
+});
+
+test('a correlation identifier is opaque and carries nothing — DES-13', async () => {
+  const { collector } = await fresh();
+  const { correlation } = collector.correlate(
+    'transfer_funds', Buffer.from('{"amount":2000000,"iban":"DE89370400440532013000"}'));
+  assert.match(correlation, /^[0-9a-f]{24}$/);
+  for (const n of ['2000000', 'DE89', 'transfer']) assert.ok(!correlation.includes(n));
+  // And two collectors never agree on it by construction, because it is random
+  // rather than derived — a derived id would be a retained disclosure.
+  const { collector: second } = await fresh();
+  assert.notEqual(
+    second.correlate('transfer_funds', Buffer.from('{"amount":2000000,"iban":"DE89370400440532013000"}')).correlation,
+    correlation);
+});
+
+test('no-argument calls correlate separately from each other by tool', async () => {
+  const { collector } = await fresh();
+  const a = collector.correlate('ping');
+  const b = collector.correlate('ping');
+  assert.equal(a.correlation, b.correlation);
+  assert.equal(b.attempt, 2);
+});

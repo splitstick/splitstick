@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { createHash } from 'node:crypto';
+import { createHash, generateKeyPairSync } from 'node:crypto';
 import {
   noteKeyId, formatVkey, parseVkey, checkpointText, parseCheckpointText,
   encodeNote, parseNote, NoteError,
@@ -118,4 +118,25 @@ test('a malformed note is refused rather than partially parsed', () => {
                      'text\n\n— name\n', 'text\n\n— name !!!notbase64!!!\n']) {
     assert.throws(() => parseNote(bad), NoteError, JSON.stringify(bad));
   }
+});
+
+// A regression: standard base64 contains '+', so a vkey must be split at its
+// first two separators, not its last. Roughly one key in four encodes with a
+// '+', which would have shipped looking like an intermittent failure.
+test('a vkey whose base64 contains + still parses', () => {
+  let found = null;
+  for (let i = 0; i < 500 && !found; i++) {
+    const pub = generateKeyPairSync('ed25519').publicKey
+      .export({ format: 'der', type: 'spki' }).subarray(-32);
+    const vkey = formatVkey('splitstick.dev/host-1', pub);
+    if (vkey.split('+').length > 3) found = { pub, vkey };
+  }
+  assert.ok(found, 'expected to find a key whose base64 contains a +');
+  const parsed = parseVkey(found.vkey);
+  assert.equal(parsed.name, 'splitstick.dev/host-1');
+  assert.equal(parsed.publicKey.toString('hex'), found.pub.toString('hex'));
+});
+
+test("a note identity containing '+' is refused rather than silently mis-split", () => {
+  assert.throws(() => formatVkey('a+b', Buffer.alloc(32)), NoteError);
 });
