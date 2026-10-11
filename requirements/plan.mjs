@@ -23,11 +23,29 @@ for (const m of milestones) for (const id of m.ids) {
 const r10 = reqs.filter(r => r.release === '1.0');
 for (const r of r10) if (!assigned.has(r.id)) errs.push(`${r.id}: unassigned (release 1.0)`);
 for (const m of milestones) for (const g of m.gate) if (!gates[g]) errs.push(`${m.id}: unknown gate ${g}`);
+// carries: a requirement whose CLOSURE lands in a later milestone than the one
+// that built it. The assignment does not move — that would lose the record of
+// when the work was done — so it is validated separately. An entry must name an
+// existing requirement from an earlier milestone, say why it is carried, and say
+// what closes it; without the last two it is a note rather than a plan.
+for (const m of milestones) {
+  for (const c of m.carries ?? []) {
+    if (!c.id) { errs.push(`${m.id}: a carried entry has no id`); continue; }
+    if (!byId.has(c.id)) { errs.push(`${m.id}: carries unknown requirement ${c.id}`); continue; }
+    if (!c.why || !c.closes) errs.push(`${m.id}: carried ${c.id} needs both why and closes`);
+  }
+  const dupc = (m.carries ?? []).map(c => c.id).filter((id, i, a) => a.indexOf(id) !== i);
+  if (dupc.length) errs.push(`${m.id}: duplicate carried ids: ${[...new Set(dupc)].join(' ')}`);
+}
 const gated = new Set(milestones.flatMap(m => m.gate));
 for (const g of Object.keys(gates)) if (!gated.has(g)) errs.push(`gate ${g}: never closed by any milestone`);
 // ordering: a requirement may not depend on one in a later milestone
 const msOfId = new Map();
 for (const m of milestones) for (const id of m.ids) msOfId.set(id, m.id);
+for (const m of milestones) for (const c of m.carries ?? []) {
+  const owner = msOfId.get(c.id);
+  if (!owner) errs.push(`${m.id}: carries ${c.id}, which is in no 1.0 milestone`);
+}
 const pos = id => order.indexOf(msOfId.get(id));
 for (const [id, deps] of Object.entries(depends)) {
   if (!msOfId.has(id)) continue;
@@ -97,7 +115,17 @@ for (const m of milestones) {
   md += `- **Gate:** ${m.gate.length ? m.gate.map(g=>`\`${g}\` — ${gates[g].class}`).join('; ') : 'none — unlocks adoption rather than closing an attack class'}\n`;
   md += `- **Requirements:** ${m.ids.length} (${mix})\n`;
   md += `- **Effort:** weeks ${m.weeks}\n`;
-  md += `- **Exit criteria:** ${m.exit}\n\n`;
+  md += `- **Exit criteria:** ${m.exit}\n`;
+  if ((m.carries ?? []).length) {
+    md += `- **Carried in for closure:** ${m.carries.map(c => '`' + c.id + '`').join(', ')}\n`;
+  }
+  md += `\n`;
+  for (const c of m.carries ?? []) {
+    const r = byId.get(c.id);
+    md += `> **Carried from ${msOfId.get(c.id)} — \`${c.id}\` ${esc(r.title)}**\n>\n`;
+    md += `> ${esc(c.why)}\n>\n`;
+    md += `> *Closes when:* ${esc(c.closes)}\n\n`;
+  }
   md += `| | ID | Requirement | Verified by |\n|---|---|---|---|\n`;
   for (const id of m.ids) {
     const r = byId.get(id);

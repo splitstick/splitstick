@@ -127,6 +127,8 @@ percentile without attribution invites widening the budget instead of finding th
 
 ## Follow-ups
 
+[`docs/m1-retro.md`](docs/m1-retro.md) is the M1 retrospective: what worked, what
+the 27 defects had in common, and the five mechanisms that change for M3a.
 [`docs/m1-follow-ups.md`](docs/m1-follow-ups.md) records what M1 left open and
 what would close it: NFR-01's acceptance measurement on a qualifying machine,
 NFR-02's workload assumptions, and two things to carry into M3a — fuzzing the

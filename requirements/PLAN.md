@@ -269,7 +269,14 @@ Stop depending on one upstream project, and make the format genuinely somebody e
 - **Gate:** none — unlocks adoption rather than closing an attack class
 - **Requirements:** 19 (FR×6  GOV×4  NFR×3  INT×2  OPS×2  LEG×2)
 - **Effort:** weeks 4-6
-- **Exit criteria:** End-to-end capture against two non-OMA runtimes over both MCP transports. A third-party witness passes the published conformance suite. A fully self-hosted deployment verified at zero egress, with no account and no enrolment with us.
+- **Exit criteria:** End-to-end capture against two non-OMA runtimes over both MCP transports. A third-party witness passes the published conformance suite. A fully self-hosted deployment verified at zero egress, with no account and no enrolment with us. The conformance suite fuzzes the canonicaliser rather than only driving fixed vectors, because a fixed-vector suite is exactly what missed the surrogate collision in M1.
+- **Carried in for closure:** `FR-52`
+
+> **Carried from M1 — `FR-52` Canonicalisation completeness**
+>
+> M1 proved canonicalisation completeness with a property test that mutates every field at every depth, and an independent review still found a collision it could not reach: two records differing only by an unpaired surrogate produced identical canonical bytes and identical leaves. The test only mutates values that round-trip through JSON, so no amount of running it would ever have found that.
+>
+> *Closes when:* FR-46's conformance suite fuzzes the canonicaliser rather than only driving fixed vectors: unpaired surrogates, numbers at the representable boundary, deeply nested structures, keys that collide after Unicode normalisation. The property asserted is that distinct inputs never share canonical bytes.
 
 | | ID | Requirement | Verified by |
 |---|---|---|---|
@@ -300,7 +307,20 @@ Every promise that is a claim rather than a feature. This milestone is mostly ab
 - **Gate:** none — unlocks adoption rather than closing an attack class
 - **Requirements:** 37 (SCOPE×15  GOV×7  DOC×6  SEC×4  LEG×3  TRC×2)
 - **Effort:** weeks 2
-- **Exit criteria:** Claims audit clean across all sixteen scope guards. Every published figure has a passing benchmark behind it. Bounty terms published, stating plainly that recognition is non-cash while the project is unfunded. No surface anywhere claims conformity, certification, or tamper-proofing.
+- **Exit criteria:** Claims audit clean across all sixteen scope guards. Every published figure has a passing benchmark behind it. Bounty terms published, stating plainly that recognition is non-cash while the project is unfunded. No surface anywhere claims conformity, certification, or tamper-proofing. NFR-01 has a qualifying acceptance measurement on the reference environment and NFR-02 has been re-measured against a real provider; neither may be reported as met on a development-machine number.
+- **Carried in for closure:** `NFR-01`, `NFR-02`
+
+> **Carried from M1 — `NFR-01` Low-overhead evidence capture**
+>
+> M1 measured the append path and revised the budget to p95 under 1 ms and p99 under 3 ms, but no run has qualified: the development machine reports itself a regression metric on load average, event count and repeats. The numbers recorded against it are measurements, not acceptance.
+>
+> *Closes when:* One run of bench/append.mjs over at least 1e6 events and at least three repeats, on a machine meeting every constraint in bench/reference-env.json, with --machine and --storage named. The harness prints QUALIFYING ACCEPTANCE MEASUREMENT only when nothing is short; that JSON becomes the requirement evidence.
+
+> **Carried from M1 — `NFR-02` Run latency budget**
+>
+> The 2 percent budget is established against a scripted model and an assumed 400 ms per model call. Both assumptions are recorded in the result, and neither has been tested against a real provider.
+>
+> *Closes when:* Re-measure the interleaved paired A/B against a real provider once one is in the loop, and confirm the 95 percent interval still clears the budget at that model latency.
 
 | | ID | Requirement | Verified by |
 |---|---|---|---|
