@@ -64,6 +64,24 @@ has no Keccak, and guessing is worse than refusing. A proof using it reports as
 unimplemented. No calendar in the default set uses it; a proof from elsewhere
 might.
 
+## Found by reviewing my own work before shipping
+
+**The Anchorer never computed a consistency proof.** `#consistencyContext`
+returned an empty one with a comment saying the caller would supply it. No
+caller did, so a stateful witness — the adapter that closes classes 4 and 5 —
+refused every submission after the first with a 409. Nothing caught it because
+the only place that wired the Anchorer to a real witness anchored exactly one
+checkpoint, and a seam exercised once looks like a seam that works.
+
+The fix also had a subtlety worth recording: the proof must be over the tree the
+checkpoint **commits to**, not over the log as it is now. Those differ whenever
+records land between the checkpoint and the anchoring call, which under
+fail-open is most of the time — and a proof over the current leaves would
+*verify* while describing a tree the checkpoint does not, leaving the witness
+holding a root for a height that was never checkpointed. There is a test for
+exactly that, and the red-team harness now anchors every checkpoint rather than
+the first.
+
 ## Decided against
 
 **Fetching block headers to confirm an OpenTimestamps attestation.** It would

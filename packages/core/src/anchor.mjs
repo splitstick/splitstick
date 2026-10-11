@@ -28,6 +28,7 @@
 import { parseNote, parseCheckpointText, parseVkey, noteKeyId } from './note.mjs';
 import { verifyNoteSignature } from './signer.mjs';
 import { parseEnvelope, addCountersignature, buildEnvelope } from './envelope.mjs';
+import { consistencyProof } from './merkle.mjs';
 
 /**
  * What a witness can establish. Not a ranking: a TSA's independent clock is
@@ -177,7 +178,7 @@ export class Anchorer {
     // to extend.
     const ctx = artefact === 'rollup'
       ? { old_size: 0, consistency_proof: [] }
-      : this.#consistencyContext(seq);
+      : this.#consistencyContext(seq, parsed.tree_size);
 
     /** @type {{ issuer: string, verified: boolean, establishes: string[] }[]} */
     const attached = [];
@@ -262,10 +263,25 @@ export class Anchorer {
   }
 
   /**
+   * What a stateful witness needs to see that this submission extends what it
+   * already holds — FR-43.
+   *
+   * The proof is computed over the tree the checkpoint being submitted COMMITS
+   * TO, not over the log as it is now. Those differ whenever records land
+   * between the checkpoint and the anchoring call, which under fail-open is
+   * most of the time — and a proof over the current leaves would verify while
+   * describing a tree the checkpoint does not, leaving the witness holding a
+   * root for a height that was never checkpointed.
+   *
+   * The highest previously WITNESSED size is the honest `old_size`: a proof
+   * from a height the witness has not seen proves consistency with something
+   * else, and it refuses one, correctly.
+   *
    * @param {number} seq
+   * @param {number|null} tree_size what this checkpoint commits to
    * @returns {{ old_size: number, consistency_proof: string[] }}
    */
-  #consistencyContext(seq) {
+  #consistencyContext(seq, tree_size) {
     let old_size = 0;
     for (const { seq: s, blob } of this.store.readCheckpoints()) {
       if (s >= seq) continue;
@@ -273,12 +289,26 @@ export class Anchorer {
       if (!p.ok || p.unwitnessed || p.tree_size === null) continue;
       if (p.tree_size > old_size) old_size = p.tree_size;
     }
-    if (old_size === 0) return { old_size: 0, consistency_proof: [] };
-    // The proof is computed by the caller that holds the leaves; the Anchorer
-    // does not read the chain, so it reports the height and leaves the proof to
-    // the adapter's own context. A self-hosted witness refuses without one,
-    // which is the correct outcome rather than a silently weaker submission.
-    return { old_size, consistency_proof: [] };
+    if (old_size === 0 || tree_size === null || tree_size <= old_size) {
+      return { old_size, consistency_proof: [] };
+    }
+    // This used to return an empty proof with a comment saying the caller would
+    // supply one. No caller did, so a stateful witness refused every submission
+    // after the first — and nothing caught it, because the only test that wired
+    // the two together anchored exactly one checkpoint. A seam exercised once
+    // looks like a seam that works.
+    const leaves = this.store.readChain().map(e => e.leaf);
+    if (leaves.length < tree_size) {
+      // The log no longer reaches the height this checkpoint claims. Submitting
+      // without a proof lets the witness refuse and say so, which is a better
+      // outcome than this code deciding what happened.
+      return { old_size, consistency_proof: [] };
+    }
+    return {
+      old_size,
+      consistency_proof: consistencyProof(leaves.slice(0, tree_size), old_size)
+        .map(b => b.toString('base64')),
+    };
   }
 
   /**

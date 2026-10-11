@@ -133,9 +133,15 @@ async function buildWitnessed() {
     store: ctx.store, witnesses: [adapter], quorum: 1,
     acceptance: { [WITNESS]: wkey.publicKey },
   });
-  const r = await anchorer.anchor(ctx.checkpoint.checkpoint_seq);
-  if (r.attached.length !== 1) {
-    throw new Error(`the witnessed baseline did not anchor: ${JSON.stringify(r.failed)}`);
+  // Every checkpoint, not only the first. Anchoring one exercises the easy half
+  // of the witness protocol and hides the sequence path entirely — which is how
+  // a missing consistency proof survived until a test wired the two together
+  // across four batches.
+  for (const { seq } of ctx.store.readCheckpoints()) {
+    const r = await anchorer.anchor(seq);
+    if (r.attached.length !== 1) {
+      throw new Error(`the witnessed baseline did not anchor checkpoint ${seq}: ${JSON.stringify(r.failed)}`);
+    }
   }
   // What the auditor independently holds, retained by the witness.
   const disclosed = witness.roots(ORIGIN).map((x) => ({ tree_size: x.tree_size, root: x.root }));
