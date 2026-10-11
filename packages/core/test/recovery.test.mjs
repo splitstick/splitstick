@@ -270,3 +270,75 @@ test('an empty journal is not torn', async () => {
   collector.action(tx({ correlation: 'c-1' }));
   assert.equal(new Store(root, 'host-1').readChainDetailed().torn, false);
 });
+
+/**
+ * Review finding. recover() repaired a journal without owning it. A second
+ * instance could open the same collector, observe the torn tail the legitimate
+ * writer leaves transiently mid-append, and truncate bytes that writer had just
+ * written — confirmed: 36 bytes removed from a journal another instance held.
+ *
+ * Repair is a write, so it takes the write lock like any other, and holds it
+ * through the resumption that follows. Recovery of a collector someone else
+ * owns is refused, not attempted.
+ */
+test('recovery refuses to touch a journal another instance owns', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'splitstick-rec-'));
+  const owner = await open(root, 'host-1');
+  owner.collector.action(tx({ correlation: 'c-1' }));
+  assert.equal(owner.store.lock.held, true);
+
+  appendFileSync(chainPath(root), '{"record":{"v":1,"record_seq":2,"lea');
+  const chainBefore = readFileSync(chainPath(root));
+  const saltsBefore = readFileSync(saltsPath(root));
+
+  const intruder = await open(root, 'host-1');
+  assert.ok(intruder.collector.degraded, 'it still sees the damage');
+  assert.throws(() => intruder.collector.recover(), StoreBusy,
+    'but may not act on a collector it does not own');
+  assert.equal(intruder.collector.degraded !== null, true, 'and stays degraded');
+
+  assert.deepEqual(readFileSync(chainPath(root)), chainBefore, 'the chain is untouched');
+  assert.deepEqual(readFileSync(saltsPath(root)), saltsBefore, 'and so are the salts');
+});
+
+test('repair itself refuses without the lock, not only recover()', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'splitstick-rec-'));
+  const owner = await open(root, 'host-1');
+  owner.collector.action(tx({ correlation: 'c-1' }));
+  appendFileSync(chainPath(root), 'partial');
+  const before = readFileSync(chainPath(root));
+
+  const intruder = new Store(root, 'host-1');
+  assert.throws(() => intruder.repairTornTail(), StoreBusy, 'the guard is on the write, not the caller');
+  assert.deepEqual(readFileSync(chainPath(root)), before);
+});
+
+test('the rightful owner recovers and keeps the lock through resumption', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'splitstick-rec-'));
+  const first = await open(root, 'host-1');
+  first.collector.action(tx({ correlation: 'c-1' }));
+  first.store.close();                               // process ends, lock released
+  appendFileSync(chainPath(root), '{"record":{"v":1,"record_seq":2,"lea');
+
+  const next = await open(root, 'host-1');
+  const r = next.collector.recover();
+  assert.ok(r.repaired_chain_bytes > 0);
+  assert.equal(next.store.lock.held, true, 'ownership is retained through resumption');
+  next.collector.action(tx({ correlation: 'c-2' }));
+  assert.deepEqual(next.store.readChain().map(e => /** @type {any} */ (e.record).record_seq), [1, 2]);
+  // And nobody else can step in afterwards.
+  const other = await open(root, 'host-1');
+  assert.throws(() => other.collector.recover(), StoreBusy);
+});
+
+test('a recovery that needs no repair still establishes ownership', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'splitstick-rec-'));
+  const owner = await open(root, 'host-1');
+  owner.collector.action(tx({ correlation: 'c-1' }));
+
+  const intruder = await open(root, 'host-1');
+  // Intact journals: nothing to repair, but resuming would still mean two
+  // writers assigning sequences from the same position.
+  assert.equal(intruder.collector.degraded, null);
+  assert.throws(() => intruder.collector.recover(), StoreBusy);
+});

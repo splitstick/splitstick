@@ -117,6 +117,11 @@ export class Collector {
    * @returns {{ record_seq: number, source_seq: number, repaired_chain_bytes: number, repaired_salts_bytes: number }}
    */
   recover() {
+    // Take ownership before inspecting anything, and keep it through the
+    // resumption that follows. Recovery reads a position and then writes from
+    // it; doing that on a collector another instance owns means two writers
+    // assigning sequences from the same place, repair or no repair.
+    this.store.lock.claim();
     const before = this.store.readChainDetailed();
     if (before.malformed.length > 0 || before.salts_malformed.length > 0) {
       throw new Error(

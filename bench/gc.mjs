@@ -26,8 +26,16 @@
 
 import { PerformanceObserver } from 'node:perf_hooks';
 
-/** How long to let pending performance entries drain before disconnecting. */
-const DRAIN_MS = 60;
+/**
+ * Draining waits for QUIESCENCE, not a fixed delay.
+ *
+ * A fixed 60 ms was enough on an idle machine and not enough under load, which
+ * made the self-check intermittent — and an instrument check that fails
+ * randomly is no more use than one that cannot fail. So the drain ticks until
+ * two consecutive ticks bring nothing new, or the deadline passes.
+ */
+const DRAIN_TICK_MS = 25;
+const DRAIN_DEADLINE_MS = 2000;
 
 /**
  * @typedef {object} GcRun
@@ -64,7 +72,14 @@ export function gcRecorder() {
      * @returns {Promise<GcRun>}
      */
     async stop() {
-      await new Promise((resolve) => setTimeout(resolve, DRAIN_MS));
+      const deadline = Date.now() + DRAIN_DEADLINE_MS;
+      let quiet = 0;
+      let seen = -1;
+      while (Date.now() < deadline && quiet < 2) {
+        await new Promise((resolve) => setTimeout(resolve, DRAIN_TICK_MS));
+        if (windows.length === seen) quiet += 1;
+        else { quiet = 0; seen = windows.length; }
+      }
       if (observer) observer.disconnect();
       observer = null;
       return { windows: [...windows], totalMs, count: windows.length };
@@ -92,14 +107,21 @@ export function gcOverlap(samples, windows) {
  * already.
  * @returns {Promise<{ verified: boolean, count: number }>}
  */
-export async function selfCheck() {
-  const gc = gcRecorder();
-  gc.start();
-  let sink = [];
-  for (let i = 0; i < 300_000; i++) {
-    sink.push(Buffer.alloc(200, i % 256));
-    if (sink.length > 2000) sink = [];
+export async function selfCheck(attempts = 3) {
+  let count = 0;
+  for (let attempt = 0; attempt < attempts && count === 0; attempt++) {
+    const gc = gcRecorder();
+    gc.start();
+    // Retained, so the collector has to work rather than discarding a sink the
+    // optimiser could have elided entirely.
+    let keep = [];
+    for (let i = 0; i < 400_000; i++) {
+      keep.push({ i, buf: Buffer.alloc(256, i % 256) });
+      if (keep.length > 5000) keep = keep.slice(2500);
+    }
+    if (keep.length === 0) throw new Error('unreachable');   // keep the sink live
+    const run = await gc.stop();
+    count = run.count;
   }
-  const run = await gc.stop();
-  return { verified: run.count > 0, count: run.count };
+  return { verified: count > 0, count };
 }

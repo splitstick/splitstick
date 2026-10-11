@@ -100,12 +100,17 @@ trusting    the cryptographic primitives (SHA-256, Ed25519)
 `npm run bench` prints the budgets with the filesystem's own numbers beside them, because a
 percentile without attribution invites widening the budget instead of finding the cause.
 
-- **NFR-02, added agent run latency — met.** A real A/B through OMA's orchestrator, with the
-  arms interleaved: 2.9 ms added against a 3.9 ms noise floor taken from the baseline arm's own
-  spread, so the difference is not distinguishable from the machine. That passes the 2% budget
-  and is not evidence that the collector is free. An earlier version of this harness ran the
-  arms sequentially and reported a *negative* overhead — noise printed as a speedup.
-- **NFR-01, low-overhead evidence capture — within budget, stretch target not met.** The
+- **NFR-02, added agent run latency — met, with the interval to prove it.** Interleaved A/B
+  through OMA's real orchestrator, analysed as a paired difference: 0.864 ms added, 95%
+  interval [-1.612, 3.340] ms, wholly below the 16.975 ms that 2% of a 400 ms-per-call run
+  allows. The interval is wide against the difference and narrow against the budget, which is
+  the distinction that matters. A verdict is only `within` when the whole interval clears the
+  budget; a budget falling inside it reports `UNRESOLVED`.
+- **NFR-01, low-overhead evidence capture — open, pending a qualifying run.** The harness
+  declares every run an acceptance measurement or a regression metric against
+  `bench/reference-env.json` and names each shortfall, so a laptop number cannot be mistaken
+  for acceptance. On the development machine (a regression metric): p50 0.23 ms, p95 0.49 ms,
+  p99 1.77 ms against p95 ≤ 1 ms and p99 ≤ 3 ms. The
   requirement was revised at M1 off the back of these measurements: p95 ≤ 1 ms and
   p99 ≤ 3 ms on a defined reference environment, with the original p99 ≤ 1 ms kept as a
   stretch goal. Measured 0.22 ms p50, 0.47 ms p95, 1.75 ms p99. Cryptography costs 0.03 ms

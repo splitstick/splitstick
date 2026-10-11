@@ -81,8 +81,17 @@ Three things make this a revision and not a relaxation.
 
 **The budget is a budget, not a finding.** 3 ms is an engineering number, to be
 confirmed against representative hardware, sustained workloads and realistic
-payload sizes on a defined reference environment. It is not an industry
-standard and this document does not pretend otherwise.
+payload sizes. It is not an industry standard and this document does not pretend
+otherwise.
+
+The reference environment is `bench/reference-env.json`: at least four CPUs,
+8 GB, a one-minute load average under 1.0, a million events and three repeats.
+The thresholds are deliberately loose, because their job is to exclude a busy
+laptop and a shared CI runner rather than to require particular hardware. The
+harness compares each run against it and prints whether it produced an
+**acceptance measurement** or a **regression metric**, naming every shortfall —
+so an acceptance claim cannot be made by accident from the wrong machine, which
+is how two of this project's performance claims had to be withdrawn.
 
 **The attribution has to be earned, and it took three attempts.** The first
 draft asserted the p99 tail was garbage collection — inference from the
@@ -114,4 +123,30 @@ in the ordering that replaced it — that is the shape of the risk here. What th
 project sells is trustworthy evidence at low overhead, not the fastest audit
 logger.
 
-`NFR-02` independently bounds end-to-end agent run latency at 2%, and is met.
+## Every budget proves its instrument and states its resolution
+
+Three performance claims here have been wrong in the same way: a number
+reported more confidently than the measurement supported. An attribution with no
+measurement behind it; a measurement whose instrument was never validated, which
+produced a zero and prompted a retraction that was itself wrong; and a
+sequential A/B whose drift produced a negative overhead, printed as a speedup.
+
+So `bench/precision.mjs` and `bench/gc.mjs` are modules with their own tests,
+and every budget reports:
+
+- **its instruments, checked in the same run.** Clock resolution against the
+  smallest quantity reported, and the GC recorder against a deliberate
+  allocation storm. A zero from an instrument that cannot see anything is not a
+  measurement.
+- **its resolution**, not only its result. `NFR-02` is a paired difference
+  because the arms are interleaved, and reports a 95% interval.
+- **a verdict that will not overclaim.** `within` requires the whole interval to
+  sit below the budget; a budget falling *inside* the interval is reported as
+  `UNRESOLVED`, because that run is consistent with passing and with failing.
+
+`NFR-02` is met on that standard, not merely un-contradicted: 40 paired runs put
+the added latency at 0.864 ms with a 95% interval of [-1.612, 3.340] ms, wholly
+below the 16.975 ms that 2% of a 400 ms-per-call run allows. The interval is wide
+relative to the difference and narrow relative to the budget, which is the
+distinction that matters — the measurement cannot resolve whether the true cost
+is 0.5 ms or 2 ms, and does not need to in order to establish it is under 17 ms.

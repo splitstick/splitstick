@@ -1,0 +1,15 @@
+{
+  "note": "The reference environment NFR-01's acceptance measurement must run on. A number from anywhere else is a regression metric, not an acceptance result, and bench/append.mjs says which it produced. The thresholds are deliberately loose: the point is to exclude a busy laptop and a shared CI runner, not to require particular hardware.",
+  "requirement": "NFR-01",
+  "min_cpus": 4,
+  "min_memory_gb": 8,
+  "max_load_average_1m": 1.0,
+  "min_events": 1000000,
+  "min_repeats": 3,
+  "node_major_at_least": 20,
+  "excluded": [
+    "a shared CI runner, where neighbours move the tail by a factor of two",
+    "a machine under other load, which is what max_load_average_1m is for",
+    "a filesystem at or near capacity, which measurably slows file creation"
+  ]
+}

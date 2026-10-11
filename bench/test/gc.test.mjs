@@ -3,19 +3,28 @@ import assert from 'node:assert/strict';
 import { PerformanceObserver } from 'node:perf_hooks';
 import { gcRecorder, gcOverlap, selfCheck } from '../gc.mjs';
 
+/** Allocation the optimiser cannot elide: the objects stay reachable. */
 const storm = () => {
-  let sink = [];
-  for (let i = 0; i < 300_000; i++) {
-    sink.push(Buffer.alloc(200, i % 256));
-    if (sink.length > 2000) sink = [];
+  let keep = [];
+  for (let i = 0; i < 400_000; i++) {
+    keep.push({ i, buf: Buffer.alloc(256, i % 256) });
+    if (keep.length > 5000) keep = keep.slice(2500);
   }
+  return keep.length;
 };
 
 test('the recorder observes real collections', async () => {
-  const gc = gcRecorder();
-  gc.start();
-  storm();
-  const run = await gc.stop();
+  // Retried, because the drain waits for quiescence rather than a fixed delay
+  // and a loaded machine can push the first collection past one attempt. An
+  // instrument check that fails randomly is no more use than one that cannot
+  // fail, so it gets the same budget the benchmark's own self-check gets.
+  let run = { count: 0, totalMs: 0, windows: /** @type {[number, number][]} */ ([]) };
+  for (let attempt = 0; attempt < 3 && run.count === 0; attempt++) {
+    const gc = gcRecorder();
+    gc.start();
+    storm();
+    run = await gc.stop();
+  }
   assert.ok(run.count > 0, 'an allocation storm must produce pauses the recorder sees');
   assert.ok(run.totalMs > 0);
   assert.equal(run.windows.length, run.count);
@@ -33,14 +42,10 @@ test('disconnecting without draining loses the entries — which is why stop() a
   obs.observe({ entryTypes: ['gc'] });
   storm();
   obs.disconnect();
-
-  const gc = gcRecorder();
-  gc.start();
-  storm();
-  const drained = await gc.stop();
-
   assert.equal(immediate, 0, 'the undrained observer sees nothing');
-  assert.ok(drained.count > 0, 'the drained one sees the same collections');
+
+  const drained = await selfCheck();
+  assert.equal(drained.verified, true, 'the drained one sees the same collections');
 });
 
 test('selfCheck reports verified, so a zero elsewhere can be trusted', async () => {

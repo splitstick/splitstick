@@ -37,6 +37,7 @@ import { Store } from '@splitstick/core/store';
 import { parseConfig } from '@splitstick/core/config';
 import { generateDevSigner } from '@splitstick/core/signer-file';
 import { gcRecorder, gcOverlap, selfCheck } from './gc.mjs';
+import { clockResolution, environment } from './precision.mjs';
 
 const argv = process.argv.slice(2);
 const num = (name, fallback) => {
@@ -200,6 +201,25 @@ for (let i = 0; i < REPEAT; i++) {
   fileRuns.push(fs_.create_new_file);
 }
 const recorder = await selfCheck();
+const clock = clockResolution(0.05);          // p50 is ~0.2 ms; the tick must be far below it
+const env = await environment();
+const REF = JSON.parse(fs.readFileSync(new URL('./reference-env.json', import.meta.url), 'utf8'));
+
+/**
+ * Does this run qualify as NFR-01's acceptance measurement, or is it a
+ * regression metric? Saying which is the point: the same harness is used for
+ * both, and an acceptance claim from a busy laptop is the kind of number this
+ * project has already had to retract twice.
+ */
+const shortfalls = [
+  env.cpus < REF.min_cpus ? `${env.cpus} cpus < ${REF.min_cpus}` : null,
+  env.total_memory_gb < REF.min_memory_gb ? `${env.total_memory_gb} GB < ${REF.min_memory_gb} GB` : null,
+  env.load_average_1m > REF.max_load_average_1m ? `load ${env.load_average_1m} > ${REF.max_load_average_1m}` : null,
+  EVENTS < REF.min_events ? `${EVENTS} events < ${REF.min_events}` : null,
+  REPEAT < REF.min_repeats ? `${REPEAT} repeats < ${REF.min_repeats}` : null,
+  !clock.adequate ? `clock tick ${clock.tick_ms} ms too coarse` : null,
+].filter(Boolean);
+const qualifies = shortfalls.length === 0;
 const chain = across(chainRuns);
 const full = across(fullRuns);
 const baseline = { write_to_open_fd: across(fdRuns), create_new_file: across(fileRuns) };
@@ -211,7 +231,11 @@ const report = {
   repeats: REPEAT,
   arms: { chain, full },
   filesystem_baseline: baseline,
+  environment: env,
+  clock,
   gc_recorder: recorder.verified ? 'verified' : 'UNVERIFIED',
+  kind: qualifies ? 'acceptance measurement' : 'regression metric',
+  reference_environment_shortfalls: shortfalls,
   verdict: {
     p95: full.p95_ms <= BUDGET_P95_MS ? 'within' : 'over',
     p99: full.p99_ms <= BUDGET_P99_MS ? 'within' : 'over',
@@ -256,6 +280,9 @@ if (JSON_OUT) {
   process.stdout.write(`
 NFR-01  append overhead · ${EVENTS.toLocaleString('en-US')} events per arm · ${REPEAT} repeats
         budget: p95 <= ${BUDGET_P95_MS} ms, p99 <= ${BUDGET_P99_MS} ms (stretch p99 <= ${STRETCH_P99_MS} ms)
+        ${env.cpu} · ${env.cpus} cpu · ${env.platform} · node ${env.node} · load ${env.load_average_1m}
+        clock tick ${clock.tick_ms.toFixed(6)} ms (${clock.adequate ? 'adequate' : 'TOO COARSE'}) · gc recorder ${recorder.verified ? 'verified' : 'UNVERIFIED'}
+        this run is a ${qualifies ? 'QUALIFYING ACCEPTANCE MEASUREMENT' : 'REGRESSION METRIC'}${qualifies ? '' : ` — ${shortfalls.join('; ')}`}
         percentiles are the median across repeats; worst p99 and max are the worst seen
 
                    p50       p95       p99  worst p99       max   rate

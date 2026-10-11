@@ -242,6 +242,11 @@ export class Store {
    * @returns {{ chain: number, salts: number }} bytes removed from each
    */
   repairTornTail() {
+    // Repair is a WRITE. Without this a second instance could open a collector,
+    // see the torn tail the legitimate writer leaves transiently mid-append,
+    // and truncate bytes that writer had just written. The guard belongs here,
+    // on the operation, rather than only in the caller that happens to use it.
+    this.lock.claim();
     const trim = (/** @type {string} */ path) => {
       if (!existsSync(path)) return 0;
       const raw = readFileSync(path, 'utf8');

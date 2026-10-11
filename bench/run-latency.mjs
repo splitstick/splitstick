@@ -37,6 +37,7 @@ import { Store } from '@splitstick/core/store';
 import { parseConfig } from '@splitstick/core/config';
 import { generateDevSigner } from '@splitstick/core/signer-file';
 import { SplitstickRunJournal } from '@splitstick/collect-oma';
+import { pairedDifference, pairsNeededFor, verdictAgainst, clockResolution, environment } from './precision.mjs';
 
 const argv = process.argv.slice(2);
 const num = (name, fallback) => {
@@ -159,67 +160,78 @@ const median = (/** @type {number[]} */ a) => {
   return /** @type {number} */ (v[Math.floor(v.length / 2)]);
 };
 
-/**
- * A noise floor taken from the baseline arm's own spread: half its
- * interquartile range. A difference smaller than this is not distinguishable
- * from the machine, and must not be reported as a cost OR as a saving.
- * @param {number[]} a
- */
-const noiseFloor = (a) => {
-  const v = sorted(a);
-  const hi = /** @type {number} */ (v[Math.floor(v.length * 0.75)]);
-  const lo = /** @type {number} */ (v[Math.floor(v.length * 0.25)]);
-  return (hi - lo) / 2;
-};
+const clock = clockResolution(1);
+const env = await environment();
 
 await measureInterleaved(5);                       // warm both arms together
 const { base, instrumented } = await measureInterleaved(RUNS);
 
 const baseMedian = median(base);
 const withMedian = median(instrumented);
-const added = withMedian - baseMedian;
-const floor = noiseFloor(base);
-const distinguishable = Math.abs(added) > floor;
 
-const addedPercent = distinguishable && added > 0
-  ? Number((100 * added / (baseMedian + 2 * MODEL_MS)).toFixed(3))
-  : 0;
+// Paired, because the arms are interleaved: run i of each saw the same machine.
+// Comparing two medians could not separate a real 3 ms cost from drift, which
+// is how an earlier version of this harness reported a negative overhead.
+const stats = pairedDifference(base, instrumented);
+
+// The budget in milliseconds: 2% of a run whose two model calls take MODEL_MS.
+const budgetMs = 0.02 * (baseMedian + 2 * MODEL_MS);
+const verdict = verdictAgainst(stats, budgetMs);
 
 const report = {
   requirement: 'NFR-02',
   budget_percent: 2,
+  budget_ms: Number(budgetMs.toFixed(3)),
+  model_latency_assumed_ms: MODEL_MS,
   runs: RUNS,
   interleaved: true,
+  environment: env,
+  clock,
   baseline_median_ms: Number(baseMedian.toFixed(3)),
   splitstick_median_ms: Number(withMedian.toFixed(3)),
-  added_ms: Number(added.toFixed(3)),
-  noise_floor_ms: Number(floor.toFixed(3)),
-  distinguishable_from_zero: distinguishable,
-  model_latency_assumed_ms: MODEL_MS,
-  added_percent_at_model_latency: addedPercent,
-  verdict: !distinguishable
-    ? 'BELOW THE NOISE FLOOR'
-    : addedPercent < 2 ? 'WITHIN BUDGET' : 'OVER BUDGET',
-  note: distinguishable
-    ? 'The scripted-model figure is an upper bound: a real model call is hundreds of'
-      + ' milliseconds, which makes the same absolute overhead a smaller percentage, never larger.'
-    : `The difference between the arms (${added.toFixed(3)} ms) is smaller than the baseline arm's`
-      + ` own spread (${floor.toFixed(3)} ms), so it is not distinguishable from the machine. That`
-      + ' passes a 2% budget, and it is NOT evidence that the collector is free.',
+  added_ms: Number(stats.mean_diff.toFixed(3)),
+  ci95_ms: [Number(stats.ci95_low.toFixed(3)), Number(stats.ci95_high.toFixed(3))],
+  resolution_ms: Number(stats.resolution.toFixed(3)),
+  added_percent_at_model_latency: Number((100 * stats.mean_diff / (baseMedian + 2 * MODEL_MS)).toFixed(3)),
+  ci95_percent: [
+    Number((100 * stats.ci95_low / (baseMedian + 2 * MODEL_MS)).toFixed(3)),
+    Number((100 * stats.ci95_high / (baseMedian + 2 * MODEL_MS)).toFixed(3)),
+  ],
+  pairs_needed_for_1pc: pairsNeededFor(stats.sd_diff, 0.01 * (baseMedian + 2 * MODEL_MS)),
+  verdict: verdict === 'within' ? 'WITHIN BUDGET' : verdict === 'over' ? 'OVER BUDGET' : 'UNRESOLVED',
 };
+report.note = verdict === 'within'
+  ? `The whole 95% interval [${report.ci95_ms[0]}, ${report.ci95_ms[1]}] ms sits below the `
+    + `${report.budget_ms} ms the budget allows, so this run establishes the budget is met rather `
+    + 'than merely failing to contradict it. The scripted model makes this an upper bound: a real '
+    + 'call is hundreds of milliseconds, which only shrinks the percentage.'
+  : verdict === 'over'
+    ? 'The whole interval sits above the budget.'
+    : `The budget falls inside the 95% interval [${report.ci95_ms[0]}, ${report.ci95_ms[1]}] ms, so `
+      + 'this run is consistent with passing AND with failing. It resolves no verdict, and must not '
+      + `be reported as one; about ${report.pairs_needed_for_1pc} pairs would resolve a 1% effect.`;
+if (!clock.adequate) {
+  report.verdict = 'INSTRUMENT INADEQUATE';
+  report.note = `the clock resolves only ${clock.tick_ms} ms, too coarse for what this reports`;
+}
 
 if (JSON_OUT) {
   process.stdout.write(JSON.stringify(report, null, 2) + '\n');
 } else {
   process.stdout.write(`
-NFR-02  added run latency · ${RUNS} runs per arm, interleaved · real OMA orchestrator, scripted model
+NFR-02  added run latency · ${RUNS} paired runs, interleaved · real OMA orchestrator, scripted model
+        ${env.cpu} · ${env.cpus} cpu · ${env.platform} · node ${env.node} · load ${env.load_average_1m}
+        clock tick ${clock.tick_ms.toFixed(6)} ms (${clock.adequate ? 'adequate' : 'TOO COARSE'})
 
   baseline (OMA journal only)      ${report.baseline_median_ms.toFixed(3)} ms median
   with Splitstick                  ${report.splitstick_median_ms.toFixed(3)} ms median
-  added                            ${report.added_ms.toFixed(3)} ms
-  noise floor (baseline spread)    ${report.noise_floor_ms.toFixed(3)} ms
 
-  against a ${MODEL_MS} ms model call      ${addedPercent.toFixed(3)} %   budget 2.000 %
+  added (paired mean)              ${report.added_ms.toFixed(3)} ms
+  95% interval                     [${report.ci95_ms[0].toFixed(3)}, ${report.ci95_ms[1].toFixed(3)}] ms
+  resolution of this run           ±${report.resolution_ms.toFixed(3)} ms
+  budget                           ${report.budget_ms.toFixed(3)} ms  (2% of a ${MODEL_MS} ms-per-call run)
+
+  as a percentage                  ${report.added_percent_at_model_latency.toFixed(3)} %  [${report.ci95_percent[0].toFixed(3)}, ${report.ci95_percent[1].toFixed(3)}]
 
   ${report.verdict}
 
