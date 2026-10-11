@@ -40,21 +40,26 @@ async function sequenceWitness(id) {
   };
 }
 
-/** A time-only witness. Its token is opaque to an offline verifier. */
-function timeWitness(id) {
-  return {
-    id,
-    adapter: {
-      id, proof_type: /** @type {const} */ ('rfc3161'), establishes: ['time'],
-      tier: /** @type {const} */ ('anchor'),
-      async submit() {
-        return {
-          type: /** @type {const} */ ('rfc3161'), issuer: id,
-          covers: /** @type {const} */ ('note_digest'), token: Buffer.from('fake token').toString('base64'),
-        };
-      },
-    },
-  };
+/**
+ * A witness that establishes TIME only.
+ *
+ * It signs note lines, which an offline verifier can check, and the policy
+ * declares its class as `time`. That separation is deliberate: what a witness
+ * establishes is a statement in the acceptance policy, not a property of the
+ * proof format — an internal audit function that stamps a clock but keeps no
+ * sequence state is exactly this, and DES-20's point is that the classes are
+ * not uniform.
+ *
+ * An earlier version of this helper returned a placeholder RFC 3161 token,
+ * which passed only because nothing checked tokens yet. Now that FR-16 verifies
+ * them, a fake token is correctly reported as unparseable and credited with
+ * nothing — so a fixture that wants to exercise quorum accounting has to carry
+ * a proof that is actually checkable.
+ * @param {string} id
+ */
+async function timeWitness(id) {
+  const w = await sequenceWitness(id);
+  return { ...w, establishes: ['time'] };
 }
 
 /** @param {{ records?: number, witnesses?: any[] }} [o] */
@@ -82,6 +87,9 @@ const policy = (ws, quorum = 1) => ({
     establishes: w.establishes ?? (w.key ? ['sequence'] : ['time']),
   })),
 });
+
+const FIX = new URL('../../core/test/fixtures/rfc3161/', import.meta.url);
+const fix = (/** @type {string} */ n) => readFileSync(new URL(n, FIX));
 
 // ── Row 27 — the policy is an input ──────────────────────────────────────────
 
@@ -116,8 +124,8 @@ test('row 28: an empty policy says the reader trusted nobody, not that nobody si
 // ── Rows 29, 31 — quorum per capability ──────────────────────────────────────
 
 test('row 29: quorum met for time is not quorum met for sequence', async () => {
-  const a = timeWitness('tsa.a');
-  const b = timeWitness('tsa.b');
+  const a = await timeWitness('tsa.a');
+  const b = await timeWitness('tsa.b');
   const { root, vkey } = await evidence({ witnesses: [a, b] });
   const r = await verifyStore(root, {
     collector: 'host-1', vkey, policy: policy([a, b], 2),
@@ -149,7 +157,7 @@ test('row 31: a countersignature from a witness the policy does not name counts 
 // ── Row 30 — INT-02, our key absent entirely ─────────────────────────────────
 
 test('row 30 / INT-02: a pack anchored only to third parties verifies', async () => {
-  const tsa = timeWitness('tsa.example');
+  const tsa = await timeWitness('tsa.example');
   const ots = {
     id: 'bitcoin',
     adapter: {
@@ -169,7 +177,10 @@ test('row 30 / INT-02: a pack anchored only to third parties verifies', async ()
     policy: {
       quorum: 1,
       witnesses: [
-        { id: 'tsa.example', establishes: ['time'] },
+        // The witness's own key, which the reader must have to check anything
+        // it signed. INT-02's claim is that OUR key is absent, not that the
+        // reader verifies on trust.
+        { id: 'tsa.example', establishes: ['time'], public_key: tsa.key.publicKey.toString('base64') },
         { id: 'bitcoin', establishes: ['existence'] },
       ],
     },
@@ -281,10 +292,122 @@ test('row 32: before truncation, the same evidence DOES claim truncation is dete
 });
 
 test('row 33: with time-only witnesses, truncation above the last checkpoint stays undetected and is said to be', async () => {
-  const tsa = timeWitness('tsa.example');
+  const tsa = await timeWitness('tsa.example');
   const { root, vkey } = await evidence({ records: 4, witnesses: [tsa] });
   const r = await verifyStore(root, { collector: 'host-1', vkey, policy: policy([tsa]) });
   assert.equal(r.summary.failed, 0);
   assert.ok(r.capability.cannot.some(s => /sequence state/i.test(s) && /truncation/i.test(s)),
     JSON.stringify(r.capability.cannot, null, 1));
+});
+
+
+// ── FR-16 end to end: a genuine TSA token through the whole verifier ─────────
+
+test('FR-16: a real RFC 3161 token over the checkpoint digest verifies through verifyStore', async () => {
+  // The fixture note and the fixture token were produced independently —
+  // the token by LibreSSL's `openssl ts` over this note's digest — so this is
+  // the only test here that proves interoperability rather than internal
+  // consistency. The chain and tree checks fail, because the fixture note is
+  // not the root of this store; what is under test is the witness entry.
+  const { root } = await evidence();
+  const s2 = new Store(root, 'host-1');
+  s2.writeCheckpointEnvelope(1, {
+    note: fix('checkpoint.note').toString('utf8'),
+    note_digest: fix('checkpoint.digest').toString('utf8').trim(),
+    countersignatures: [{
+      type: 'rfc3161', issuer: 'tsa.example', covers: 'note_digest',
+      token: fix('checkpoint-token.b64').toString('utf8').trim(),
+    }],
+  });
+  s2.close();
+  const r = await verifyStore(root, {
+    collector: 'host-1',
+    vkey: fix('checkpoint.vkey').toString('utf8').trim(),
+    policy: {
+      quorum: 1,
+      witnesses: [{
+        id: 'tsa.example', establishes: ['time'],
+        anchors: [fix('root.pem').toString('utf8')],
+      }],
+    },
+  });
+  const w = r.witnesses.find(x => x.id === 'tsa.example');
+  assert.ok(w, JSON.stringify(r.witnesses, null, 1));
+  assert.equal(w.verdict, 'ok', w.detail);
+  assert.match(w.detail, /2026-10-1\dT\d\d:\d\d:\d\dZ|asserts it saw/);
+  assert.equal(r.quorum.observed.time, 1);
+  assert.equal(r.quorum.met.time, true);
+});
+
+test('FR-16: the same token is refused when the reader supplies no anchor, and credited anyway', async () => {
+  const { root } = await evidence();
+  const s2 = new Store(root, 'host-1');
+  s2.writeCheckpointEnvelope(1, {
+    note: fix('checkpoint.note').toString('utf8'),
+    note_digest: fix('checkpoint.digest').toString('utf8').trim(),
+    countersignatures: [{
+      type: 'rfc3161', issuer: 'tsa.example', covers: 'note_digest',
+      token: fix('checkpoint-token.b64').toString('utf8').trim(),
+    }],
+  });
+  s2.close();
+  const r = await verifyStore(root, {
+    collector: 'host-1', vkey: fix('checkpoint.vkey').toString('utf8').trim(),
+    policy: { quorum: 1, witnesses: [{ id: 'tsa.example', establishes: ['time'] }] },
+  });
+  const w = r.witnesses.find(x => x.id === 'tsa.example');
+  assert.equal(w?.verdict, 'inconclusive');
+  assert.match(String(w?.detail), /no trust anchor/i);
+  // Credited: the operator did obtain a third-party timestamp. Whether this
+  // reader accepts that TSA is a statement about the policy, not the token.
+  assert.equal(r.quorum.observed.time, 1);
+});
+
+test('FR-16: an unparseable token is credited with nothing and is NOT called a mismatch', async () => {
+  const { root, vkey } = await evidence();
+  const s2 = new Store(root, 'host-1');
+  const env = JSON.parse(String(s2.readCheckpointEnvelope(1)));
+  env.countersignatures = [{
+    type: 'rfc3161', issuer: 'tsa.example', covers: 'note_digest',
+    token: Buffer.from('not a token at all').toString('base64'),
+  }];
+  s2.writeCheckpointEnvelope(1, env);
+  s2.close();
+  const r = await verifyStore(root, {
+    collector: 'host-1', vkey,
+    policy: { quorum: 1, witnesses: [{ id: 'tsa.example', establishes: ['time'] }] },
+  });
+  // Broken evidence, not refuted evidence. WITNESS_MISMATCH is the strongest
+  // finding this project makes and it must not rest on a mangled adapter.
+  assert.ok(!r.findings.some(f => f.code === 'WITNESS_MISMATCH'),
+    JSON.stringify(r.findings.map(f => f.code)));
+  const w = r.witnesses.find(x => x.id === 'tsa.example');
+  assert.equal(w?.verdict, 'inconclusive');
+  assert.equal(w?.accepted, false);
+  assert.equal(r.quorum.observed.time, 0, 'a quorum must not be satisfiable by submitting noise');
+});
+
+test('FR-16: a genuine token over the WRONG digest is a mismatch, and that one is a fail', async () => {
+  const { root, vkey } = await evidence();
+  const s2 = new Store(root, 'host-1');
+  const env = JSON.parse(String(s2.readCheckpointEnvelope(1)));
+  // A real, valid token — over the fixture note, attached to a different note.
+  env.countersignatures = [{
+    type: 'rfc3161', issuer: 'tsa.example', covers: 'note_digest',
+    token: fix('checkpoint-token.b64').toString('utf8').trim(),
+  }];
+  s2.writeCheckpointEnvelope(1, env);
+  s2.close();
+  const r = await verifyStore(root, {
+    collector: 'host-1', vkey,
+    policy: {
+      quorum: 1,
+      witnesses: [{
+        id: 'tsa.example', establishes: ['time'], anchors: [fix('root.pem').toString('utf8')],
+      }],
+    },
+  });
+  assert.ok(r.findings.some(f => f.code === 'WITNESS_MISMATCH'),
+    JSON.stringify(r.findings.map(f => f.code)));
+  assert.equal(r.verdict, 'fail');
 });

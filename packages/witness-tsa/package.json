@@ -1,0 +1,24 @@
+{
+  "name": "@splitstick/witness-tsa",
+  "version": "0.1.0",
+  "type": "module",
+  "license": "Apache-2.0",
+  "description": "RFC 3161 timestamp-authority witness adapter: submits a note digest, returns a TimeStampToken.",
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "exports": {
+    ".": "./src/index.mjs"
+  },
+  "files": [
+    "src",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@splitstick/core": "0.1.0"
+  }
+}

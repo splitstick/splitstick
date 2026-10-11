@@ -35,6 +35,7 @@ import { verifyNoteSignature } from '@splitstick/core/signer';
 import { successionReport } from '@splitstick/core/succession';
 import { validateFindings } from '@splitstick/core/findings';
 import { CAPABILITY_CLASSES } from '@splitstick/core/anchor';
+import { verifyTimeStampToken } from '@splitstick/core/rfc3161';
 import { parseEnvelope } from '@splitstick/core/envelope';
 import * as nodeCrypto from 'node:crypto';
 import { noteKeyId } from '@splitstick/core/note';
@@ -62,7 +63,7 @@ function combine(vs) {
  * @param {string} [opts.collector] the collector instance whose chain to read
  * @param {string} [opts.vkey] the pinned operator identity, as a note vkey
  * @param {{ quorum?: number, witnesses?: { id: string, public_key?: string,
- *   establishes?: string[] }[] }} [opts.policy] FR-30 — the ACCEPTANCE POLICY,
+ *   establishes?: string[], anchors?: string[] }[] }} [opts.policy] FR-30 — the ACCEPTANCE POLICY,
  *   supplied by the reader. Not a hardcoded trust store: two readers with
  *   different trust must be able to reach different conclusions from one pack,
  *   and a verifier that only accepted witnesses we operate would make
@@ -440,7 +441,7 @@ export async function verifyStore(root, opts = {}) {
   check('OP-SIG', combine(sigVs));
 
   // 7 WITNESS — DES-08, DES-20, FR-19, FR-30, FR-31, INT-02.
-  const wit = verifyWitnesses({
+  const wit = await verifyWitnesses({
     envelopes, policy: opts.policy, leaves, findings, anchored,
   });
   check('WITNESS', wit.verdict, wit.detail);
@@ -489,7 +490,7 @@ export async function verifyStore(root, opts = {}) {
  * @param {string} collector
  * @param {string} [vkey]
  * @param {ReturnType<typeof successionReport>|null} [succession]
- * @param {ReturnType<typeof verifyWitnesses>} [wit]
+ * @param {Awaited<ReturnType<typeof verifyWitnesses>>} [wit]
  */
 function report(tree_size, anchored, checks, findings, notes, collector, vkey, succession = null, wit) {
   const verdict = combine([...checks.map(c => c.verdict), ...findings.map(f => f.verdict)]);
@@ -636,7 +637,7 @@ function report(tree_size, anchored, checks, findings, notes, collector, vkey, s
     cannot.push(
       `${timeProofs.length} time-bearing proof(s) are present but NOT confirmed by this verifier: `
       + 'an RFC 3161 token needs the TSA certificate chain and an OpenTimestamps commitment needs a '
-      + 'Bitcoin block header, and NFR-05 requires this verifier to fetch neither. They are reported '
+      + 'Bitcoin block header, and NFR-05 requires this verifier to retrieve neither. They are reported '
       + 'as claimed',
     );
   }
@@ -710,12 +711,12 @@ function commitments(record) {
  *
  * @param {object} o
  * @param {{ seq: number, env: ReturnType<typeof parseEnvelope> }[]} o.envelopes
- * @param {{ quorum?: number, witnesses?: { id: string, public_key?: string, establishes?: string[] }[] }} [o.policy]
+ * @param {{ quorum?: number, witnesses?: { id: string, public_key?: string, establishes?: string[], anchors?: string[] }[] }} [o.policy]
  * @param {Buffer[]} o.leaves
  * @param {Finding[]} o.findings appended to
  * @param {number} o.anchored
  */
-function verifyWitnesses({ envelopes, policy, leaves, findings, anchored }) {
+async function verifyWitnesses({ envelopes, policy, leaves, findings, anchored }) {
   /** @type {{ id: string, type: string, establishes: string, accepted: boolean, verdict: Verdict, detail: string }[]} */
   const witnesses = [];
   /** @type {Record<string, number>} */
@@ -788,16 +789,61 @@ function verifyWitnesses({ envelopes, policy, leaves, findings, anchored }) {
         continue;
       }
 
-      // rfc3161 and opentimestamps. Reported as claimed, not as confirmed.
+      if (cs.type === 'rfc3161') {
+        // FR-16 — actually verified, offline, when the reader supplies the trust
+        // anchors. Everything an RFC 3161 token needs is in the token plus an
+        // anchor; nothing has to be retrieved, so declining to check it would have
+        // been a choice rather than a constraint.
+        const imprint = Buffer.from(String(env.note_digest).slice('sha256:'.length), 'hex');
+        const r = await verifyTimeStampToken(
+          Buffer.from(String(cs.entry.token ?? ''), 'base64'),
+          { imprint, anchors: spec.anchors ?? [] },
+        );
+        if (r.ok) {
+          credit(credited, cs.issuer, classes);
+          witnesses.push({
+            id: cs.issuer, type: cs.type, establishes: classes.join('+'), accepted: true,
+            verdict: 'ok', detail: `checkpoint ${seq}: ${r.detail}`,
+          });
+          continue;
+        }
+        if (r.inconclusive) {
+          // Two different inconclusives, and the difference decides a quorum.
+          //
+          // A token that PARSES and is internally valid, where the reader
+          // simply named no anchor for this TSA, is credited: the operator did
+          // obtain a third-party timestamp, and whether this reader accepts
+          // that TSA is a statement about the policy rather than the token.
+          //
+          // A token that does not parse is credited with nothing. There is no
+          // evidence any timestamp was obtained at all, and counting it would
+          // let a quorum be met by submitting noise.
+          if (!r.malformed) credit(credited, cs.issuer, classes);
+          witnesses.push({
+            id: cs.issuer, type: cs.type, establishes: classes.join('+'),
+            accepted: !r.malformed,
+            verdict: 'inconclusive', detail: `checkpoint ${seq}: ${r.detail}`,
+          });
+          continue;
+        }
+        findings.push({
+          code: 'WITNESS_MISMATCH', verdict: 'fail',
+          detail: `checkpoint ${seq}: the RFC 3161 token from ${cs.issuer} does not verify — ${r.detail}`,
+        });
+        witnesses.push({
+          id: cs.issuer, type: cs.type, establishes: classes.join('+'), accepted: false,
+          verdict: 'fail', detail: `checkpoint ${seq}: ${r.detail}`,
+        });
+        continue;
+      }
+
+      // opentimestamps. Reported as claimed, never as confirmed.
       witnesses.push({
         id: cs.issuer, type: cs.type, establishes: classes.join('+'), accepted: true,
         verdict: 'inconclusive',
-        detail: cs.type === 'rfc3161'
-          ? `checkpoint ${seq}: an RFC 3161 token from ${cs.issuer} over the note digest. Its CMS path `
-            + 'validation needs the TSA certificate chain, which this offline verifier does not fetch'
-          : `checkpoint ${seq}: an OpenTimestamps commitment from ${cs.issuer} over the note digest. `
-            + 'Confirming it needs a Bitcoin block header, which this offline verifier does not fetch '
-            + '(NFR-05), so the commitment is reported and not confirmed',
+        detail: `checkpoint ${seq}: an OpenTimestamps commitment from ${cs.issuer} over the note `
+          + 'digest. Confirming it needs a Bitcoin block header, which this offline verifier does '
+          + 'not retrieve, per NFR-05, so the commitment is reported and not confirmed',
       });
       credit(credited, cs.issuer, classes);
     }

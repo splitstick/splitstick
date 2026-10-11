@@ -276,19 +276,43 @@ function reachableFromVerifier() {
   return seen;
 }
 
+/**
+ * Comments stripped before scanning for network use.
+ *
+ * The check matched the word `fetch` in a comment explaining that this verifier
+ * does NOT fetch — so prose saying the right thing failed the test asserting
+ * it. That is the third instrument in this project to read its own
+ * documentation as code; the other two are tools/lint-failure-codes.mjs and
+ * tools/lint-claims.mjs. Stripping comments is the fix in all three.
+ * @param {string} t
+ */
+const code = (t) => t.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+
 test('NFR-05: nothing the verifier reaches imports a network module', () => {
   const reached = reachableFromVerifier();
   assert.ok(reached.size >= 8, `the walk should reach core, not just verify: ${reached.size} modules`);
   assert.ok([...reached].some(f => f.includes('/core/src/')), 'core must be in the graph');
 
   for (const file of reached) {
-    const text = readFileSync(file, 'utf8');
+    const text = code(readFileSync(file, 'utf8'));
     for (const m of NETWORK_MODULES) {
       assert.ok(!text.includes(m), `${file} imports ${m}`);
     }
     assert.ok(!/\bfetch\s*\(/.test(text), `${file} calls fetch`);
     assert.ok(!/@aws-sdk\//.test(text), `${file} imports an AWS SDK — the verifier must not`);
   }
+});
+
+test('NFR-05: the offline scan still catches a real network call in code', () => {
+  // The instrument, proved. Stripping comments must not have stripped the
+  // check's teeth: a fetch in code still has to fail, and a fetch in a comment
+  // must not.
+  const real = code('import https from "node:https";\nawait fetch("https://x");');
+  assert.match(real, /\bfetch\s*\(/);
+  assert.ok(real.includes('node:https'));
+  const prose = code('// this verifier never calls fetch( ) and imports no node:https\nconst a = 1;');
+  assert.ok(!/\bfetch\s*\(/.test(prose));
+  assert.ok(!prose.includes('node:https'));
 });
 
 test('NFR-05: the offline scan would notice a network import in core', () => {

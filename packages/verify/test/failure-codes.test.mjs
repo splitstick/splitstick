@@ -7,7 +7,7 @@ import { Collector } from '@splitstick/core/collector';
 import { Store } from '@splitstick/core/store';
 import { parseConfig } from '@splitstick/core/config';
 import { generateDevSigner } from '@splitstick/core/signer-file';
-import { formatVkey, checkpointText, encodeNote } from '@splitstick/core/note';
+import { formatVkey, checkpointText, encodeNote, parseNote } from '@splitstick/core/note';
 import { signNote } from '@splitstick/core/signer';
 import { treeRoot } from '@splitstick/core/merkle';
 import { verifyStore } from '../src/verify.mjs';
@@ -194,19 +194,31 @@ const SCENARIOS = {
     };
   },
   async WITNESS_SHORT(ctx) {
-    // One accepted time proof, a policy demanding two.
+    // One CHECKABLE time proof, and a policy demanding two of them.
+    //
+    // The first version of this used a placeholder RFC 3161 token, which was
+    // credited when nothing verified tokens. Now that FR-16 does, an
+    // unparseable token is credited with nothing — the class count stays at
+    // zero and the "short of quorum" branch is never reached, because "no
+    // accepted proof at all" is a different finding. A quorum can only be
+    // short if something counted.
+    const witness = await generateDevSigner('audit.internal');
     const env = JSON.parse(String(ctx.store.readCheckpointEnvelope(1)));
+    const text = parseNote(env.note).text;
     env.countersignatures = [{
-      type: 'rfc3161', issuer: 'tsa.example', covers: 'note_digest',
-      token: Buffer.from('token').toString('base64'),
+      type: 'c2sp-note', issuer: 'audit.internal', covers: 'note',
+      line: encodeNote(text, [await signNote(text, witness)]).trim().split('\n').at(-1),
     }];
     ctx.store.writeCheckpointEnvelope(1, env);
     return {
       policy: {
         quorum: 2,
         witnesses: [
-          { id: 'tsa.example', establishes: ['time'] },
-          { id: 'tsa.other', establishes: ['time'] },
+          {
+            id: 'audit.internal', establishes: ['time'],
+            public_key: witness.publicKey.toString('base64'),
+          },
+          { id: 'audit.secondary', establishes: ['time'] },
         ],
       },
     };
