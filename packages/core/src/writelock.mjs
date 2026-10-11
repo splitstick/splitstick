@@ -22,10 +22,27 @@
  *
  * Readers never take it. A verifier must be able to open a live store, and
  * cannot damage one.
+ *
+ * Creation is atomic by `link()`, not by exclusive `open()`. With open-then-
+ * write the file exists empty for an instant, and a contender arriving in that
+ * window read it, failed to parse it, concluded it was stale, deleted it and
+ * took a lock of its own — so both processes believed they owned the collector.
+ * A hard link of a file that already contains the owner's identity cannot be
+ * observed half-written: either the name exists with complete contents, or it
+ * does not exist.
+ *
+ * An unreadable lock is therefore no longer assumed stale on sight. It is
+ * re-read a few times, and only a lock that stays unreadable AND is older than
+ * the grace period below is reclaimed, because the one thing worse than a
+ * wedged store is two writers that both think they own it.
  */
 
-import { openSync, writeSync, closeSync, readFileSync, rmSync, mkdirSync, existsSync } from 'node:fs';
-import { dirname } from 'node:path';
+/** How long an unreadable lock must persist before it is treated as abandoned. */
+const UNREADABLE_GRACE_MS = 2000;
+
+import { writeFileSync, readFileSync, rmSync, mkdirSync, existsSync, linkSync, statSync } from 'node:fs';
+import { randomBytes } from 'node:crypto';
+import { dirname, join } from 'node:path';
 
 /**
  * Lock paths held in THIS process.
@@ -61,26 +78,51 @@ export class WriteLock {
     if (this.#held) return;
     if (HELD_IN_PROCESS.has(this.path)) throw new StoreBusy(this.path, process.pid);
     mkdirSync(dirname(this.path), { recursive: true });
-    for (let attempt = 0; attempt < 2; attempt++) {
+
+    for (let attempt = 0; attempt < 3; attempt++) {
+      // Build the lock's contents first, then publish it under its real name
+      // with a single atomic link. The name never exists without the identity.
+      const staging = join(dirname(this.path), `.claim-${process.pid}-${randomBytes(6).toString('hex')}`);
+      writeFileSync(staging, JSON.stringify({ pid: process.pid, at: new Date().toISOString() }) + '\n',
+        { mode: 0o600 });
       try {
-        const fd = openSync(this.path, 'wx', 0o600);
-        writeSync(fd, JSON.stringify({ pid: process.pid, at: new Date().toISOString() }));
-        closeSync(fd);
+        linkSync(staging, this.path);
         this.#held = true;
         HELD_IN_PROCESS.add(this.path);
         return;
       } catch (err) {
         if (/** @type {{code?: string}} */ (err).code !== 'EEXIST') throw err;
-        const pid = this.#holder();
-        // A live holder elsewhere is a real conflict. Our own pid with nothing
-        // in the registry is a lock this process left before being restarted.
-        if (pid !== null && pid !== process.pid && this.#alive(pid)) {
-          throw new StoreBusy(this.path, pid);
-        }
-        rmSync(this.path, { force: true });
+        if (!this.#reclaim()) throw new StoreBusy(this.path, this.#holder() ?? -1);
+      } finally {
+        rmSync(staging, { force: true });
       }
     }
-    throw new StoreBusy(this.path, -1);
+    throw new StoreBusy(this.path, this.#holder() ?? -1);
+  }
+
+  /**
+   * Is the existing lock abandoned, and now removed?
+   * @returns {boolean} true when the caller may retry
+   */
+  #reclaim() {
+    const pid = this.#holder();
+    // A live holder elsewhere is a real conflict.
+    if (pid !== null && pid !== process.pid && this.#alive(pid)) return false;
+    if (pid === null) {
+      // Unreadable. Most likely a contender mid-claim under an older protocol,
+      // or a truncated file. Give it time to become readable rather than
+      // assuming it is dead, and require it to be stale as well.
+      for (let i = 0; i < 3; i++) {
+        if (this.#holder() !== null) return this.#reclaim();
+        try {
+          if (Date.now() - statSync(this.path).mtimeMs < UNREADABLE_GRACE_MS) return false;
+        } catch {
+          return true;   // it vanished while we looked: the name is free
+        }
+      }
+    }
+    rmSync(this.path, { force: true });
+    return true;
   }
 
   /** Release it. Idempotent. */

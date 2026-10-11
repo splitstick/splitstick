@@ -84,12 +84,26 @@ confirmed against representative hardware, sustained workloads and realistic
 payload sizes on a defined reference environment. It is not an industry
 standard and this document does not pretend otherwise.
 
-**The attribution has to be earned.** An earlier draft asserted that the p99
-tail was garbage collection. That was inference from the filesystem baseline
-moving with it, not evidence: the outliers were never correlated against GC
-events. The harness now subscribes to `perf_hooks` GC entries and reports the
-share of outliers that coincide with one, so the claim is either supported by
-the run that makes it or dropped.
+**The attribution has to be earned, and it took three attempts.** The first
+draft asserted the p99 tail was garbage collection — inference from the
+filesystem baseline moving with it, never correlated against GC events. The
+second measured it and reported zero pauses, so the claim was retracted; that
+measurement was also wrong, because `PerformanceObserver` delivers entries
+asynchronously and the harness disconnected immediately after a synchronous
+loop. The check written to validate the recorder did drain, so it validated the
+recorder under conditions the benchmark never met.
+
+The recorder now lives in `bench/gc.mjs` with its own tests, drains before
+disconnecting, and runs a deliberate allocation storm through the same path on
+every benchmark so that a reported zero is a measurement rather than a lost one.
+Measured: 71 pauses totalling 344 ms, coinciding with 56% of the slowest one per
+cent of samples. That is a correlation, which supports *garbage collection is a
+material contributor to the tail* and not *the tail is garbage collection*;
+filesystem write latency accounts for much of the remainder.
+
+The sequence is recorded because the lesson is not about GC. A plausible
+mechanism and a correlated signal are not a measurement, and a measurement whose
+instrument is unvalidated is not one either.
 
 **Latency is never bought with durability or integrity.** Specifically ruled
 out: deferring a critical write without guaranteed recovery, weakening

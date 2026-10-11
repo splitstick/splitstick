@@ -32,11 +32,11 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { PerformanceObserver, constants as perfConstants } from 'node:perf_hooks';
 import { Collector } from '@splitstick/core/collector';
 import { Store } from '@splitstick/core/store';
 import { parseConfig } from '@splitstick/core/config';
 import { generateDevSigner } from '@splitstick/core/signer-file';
+import { gcRecorder, gcOverlap, selfCheck } from './gc.mjs';
 
 const argv = process.argv.slice(2);
 const num = (name, fallback) => {
@@ -81,45 +81,6 @@ function percentiles(samples, wallMs) {
   };
 }
 
-/**
- * Garbage-collection pauses during a run, so the tail can be ATTRIBUTED rather
- * than guessed at. An earlier version of this file asserted that the p99 tail
- * was GC, on the strength of the filesystem baseline moving with it — which is
- * inference, not evidence. Each sample is now checked against the GC windows
- * that overlap it.
- * @returns {{ start: () => void, stop: () => { windows: [number, number][], totalMs: number, count: number } }}
- */
-function gcRecorder() {
-  /** @type {[number, number][]} */
-  let windows = [];
-  let totalMs = 0;
-  const observer = new PerformanceObserver((list) => {
-    for (const entry of list.getEntries()) {
-      windows.push([entry.startTime, entry.startTime + entry.duration]);
-      totalMs += entry.duration;
-    }
-  });
-  return {
-    start() { windows = []; totalMs = 0; observer.observe({ entryTypes: ['gc'] }); },
-    stop() {
-      observer.disconnect();
-      return { windows, totalMs, count: windows.length };
-    },
-  };
-}
-
-/**
- * The share of the slowest samples that overlap a GC pause.
- * @param {{ at: number, ms: number }[]} slowest
- * @param {[number, number][]} windows
- */
-function gcOverlap(slowest, windows) {
-  if (slowest.length === 0) return 0;
-  const hits = slowest.filter(s =>
-    windows.some(([from, to]) => s.at < to && s.at + s.ms > from)).length;
-  return hits / slowest.length;
-}
-
 /** @param {boolean} withContent */
 async function arm(withContent) {
   const root = fs.mkdtempSync(path.join(workdir, 'store-'));
@@ -154,7 +115,7 @@ async function arm(withContent) {
     timeline.push({ at, ms });
   }
   const wall = Number(process.hrtime.bigint() - started) / 1e6;
-  const pauses = gc.stop();
+  const pauses = await gc.stop();
   store.close();
   fs.rmSync(root, { recursive: true, force: true });
 
@@ -238,6 +199,7 @@ for (let i = 0; i < REPEAT; i++) {
   fdRuns.push(fs_.write_to_open_fd);
   fileRuns.push(fs_.create_new_file);
 }
+const recorder = await selfCheck();
 const chain = across(chainRuns);
 const full = across(fullRuns);
 const baseline = { write_to_open_fd: across(fdRuns), create_new_file: across(fileRuns) };
@@ -249,6 +211,7 @@ const report = {
   repeats: REPEAT,
   arms: { chain, full },
   filesystem_baseline: baseline,
+  gc_recorder: recorder.verified ? 'verified' : 'UNVERIFIED',
   verdict: {
     p95: full.p95_ms <= BUDGET_P95_MS ? 'within' : 'over',
     p99: full.p99_ms <= BUDGET_P99_MS ? 'within' : 'over',
@@ -270,11 +233,16 @@ const report = {
     `Across ${REPEAT} repeats the full arm's p99 ranged up to ${full.worst_p99_ms} ms and the`
     + ' filesystem baseline moved with it, so this machine is not the reference environment NFR-01'
     + ' now requires. The p50 and p95 are the stable figures.',
-    `Garbage collection is MEASURED here, not inferred: ${full.gc_pauses ?? 0} pause(s) totalling`
-    + ` ${full.gc_total_ms ?? 0} ms during the full arm, overlapping`
-    + ` ${Math.round((full.gc_share_of_slowest ?? 0) * 100)}% of its slowest one per cent of samples.`
-    + ' A previous version of this file asserted GC was the cause on the strength of the filesystem'
-    + ' baseline moving with the tail, which is inference. Read this number before repeating that claim.',
+    recorder.verified
+      ? `Garbage collection is measured, not inferred: ${full.gc_pauses ?? 0} pause(s) totalling`
+        + ` ${full.gc_total_ms ?? 0} ms during the full arm, overlapping`
+        + ` ${Math.round((full.gc_share_of_slowest ?? 0) * 100)}% of its slowest one per cent of samples.`
+        + ` The recorder was verified against a deliberate allocation storm in this same run`
+        + ` (${recorder.count} pauses seen), so a low number here is a measurement rather than a`
+        + ' lost one — an earlier version reported zero because it disconnected the observer'
+        + ' before the asynchronous entries could be delivered.'
+      : 'GC was NOT measured in this run: the recorder saw nothing during a deliberate allocation'
+        + ' storm, so it is not working and no conclusion about the tail may be drawn from it.',
   ],
 };
 

@@ -190,3 +190,83 @@ test('a degraded collector refuses content-free records too', async () => {
   assert.throws(() => collector.heartbeat(), CollectorDegraded);
   assert.throws(() => collector.padding(), CollectorDegraded);
 });
+
+/**
+ * Review finding. A torn tail was recognised only when the JSON failed to
+ * parse. But a write can persist the whole object and fail before its trailing
+ * newline, leaving a COMPLETE, valid record with no terminator — which was
+ * accepted as committed, left the journal unmarked, and allowed the next append
+ * to concatenate onto it. The probe lost a record outright: two entries before,
+ * one entry and one malformed line after.
+ *
+ * The newline is the commit marker. A journal that does not end with one has an
+ * uncommitted trailing write, whether or not the bytes before it happen to
+ * parse — and it is not completed on recovery, because the writer that failed
+ * has already reported failure upstream and must not have a record appear
+ * anyway.
+ */
+test('a complete record with no trailing newline is uncommitted, not accepted', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'splitstick-rec-'));
+  const { store, collector } = await open(root);
+  collector.action(tx({ correlation: 'c-1' }));
+  store.close();
+
+  const committed = readFileSync(chainPath(root), 'utf8');
+  const full = committed.trim().replace('"record_seq":1', '"record_seq":2');
+  appendFileSync(chainPath(root), full);            // valid JSON, no newline
+
+  const detail = new Store(root, 'host-1').readChainDetailed();
+  assert.equal(detail.torn, true, 'a missing terminator is a torn tail');
+  assert.equal(detail.entries.length, 1, 'and the unterminated record is not an entry');
+
+  const reopened = await open(root);
+  assert.ok(reopened.collector.degraded);
+  const r = reopened.collector.recover();
+  assert.ok(r.repaired_chain_bytes > 0);
+  assert.equal(readFileSync(chainPath(root), 'utf8'), committed, 'exactly the committed bytes remain');
+
+  reopened.collector.action(tx({ correlation: 'c-3' }));
+  const after = new Store(root, 'host-1').readChainDetailed();
+  assert.deepEqual(after.malformed, [], 'nothing was concatenated');
+  assert.deepEqual(after.entries.map(e => /** @type {any} */ (e.record).record_seq), [1, 2]);
+  assert.equal(recomputeChain(after.entries).ok, true);
+});
+
+test('the same rule applies to the salt journal', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'splitstick-rec-'));
+  const { store, collector } = await open(root);
+  collector.action(tx({ correlation: 'c-1' }));
+  store.close();
+
+  const committed = readFileSync(saltsPath(root), 'utf8');
+  appendFileSync(saltsPath(root), committed.trim().replace('"record_seq":1', '"record_seq":2'));
+
+  const detail = new Store(root, 'host-1').readChainDetailed();
+  assert.equal(detail.salts_torn, true);
+  const reopened = await open(root);
+  assert.ok(reopened.collector.degraded);
+  assert.ok(reopened.collector.recover().repaired_salts_bytes > 0);
+  assert.equal(readFileSync(saltsPath(root), 'utf8'), committed);
+});
+
+test('an intact journal is never mistaken for a torn one', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'splitstick-rec-'));
+  const { store, collector } = await open(root);
+  for (let i = 0; i < 3; i++) collector.action(tx({ correlation: `c-${i}` }));
+  store.close();
+  const detail = new Store(root, 'host-1').readChainDetailed();
+  assert.equal(detail.torn, false);
+  assert.equal(detail.salts_torn, false);
+  assert.equal(detail.entries.length, 3);
+  const reopened = await open(root);
+  assert.equal(reopened.collector.degraded, null);
+  assert.equal(reopened.collector.recover().repaired_chain_bytes, 0);
+});
+
+test('an empty journal is not torn', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'splitstick-rec-'));
+  const { collector } = await open(root);
+  assert.equal(collector.degraded, null);
+  collector.action(tx({ correlation: 'c-1' }));
+  assert.equal(new Store(root, 'host-1').readChainDetailed().torn, false);
+});

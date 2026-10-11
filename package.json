@@ -15,7 +15,7 @@
     "design": "node requirements/design.mjs",
     "review": "node requirements/review.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
-    "test:unit": "node --test packages/*/test/*.test.mjs",
+    "test:unit": "node --test packages/*/test/*.test.mjs bench/test/*.test.mjs",
     "bench": "npm run bench:append:quick && npm run bench:latency",
     "verify": "node packages/verify/src/cli.mjs",
     "redteam:splitstick": "node redteam/splitstick.mjs",

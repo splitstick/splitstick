@@ -100,17 +100,25 @@ trusting    the cryptographic primitives (SHA-256, Ed25519)
 `npm run bench` prints the budgets with the filesystem's own numbers beside them, because a
 percentile without attribution invites widening the budget instead of finding the cause.
 
-- **NFR-02, added agent run latency — met.** A real A/B through OMA's orchestrator puts the
-  overhead below the measurement noise floor.
+- **NFR-02, added agent run latency — met.** A real A/B through OMA's orchestrator, with the
+  arms interleaved: 2.9 ms added against a 3.9 ms noise floor taken from the baseline arm's own
+  spread, so the difference is not distinguishable from the machine. That passes the 2% budget
+  and is not evidence that the collector is free. An earlier version of this harness ran the
+  arms sequentially and reported a *negative* overhead — noise printed as a speedup.
 - **NFR-01, low-overhead evidence capture — within budget, stretch target not met.** The
   requirement was revised at M1 off the back of these measurements: p95 ≤ 1 ms and
   p99 ≤ 3 ms on a defined reference environment, with the original p99 ≤ 1 ms kept as a
   stretch goal. Measured 0.22 ms p50, 0.47 ms p95, 1.75 ms p99. Cryptography costs 0.03 ms
   per record while creating one file costs 0.20 ms, so nothing on the append path creates
-  one — measuring this rewrote the storage layout three times. The tail is **not** garbage
-  collection: the harness subscribes to GC events and found them overlapping none of the
-  slowest samples, which retracts an earlier claim here that said otherwise. Latency is
-  never bought with durability: a deferred-write queue was tried and removed.
+  one — measuring this rewrote the storage layout three times. On the tail, the harness now
+  measures rather than infers: 71 GC pauses totalling 344 ms, coinciding with **56% of the
+  slowest 1%** of samples, with the recorder verified against a deliberate allocation storm
+  in the same run. That is correlation, so the honest reading is that garbage collection is
+  a material contributor and filesystem latency accounts for much of the rest. Two earlier
+  claims here were wrong: the first asserted GC with no measurement, and the second
+  retracted it on a measurement that was broken — the observer was disconnected before its
+  asynchronous entries arrived. Latency is never bought with durability: a deferred-write
+  queue was tried and removed.
 
 ## Resourcing
 

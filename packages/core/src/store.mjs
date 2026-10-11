@@ -139,10 +139,11 @@ export class Store {
     if (!existsSync(this.saltsPath)) return { salts, torn, malformed };
 
     const raw = readFileSync(this.saltsPath, 'utf8');
-    const lines = raw.split('\n');
-    const complete = lines.length > 0 && lines[lines.length - 1] === '';
-    const body = lines.filter(Boolean);
-    body.forEach((line, i) => {
+    // The newline is the commit marker. See readChainDetailed.
+    torn = raw.length > 0 && !raw.endsWith('\n');
+    const body = raw.split('\n').filter(Boolean);
+    const committed = torn ? body.slice(0, -1) : body;
+    committed.forEach((line, i) => {
       try {
         const { record_seq, salt } = JSON.parse(line);
         if (!Number.isInteger(record_seq) || typeof salt !== 'string') {
@@ -150,8 +151,7 @@ export class Store {
         }
         salts.set(record_seq, Buffer.from(salt, 'hex'));
       } catch {
-        if (i === body.length - 1 && !complete) torn = true;
-        else malformed.push(i + 1);
+        malformed.push(i + 1);
       }
     });
     return { salts, torn, malformed };
@@ -188,19 +188,28 @@ export class Store {
     }
     const salts = sj.salts;
     const raw = readFileSync(this.chainPath, 'utf8');
-    const lines = raw.split('\n');
-    // A trailing newline means the final record was fully written.
-    const complete = lines.length > 0 && lines[lines.length - 1] === '';
-    const body = lines.filter(Boolean);
+
+    /**
+     * The newline IS the commit marker, and that is the whole rule.
+     *
+     * Deciding tornness by whether the last line PARSES was wrong: a write can
+     * persist the entire JSON object and fail before its terminator, leaving a
+     * complete, valid record with no newline. That was accepted as committed,
+     * the journal looked intact, and the next append concatenated onto it —
+     * destroying a record that had been reported as written. So a journal that
+     * does not end in a newline has an uncommitted trailing write, parseable or
+     * not, and that line is not an entry.
+     */
+    const torn = raw.length > 0 && !raw.endsWith('\n');
+    const body = raw.split('\n').filter(Boolean);
+    const committed = torn ? body.slice(0, -1) : body;
 
     /** @type {import('./chain.mjs').ChainEntry[]} */
     const entries = [];
     /** @type {{ line: number, reason: string }[]} */
     const malformed = [];
-    let torn = false;
 
-    body.forEach((line, i) => {
-      const last = i === body.length - 1;
+    committed.forEach((line, i) => {
       try {
         const o = JSON.parse(line);
         if (!o || typeof o !== 'object' || !o.record || !o.leaf || !o.prev || !o.head) {
@@ -214,11 +223,9 @@ export class Store {
           head: Buffer.from(o.head, 'hex'),
         });
       } catch (err) {
-        const reason = err instanceof Error ? err.message : String(err);
-        // Only the last line, with no trailing newline, is explicable as a
-        // crash mid-append. Anywhere else, something edited the file.
-        if (last && !complete) torn = true;
-        else malformed.push({ line: i + 1, reason });
+        // Every line here was terminated, so it was committed: a broken one
+        // means the file was edited, not that a write was cut short.
+        malformed.push({ line: i + 1, reason: err instanceof Error ? err.message : String(err) });
       }
     });
 

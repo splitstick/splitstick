@@ -11,5 +11,5 @@
     "noImplicitAny": false,
     "noUncheckedIndexedAccess": false
   },
-  "include": ["packages/*/src/**/*.mjs", "packages/*/test/**/*.mjs"]
+  "include": ["packages/*/src/**/*.mjs", "packages/*/test/**/*.mjs", "bench/**/*.mjs"]
 }
