@@ -4,7 +4,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { evaluateGates } from '../gates.mjs';
+import { evaluateGates, formatGates } from '../gates.mjs';
 
 const plan = JSON.parse(fs.readFileSync('requirements/milestones.json', 'utf8'));
 
@@ -20,11 +20,16 @@ const SUITE = [
   ['F', 'AC-5', 'detected'], ['F2', 'AC-5', 'detected'], ['F3', 'AC-5', 'undetected'],
 ];
 /**
- * @param {Record<string, 'detected'|'undetected'>} overrides
+ * @param {Record<string, 'detected'|'undetected'>} overrides keyed by attack id,
+ *   or `<id>:w` for the witnessed run
  * @returns {import('../gates.mjs').Observation[]}
  */
 const observed = (overrides = {}) => SUITE.map(([id, gate, expect]) => ({
   id, gate, expect, observed: overrides[id] ?? expect,
+  // The three that only close with a second party. The witnessed run is what
+  // M3a's gates read, and it is the harness's own declaration.
+  expect_witnessed: /** @type {'detected'} */ ('detected'),
+  observed_witnessed: overrides[`${id}:w`] ?? /** @type {'detected'} */ ('detected'),
 }));
 
 test('the gates the shipped milestones claim are held by observed detections', () => {
@@ -52,24 +57,61 @@ test('one outstanding attack fails the class even when every simpler one passes'
   assert.deepEqual(r.due[0]?.outstanding, ['F3']);
 });
 
-test('declaring M3a shipped today fails the gate, because its attacks are open', () => {
-  // This is the assertion the review asked for by name. If someone marks M3a
-  // shipped before building epoch erasure and the deletion receipt, this test
-  // and the harness both refuse. If someone genuinely closes C2, D and F3,
-  // this test is what tells them the claim is now earned.
+test('M3a shipped holds its gates on the WITNESSED run, and says which run that is', () => {
   const asIf = {
     milestones: plan.milestones.map((m) => (m.id === 'M3a' ? { ...m, shipped: true } : m)),
   };
   const r = evaluateGates(asIf, observed());
   const m3a = r.due.filter((g) => g.milestone === 'M3a');
   assert.deepEqual(m3a.map((g) => g.gate).sort(), ['AC-3', 'AC-4', 'AC-5']);
-  assert.ok(m3a.every((g) => !g.held), 'no M3a gate may hold on today\'s results');
+  assert.ok(m3a.every((g) => g.held));
+  assert.ok(m3a.every((g) => g.evidence === 'witnessed'));
+  assert.match(formatGates(r), /HELD with a witness configured/);
+  // And the local run is unchanged: C2, D and F3 are still undetected from
+  // files alone, which is the thing M3a never claimed to fix.
   assert.deepEqual(
-    m3a.flatMap((g) => g.outstanding).sort(),
+    observed().filter((o) => o.observed !== 'detected').map((o) => o.id),
     ['C2', 'D', 'F3'],
-    'the three attacks M3a has to close are exactly the ones still outstanding',
   );
+});
+
+test('M3a gates do NOT hold on local evidence, which is why they declare witnessed', () => {
+  // The honest half. If M3a's gates were evaluated from files alone they would
+  // fail, and a reader comparing the harness output to the milestone's claim
+  // deserves to be able to confirm that rather than take it on trust.
+  const asIf = {
+    milestones: plan.milestones.map(
+      (m) => (m.id === 'M3a' ? { ...m, shipped: true, gate_evidence: /** @type {const} */ ('local') } : m),
+    ),
+  };
+  const r = evaluateGates(asIf, observed());
   assert.equal(r.unmet, 3);
+  assert.deepEqual(
+    r.due.filter((g) => g.milestone === 'M3a').flatMap((g) => g.outstanding).sort(),
+    ['C2', 'D', 'F3'],
+  );
+});
+
+test('a witnessed gate still fails when a witnessed attack goes undetected', () => {
+  // Declaring `witnessed` must not become a way to pass. It selects which run
+  // the gate reads; it does not lower the bar within that run.
+  const asIf = {
+    milestones: plan.milestones.map((m) => (m.id === 'M3a' ? { ...m, shipped: true } : m)),
+  };
+  const r = evaluateGates(asIf, observed({ 'F3:w': 'undetected' }));
+  assert.equal(r.unmet, 1);
+  const ac5 = r.due.find((g) => g.gate === 'AC-5');
+  assert.equal(ac5?.held, false);
+  assert.deepEqual(ac5?.outstanding, ['F3']);
+});
+
+test('gate_evidence defaults to local, so a milestone cannot get the witnessed run by omission', () => {
+  const r = evaluateGates(
+    { milestones: [{ id: 'MX', gate: ['AC-5'], shipped: true }] },
+    observed(),
+  );
+  assert.equal(r.due[0]?.evidence, 'local');
+  assert.equal(r.due[0]?.held, false, 'F3 is undetected locally');
 });
 
 test('a gate no attack exercises is not closed either', () => {

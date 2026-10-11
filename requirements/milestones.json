@@ -105,7 +105,8 @@
         "FR-59",
         "FR-62"
       ],
-      "shipped": true
+      "shipped": true,
+      "gate_evidence": "local"
     },
     {
       "id": "M2",
@@ -181,7 +182,9 @@
           "closes": "A hardware signer behind the same sign(bytes) seam, with an integration test proving its signature verifies under an independent Ed25519 implementation, and FR-70's five checks exercised against a real attestation document rather than a constructed one. M3a is the right home because FR-65 and FR-70 already land there."
         }
       ],
-      "shipped": false
+      "shipped": false,
+      "gate_evidence": "witnessed",
+      "gate_evidence_note": "AC-3, AC-4 and AC-5 cannot be closed by anything local, which is the project's thesis rather than a shortfall. They are claimed in the configuration M3a delivers: a stateful witness (FR-17) countersigning checkpoints, and its retained heights in the reader's hands (FR-54). The SHIPPED DEFAULT (FR-48: TSA + OpenTimestamps) does NOT provide this — a TSA signs your hash and forgets you — so an operator who leaves the default in place has not closed 4 and 5, and DES-08 says so. The gate records that the mechanism works when configured, not that every deployment has it."
     },
     {
       "id": "M3b",
