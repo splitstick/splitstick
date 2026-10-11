@@ -95,6 +95,33 @@ misbehaviour visible.
 The witness publishes a signed key history. Countersignatures from retired keys stay verifiable
 indefinitely. A rotation is not an amnesty for anything signed before it.
 
+## The assumption, stated — SEC-04
+
+**Security holds if at least one witness in the configured set is honest.**
+
+Not a majority, and not a specific one. A single honest witness that retained a
+root the operator later contradicts is enough to produce the contradiction, and
+one contradiction is all a reader needs: the operator cannot explain away two
+signed statements that disagree. This is why `quorum: 1` is a defensible default
+rather than a weak one.
+
+The uncomfortable half, which has to be said in the same place:
+
+**A set whose members share an interest is one witness wearing several hats.**
+Two witnesses run by the same team, in the same account, under the same legal
+entity, do not satisfy "at least one honest" independently — they satisfy it
+once. No quorum number fixes that, because quorum counts parties and the
+assumption is about interests. The shipped default includes a public anchor
+precisely so that independence is hard to lose by accident, and an operator who
+replaces it with a second internal witness has raised the number while lowering
+the guarantee.
+
+**And a witness that is never polled is not a witness.** FR-50's rollback
+detection needs somebody to have retained an earlier tree head; a countersignature
+sitting in the operator's own envelope is evidence only until the operator
+deletes the envelope. The assumption is that at least one witness is honest AND
+that somebody other than the operator holds what it said.
+
 ## Quorum — FR-19, INT-02
 
 Quorum counts acceptable **proofs** — note signature lines *and* envelope entries (`DES-20`) —

@@ -35,8 +35,15 @@ const observed = (overrides = {}) => SUITE.map(([id, gate, expect]) => ({
 test('the gates the shipped milestones claim are held by observed detections', () => {
   const r = evaluateGates(plan, observed());
   assert.equal(r.unmet, 0);
-  assert.deepEqual(r.due.map((g) => g.gate).sort(), ['AC-1', 'AC-2']);
+  assert.deepEqual(r.due.map((g) => g.gate).sort(), ['AC-1', 'AC-2', 'AC-3', 'AC-4', 'AC-5']);
   assert.deepEqual(r.due.find((g) => g.gate === 'AC-1')?.detected, ['A1', 'A2', 'A3', 'B', 'E']);
+  // M1's two are local; M3a's three are claimed in the configuration M3a
+  // delivers, and the report says which is which.
+  assert.deepEqual(
+    r.due.filter((g) => g.evidence === 'local').map((g) => g.gate).sort(), ['AC-1', 'AC-2']);
+  assert.deepEqual(
+    r.due.filter((g) => g.evidence === 'witnessed').map((g) => g.gate).sort(),
+    ['AC-3', 'AC-4', 'AC-5']);
 });
 
 test('a gate is NOT MET when any assigned attack went undetected in the run', () => {
@@ -58,10 +65,7 @@ test('one outstanding attack fails the class even when every simpler one passes'
 });
 
 test('M3a shipped holds its gates on the WITNESSED run, and says which run that is', () => {
-  const asIf = {
-    milestones: plan.milestones.map((m) => (m.id === 'M3a' ? { ...m, shipped: true } : m)),
-  };
-  const r = evaluateGates(asIf, observed());
+  const r = evaluateGates(plan, observed());
   const m3a = r.due.filter((g) => g.milestone === 'M3a');
   assert.deepEqual(m3a.map((g) => g.gate).sort(), ['AC-3', 'AC-4', 'AC-5']);
   assert.ok(m3a.every((g) => g.held));
@@ -76,12 +80,12 @@ test('M3a shipped holds its gates on the WITNESSED run, and says which run that 
 });
 
 test('M3a gates do NOT hold on local evidence, which is why they declare witnessed', () => {
-  // The honest half. If M3a's gates were evaluated from files alone they would
-  // fail, and a reader comparing the harness output to the milestone's claim
-  // deserves to be able to confirm that rather than take it on trust.
+  // The honest half. Evaluated from files alone, M3a's gates fail — and a
+  // reader comparing the harness output to the milestone's claim deserves to
+  // confirm that rather than take it on trust.
   const asIf = {
     milestones: plan.milestones.map(
-      (m) => (m.id === 'M3a' ? { ...m, shipped: true, gate_evidence: /** @type {const} */ ('local') } : m),
+      (m) => (m.id === 'M3a' ? { ...m, gate_evidence: /** @type {const} */ ('local') } : m),
     ),
   };
   const r = evaluateGates(asIf, observed());
@@ -95,10 +99,7 @@ test('M3a gates do NOT hold on local evidence, which is why they declare witness
 test('a witnessed gate still fails when a witnessed attack goes undetected', () => {
   // Declaring `witnessed` must not become a way to pass. It selects which run
   // the gate reads; it does not lower the bar within that run.
-  const asIf = {
-    milestones: plan.milestones.map((m) => (m.id === 'M3a' ? { ...m, shipped: true } : m)),
-  };
-  const r = evaluateGates(asIf, observed({ 'F3:w': 'undetected' }));
+  const r = evaluateGates(plan, observed({ 'F3:w': 'undetected' }));
   assert.equal(r.unmet, 1);
   const ac5 = r.due.find((g) => g.gate === 'AC-5');
   assert.equal(ac5?.held, false);
@@ -123,8 +124,10 @@ test('a gate no attack exercises is not closed either', () => {
 
 test('unshipped gates are listed as scheduled and are never due', () => {
   const r = evaluateGates(plan, observed());
-  assert.ok(r.scheduled.some((s) => s.gate === 'AC-5' && s.milestone === 'M3a'));
-  assert.ok(!r.due.some((g) => g.gate === 'AC-5'));
+  // M4 has not shipped, so its classes are scheduled and not evaluated.
+  assert.ok(r.scheduled.some((s) => s.gate === 'AC-6' && s.milestone === 'M4'));
+  assert.ok(r.scheduled.some((s) => s.gate === 'AC-7' && s.milestone === 'M4'));
+  assert.ok(!r.due.some((g) => g.gate === 'AC-6' || g.gate === 'AC-7'));
 });
 
 test('the suite in this test matches the attacks the harness actually declares', () => {

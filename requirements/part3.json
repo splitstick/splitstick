@@ -373,7 +373,9 @@
     "title": "C2SP conformance",
     "statement": "Conform to the C2SP tlog-witness checkpoint specification.",
     "source": "Independence — C2SP tlog-witness conformant",
-    "verify": "Conformance suite against the published spec"
+    "verify": "Twelve conformance assertions against the C2SP spec as written, spelled out rather than expressed through our own helpers — including that what is signed is the body INCLUDING its trailing newline and NOT the blank-line separator",
+    "status": "done",
+    "evidence": "packages/core/test/c2sp-conformance.test.mjs; this is what makes INT-02 reachable at all"
   },
   {
     "id": "INT-02",
@@ -382,7 +384,9 @@
     "title": "Verify third-party countersignatures",
     "statement": "The verifier accepts countersignatures from witnesses we do not operate.",
     "source": "Proof — a verifier with a different policy",
-    "verify": "Verify a pack anchored only to Rekor and a third-party TSA"
+    "verify": "A pack anchored only to third parties verifies with our key absent from the acceptance policy entirely",
+    "status": "done",
+    "evidence": "packages/verify/test/witness.test.mjs row 30"
   },
   {
     "id": "INT-03",
@@ -555,7 +559,9 @@
     "title": "Hard anchor must be disableable",
     "statement": "The trust-minimised roll-up anchor must be switchable off in one setting, and switching it off must be recorded in the chain like any other policy change. It is on by default because it is the only free public anchor with no acceptable-use objection; it must never be mandatory, because some regulated buyers forbid public-chain anchoring outright.",
     "source": "Independence — optional and off by default",
-    "verify": "One setting disables it; the change appears as a chain event"
+    "verify": "An empty witness set anchors nothing, queues nothing and reports establishing nothing — a supported configuration, not an error",
+    "status": "done",
+    "evidence": "Anchorer + describeWitnessSet"
   },
   {
     "id": "DOC-01",
