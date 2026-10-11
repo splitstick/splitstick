@@ -1,5 +1,5 @@
 {
-  "note": "The reference environment NFR-01's acceptance measurement must run on. A number from anywhere else is a regression metric, not an acceptance result, and bench/append.mjs says which it produced. The thresholds are deliberately loose: the point is to exclude a busy laptop and a shared CI runner, not to require particular hardware.",
+  "note": "The reference environment NFR-01's acceptance measurement must run on. A number from anywhere else is a regression metric, not an acceptance result, and bench/append.mjs says which it produced. Every constraint here is evaluated by qualifyRun() in bench/precision.mjs, which REFUSES to run if a constraint declared here has no evaluator \u2014 a threshold the code ignores is worse than no threshold, and node_major_at_least was exactly that until a review found it.",
   "requirement": "NFR-01",
   "min_cpus": 4,
   "min_memory_gb": 8,
@@ -11,5 +11,10 @@
     "a shared CI runner, where neighbours move the tail by a factor of two",
     "a machine under other load, which is what max_load_average_1m is for",
     "a filesystem at or near capacity, which measurably slows file creation"
-  ]
+  ],
+  "requires_attestation": [
+    "machine",
+    "storage"
+  ],
+  "attestation_note": "CPU count, memory and load average cannot establish that a machine is dedicated or that its storage is comparable: a large enough shared runner would satisfy all three. So an acceptance run additionally requires the operator to name the machine and describe its storage (--machine, --storage), and those strings are recorded in the result. This does not make the claim verifiable by a third party; it makes it attributable, which is the honest limit of what a benchmark can assert about its own host."
 }

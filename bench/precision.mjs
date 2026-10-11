@@ -115,3 +115,63 @@ export async function environment() {
     load_average_1m: Number(os.loadavg()[0]?.toFixed(2) ?? 0),
   };
 }
+
+/**
+ * Does a run satisfy the reference environment, constraint by constraint?
+ *
+ * Data-driven on purpose. The qualification check used to hand-list the fields
+ * it cared about, and `node_major_at_least` was declared in the JSON and never
+ * read — a threshold the code ignores is worse than no threshold, because it
+ * reads as enforced. So every constraint key in the file must have an evaluator
+ * here, and a key without one throws rather than being skipped.
+ *
+ * @param {Record<string, any>} ref the parsed reference-env.json
+ * @param {{ env: any, events: number, repeats: number, clockAdequate: boolean,
+ *           machine?: string, storage?: string }} observed
+ * @returns {{ qualifies: boolean, shortfalls: string[] }}
+ */
+export function qualifyRun(ref, observed) {
+  /** @type {Record<string, (want: any) => string|null>} */
+  const evaluators = {
+    min_cpus: (want) => observed.env.cpus >= want ? null : `${observed.env.cpus} cpus < ${want}`,
+    min_memory_gb: (want) => observed.env.total_memory_gb >= want
+      ? null : `${observed.env.total_memory_gb} GB memory < ${want} GB`,
+    max_load_average_1m: (want) => observed.env.load_average_1m <= want
+      ? null : `load average ${observed.env.load_average_1m} > ${want}`,
+    min_events: (want) => observed.events >= want
+      ? null : `${observed.events} events < ${want}`,
+    min_repeats: (want) => observed.repeats >= want
+      ? null : `${observed.repeats} repeats < ${want}`,
+    node_major_at_least: (want) => {
+      const major = Number(process.version.replace(/^v/, '').split('.')[0]);
+      return major >= want ? null : `node ${process.version} is older than ${want}`;
+    },
+    requires_attestation: (want) => {
+      const missing = /** @type {string[]} */ (want).filter((k) => {
+        const value = /** @type {any} */ (observed)[k];
+        return typeof value !== 'string' || value.trim() === '';
+      });
+      return missing.length === 0 ? null
+        : `no operator attestation for ${missing.join(' and ')} (pass --${/** @type {string[]} */ (want)[0]})`;
+    },
+  };
+
+  // Descriptive keys carry no constraint; everything else must be evaluated.
+  const descriptive = new Set(['note', 'requirement', 'excluded', 'attestation_note']);
+  /** @type {string[]} */
+  const shortfalls = [];
+  for (const [key, want] of Object.entries(ref)) {
+    if (descriptive.has(key)) continue;
+    const evaluate = evaluators[key];
+    if (!evaluate) {
+      throw new Error(
+        `reference-env.json declares ${JSON.stringify(key)} and bench/precision.mjs has no `
+        + 'evaluator for it. A declared constraint that nothing checks reads as enforced and is '
+        + 'not; add an evaluator or move the key to the descriptive list.');
+    }
+    const shortfall = evaluate(want);
+    if (shortfall) shortfalls.push(shortfall);
+  }
+  if (!observed.clockAdequate) shortfalls.push('clock resolution too coarse for what is reported');
+  return { qualifies: shortfalls.length === 0, shortfalls };
+}

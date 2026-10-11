@@ -27,6 +27,10 @@
  * p99 here is not evidence of anything, in either direction.
  *
  *   node bench/append.mjs [--events 20000] [--repeat 3] [--json]
+ *
+ * An acceptance run additionally needs the operator to say where it ran:
+ *   node bench/append.mjs --events 1000000 --repeat 3 \
+ *     --machine 'bench-01, bare metal' --storage 'NVMe SSD, ext4, 40% full'
  */
 
 import fs from 'node:fs';
@@ -37,7 +41,7 @@ import { Store } from '@splitstick/core/store';
 import { parseConfig } from '@splitstick/core/config';
 import { generateDevSigner } from '@splitstick/core/signer-file';
 import { gcRecorder, gcOverlap, selfCheck } from './gc.mjs';
-import { clockResolution, environment } from './precision.mjs';
+import { clockResolution, environment, qualifyRun } from './precision.mjs';
 
 const argv = process.argv.slice(2);
 const num = (name, fallback) => {
@@ -47,6 +51,15 @@ const num = (name, fallback) => {
 const EVENTS = num('events', 20_000);
 const REPEAT = Math.max(1, num('repeat', 3));
 const JSON_OUT = argv.includes('--json');
+/** @param {string} name */
+const str = (name) => {
+  const i = argv.indexOf(`--${name}`);
+  return i === -1 ? undefined : argv[i + 1];
+};
+// Named by the operator for an acceptance run: cpus, memory and load cannot
+// establish that a machine is dedicated or that its storage is comparable.
+const MACHINE = str('machine');
+const STORAGE = str('storage');
 // NFR-01 as revised at M1: p95 is the budget, p99 has a budget and a stretch.
 const BUDGET_P95_MS = 1;
 const BUDGET_P99_MS = 3;
@@ -206,20 +219,20 @@ const env = await environment();
 const REF = JSON.parse(fs.readFileSync(new URL('./reference-env.json', import.meta.url), 'utf8'));
 
 /**
- * Does this run qualify as NFR-01's acceptance measurement, or is it a
- * regression metric? Saying which is the point: the same harness is used for
- * both, and an acceptance claim from a busy laptop is the kind of number this
- * project has already had to retract twice.
+ * Acceptance measurement, or regression metric? The same harness produces both,
+ * and an acceptance claim from the wrong machine is how two of this project's
+ * performance claims had to be withdrawn. qualifyRun() evaluates every
+ * constraint the reference file declares and refuses to run if one has no
+ * evaluator.
  */
-const shortfalls = [
-  env.cpus < REF.min_cpus ? `${env.cpus} cpus < ${REF.min_cpus}` : null,
-  env.total_memory_gb < REF.min_memory_gb ? `${env.total_memory_gb} GB < ${REF.min_memory_gb} GB` : null,
-  env.load_average_1m > REF.max_load_average_1m ? `load ${env.load_average_1m} > ${REF.max_load_average_1m}` : null,
-  EVENTS < REF.min_events ? `${EVENTS} events < ${REF.min_events}` : null,
-  REPEAT < REF.min_repeats ? `${REPEAT} repeats < ${REF.min_repeats}` : null,
-  !clock.adequate ? `clock tick ${clock.tick_ms} ms too coarse` : null,
-].filter(Boolean);
-const qualifies = shortfalls.length === 0;
+const { qualifies, shortfalls } = qualifyRun(REF, {
+  env,
+  events: EVENTS,
+  repeats: REPEAT,
+  clockAdequate: clock.adequate,
+  ...(MACHINE ? { machine: MACHINE } : {}),
+  ...(STORAGE ? { storage: STORAGE } : {}),
+});
 const chain = across(chainRuns);
 const full = across(fullRuns);
 const baseline = { write_to_open_fd: across(fdRuns), create_new_file: across(fileRuns) };
@@ -232,6 +245,8 @@ const report = {
   arms: { chain, full },
   filesystem_baseline: baseline,
   environment: env,
+  ...(MACHINE ? { machine: MACHINE } : {}),
+  ...(STORAGE ? { storage: STORAGE } : {}),
   clock,
   gc_recorder: recorder.verified ? 'verified' : 'UNVERIFIED',
   kind: qualifies ? 'acceptance measurement' : 'regression metric',

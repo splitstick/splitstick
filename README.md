@@ -125,6 +125,13 @@ percentile without attribution invites widening the budget instead of finding th
   asynchronous entries arrived. Latency is never bought with durability: a deferred-write
   queue was tried and removed.
 
+## Follow-ups
+
+[`docs/m1-follow-ups.md`](docs/m1-follow-ups.md) records what M1 left open and
+what would close it: NFR-01's acceptance measurement on a qualifying machine,
+NFR-02's workload assumptions, and two things to carry into M3a — fuzzing the
+canonicaliser, and writing the fault-injection cases before the happy path.
+
 ## Resourcing
 
 Unfunded: one person's time, no budget. No hosted witness, no accreditation, no certification

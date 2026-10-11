@@ -62,3 +62,66 @@ test('the environment is recorded so a number is attributable', async () => {
   assert.match(env.node, /^v\d+/);
   assert.ok(env.cpus >= 1);
 });
+
+import { qualifyRun } from '../precision.mjs';
+import { readFileSync } from 'node:fs';
+
+const REF = JSON.parse(readFileSync(new URL('../reference-env.json', import.meta.url), 'utf8'));
+
+const ample = {
+  env: { cpus: 8, total_memory_gb: 32, load_average_1m: 0.2 },
+  events: 1_000_000, repeats: 3, clockAdequate: true,
+  machine: 'bench-01, bare metal', storage: 'NVMe SSD, ext4, 40% full',
+};
+
+test('a fully specified run qualifies', () => {
+  const r = qualifyRun(REF, ample);
+  assert.deepEqual(r.shortfalls, []);
+  assert.equal(r.qualifies, true);
+});
+
+/**
+ * Review finding: node_major_at_least was declared in the reference file and
+ * never read. The check is now data-driven, so a constraint without an
+ * evaluator throws instead of being silently skipped — a threshold the code
+ * ignores reads as enforced and is not.
+ */
+test('every declared constraint is evaluated, or the run refuses to start', () => {
+  assert.throws(() => qualifyRun({ ...REF, max_iowait_percent: 5 }, ample),
+    /has no evaluator/, 'an unevaluated constraint must not pass silently');
+});
+
+test('node_major_at_least is enforced', () => {
+  const r = qualifyRun({ ...REF, node_major_at_least: 999 }, ample);
+  assert.equal(r.qualifies, false);
+  assert.ok(r.shortfalls.some(s => /node .* older than 999/.test(s)), JSON.stringify(r.shortfalls));
+});
+
+/**
+ * And the limit the review identified: cpus, memory and load cannot establish
+ * that a machine is dedicated or that its storage is comparable, so an
+ * acceptance run must name both. That makes the claim attributable rather than
+ * verifiable, which is the honest ceiling for a benchmark describing its host.
+ */
+test('an acceptance run must name its machine and storage', () => {
+  for (const missing of ['machine', 'storage']) {
+    const observed = { ...ample, [missing]: undefined };
+    const r = qualifyRun(REF, observed);
+    assert.equal(r.qualifies, false, missing);
+    assert.ok(r.shortfalls.some(s => s.includes(missing)), JSON.stringify(r.shortfalls));
+  }
+  const blank = qualifyRun(REF, { ...ample, storage: '   ' });
+  assert.equal(blank.qualifies, false, 'whitespace is not an attestation');
+});
+
+test('each shortfall is named, so a near miss is actionable', () => {
+  const r = qualifyRun(REF, {
+    env: { cpus: 2, total_memory_gb: 4, load_average_1m: 9 },
+    events: 100, repeats: 1, clockAdequate: false,
+  });
+  assert.equal(r.qualifies, false);
+  assert.ok(r.shortfalls.length >= 6, JSON.stringify(r.shortfalls));
+  for (const needle of ['cpus', 'memory', 'load average', 'events', 'repeats', 'clock']) {
+    assert.ok(r.shortfalls.some(s => s.includes(needle)), `${needle} not named`);
+  }
+});
