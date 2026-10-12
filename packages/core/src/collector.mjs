@@ -26,6 +26,15 @@ import { signNote } from './signer.mjs';
 import { extractRefs } from './content.mjs';
 import { captureAttestation, UNATTESTED_BUILD } from './capture.mjs';
 import { effectivePolicy, policyDigest, GENESIS_POLICY } from './policy.mjs';
+
+/**
+ * The only commitments whose byte LENGTH is retained — PRIV-05, DES-13.
+ *
+ * A payload's length is a documented, unmitigated leak that a verifier needs in
+ * order to detect a truncated content store. A label's length is neither needed
+ * nor read, and is more identifying per byte.
+ */
+const LENGTH_RETAINED = new Set(['args', 'result']);
 import { SCHEMA_VERSION, SUITE } from './record.mjs';
 
 /** @param {unknown} v @returns {v is Uint8Array} */
@@ -472,7 +481,8 @@ export class Collector {
    *
    * @param {Record<string, Uint8Array|undefined>} fields
    * @param {string} [indexField] the field to scan for counterparty references
-   * @returns {Record<string, { cid: string, bytes: number }>}
+   * @returns {Record<string, { cid: string, bytes?: number }>} `bytes` only where
+   *   PRIV-05 retains a length — see LENGTH_RETAINED
    */
   #commitAll(fields, indexField) {
     /** @type {string[]} */
@@ -490,9 +500,31 @@ export class Collector {
       payloads.push(name === indexField ? { bytes, refs: extractRefs(bytes) } : { bytes });
     }
     const commitments = this.store.content.putGroup(payloads);
-    /** @type {Record<string, { cid: string, bytes: number }>} */
+    /** @type {Record<string, { cid: string, bytes?: number }>} */
     const out = {};
-    names.forEach((name, i) => { out[name] = /** @type {{cid: string, bytes: number}} */ (commitments[i]); });
+    names.forEach((name, i) => {
+      const c = /** @type {{cid: string, bytes: number}} */ (commitments[i]);
+      // PRIV-05 — the LENGTH of a label is not retained, only of a payload.
+      //
+      // `args.bytes` and `result.bytes` survive erasure as a documented,
+      // unmitigated leak, and DES-13 states the trade: a verifier needs them to
+      // detect a truncated content store. Nothing needs the length of an agent
+      // label or of an approval reviewer, and nothing reads it — and a label's
+      // length is far more identifying per byte than a payload's, because an
+      // address or a name is short and its length narrows a guess at a person.
+      //
+      // The residue scan found this: `agent.bytes` was retained and DES-13's
+      // table, which an external review established as the whole inventory
+      // rather than a sample, does not list it. Either the table was wrong or
+      // the field should not be there; it should not be there.
+      //
+      // Tightened at EMISSION only. validateRecord still accepts `bytes` on any
+      // commitment, because it is also the read path: refusing it there would
+      // turn every record already written into MALFORMED_RECORD, which the
+      // verifier reports as `fail` — a false tampering signal over evidence
+      // that was correct when written.
+      out[name] = LENGTH_RETAINED.has(name) ? c : { cid: c.cid };
+    });
     return out;
   }
 
@@ -687,6 +719,24 @@ export class Collector {
       from_ts: o.from_ts ?? ts, to_ts: o.to_ts ?? ts,
       last_checkpoint_source_seq: o.last_checkpoint_source_seq,
     }));
+  }
+
+  /**
+   * Round this batch up to the configured multiple — FR-34.
+   *
+   * Counted over the whole chain, because `record_seq == tree_size` and the
+   * tree is the whole chain: quantising the chain's height is what obscures
+   * volume, and quantising a per-batch delta would leave the total exact.
+   */
+  #padBatch() {
+    const to = this.config.padding?.to_multiple;
+    if (to === undefined || to === null) return;
+    const have = this.recordSeq;
+    // Nothing to pad when the height already lands on the boundary. Appending
+    // a full block of padding there would make the quantisation itself visible
+    // as a step, which is the pattern it exists to hide.
+    const want = Math.ceil(have / to) * to;
+    for (let i = have; i < want; i += 1) this.padding();
   }
 
   /**
@@ -943,6 +993,19 @@ export class Collector {
    * @returns {Promise<{ checkpoint_seq: number, tree_size: number, root: Buffer, note: string }>}
    */
   async checkpoint() {
+    // FR-34 — padding is applied HERE, at batch close, and nowhere else.
+    //
+    // DES-05's rule 2 says never retroactively, and the structure is what
+    // enforces it rather than a check: padding records are appended through
+    // the ordinary #write path BEFORE the root is computed, so they are part
+    // of the tree this checkpoint signs and can never be part of one already
+    // signed. There is no code path that adds a leaf to a closed batch,
+    // because a closed batch is a signed note and leaves are not stored in it.
+    //
+    // Each padding record carries its own random nonce, so two of them never
+    // share a leaf (rule 1). Identical padding leaves would be a recognisable
+    // pattern and therefore no padding at all.
+    this.#padBatch();
     const leaves = this.store.readChain().map(e => e.leaf);
     if (leaves.length === 0) throw new Error('nothing to checkpoint: the log is empty');
     const root = treeRoot(leaves);

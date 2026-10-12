@@ -5,7 +5,8 @@
     "M2",
     "M3a",
     "M3b",
-    "M4"
+    "M4",
+    "M5"
   ],
   "verdict_rule": "A single fail makes the whole run fail. inconclusive never upgrades to fail and never downgrades to ok. ok means every check that could run, ran, and passed.",
   "codes": [
@@ -212,6 +213,30 @@
       "milestone": "M4",
       "verdict": "inconclusive",
       "conclusion": "A record carries no usable ts, so it cannot be placed in a date window and is excluded from a coverage report's counts. Inconclusive rather than fail: the record is chained and its integrity is unaffected, and what is missing is the ability to say WHEN it falls — which the ts never established anyway, being self-asserted. Reported rather than silently dropped, because a record excluded in silence makes a window look emptier than the evidence says."
+    },
+    {
+      "code": "RESIDUE_UNCLASSIFIED_FIELD",
+      "milestone": "M5",
+      "verdict": "fail",
+      "conclusion": "The record schema permits a field that the erasure inventory does not classify, so the residue scan cannot say whether it survives a deletion request. Reported as fail because an unclassified field would survive BY DEFAULT: PRIV-05 enumerates exactly what remains, and a field nobody decided about breaks that enumeration before any store is even looked at. The fix is to classify it in residue.mjs, which forces the decision rather than letting the schema grow underneath the claim."
+    },
+    {
+      "code": "RESIDUE_UNEXPECTED_FIELD",
+      "milestone": "M5",
+      "verdict": "fail",
+      "conclusion": "A field is present in the chain that is not in the enumerated permanent set, or a sub-key of a commitment is classified neither permanent nor erasable. PRIV-05 claims an exact residue, field for field, so an unlisted field is a claim broken rather than a detail — and a partial inventory is worse than none, because it reads as exhaustive."
+    },
+    {
+      "code": "RESIDUE_SALT_RETAINED",
+      "milestone": "M5",
+      "verdict": "fail",
+      "conclusion": "The leaf salt of a shredded record is still held. The salt is what makes the commitment unlinkable, so while it survives, a plaintext anybody can guess at can still be confirmed against the digest — the record is committed but not erased. This is why salts must not live in the chain: the chain is never deleted, so a salt stored there could never be shredded and the erasure claim would be unsatisfiable."
+    },
+    {
+      "code": "RESIDUE_CONTENT_RETAINED",
+      "milestone": "M5",
+      "verdict": "fail",
+      "conclusion": "A shredded record's payload is still retrievable: the key journal still holds its entry and the blob still reaches the bytes. Crypto-shredding removes both, so either half surviving means the content was not erased."
     }
   ]
 }

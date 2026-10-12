@@ -67,6 +67,13 @@ export const FAILURE_CODES = Object.freeze([
   'COVERAGE_GAP',
   'COVERAGE_UNKNOWN',
   'UNDATED_RECORD',
+  // PRIV-05, PRIV-03 — the erasure residue scan. In the shared vocabulary
+  // rather than a second one, because a reader should not have to know which
+  // instrument is talking before they can read a code.
+  'RESIDUE_UNCLASSIFIED_FIELD',
+  'RESIDUE_UNEXPECTED_FIELD',
+  'RESIDUE_SALT_RETAINED',
+  'RESIDUE_CONTENT_RETAINED',
 ]);
 
 /** DES-12's three verdicts. There is no fourth, and no absent one. */
@@ -135,6 +142,11 @@ export const DEFAULT_VERDICTS = Object.freeze({
   COVERAGE_GAP: 'fail',
   COVERAGE_UNKNOWN: 'inconclusive',
   UNDATED_RECORD: 'inconclusive',
+  // All `fail`: each is a privacy claim broken, not a weaker one.
+  RESIDUE_UNCLASSIFIED_FIELD: 'fail',
+  RESIDUE_UNEXPECTED_FIELD: 'fail',
+  RESIDUE_SALT_RETAINED: 'fail',
+  RESIDUE_CONTENT_RETAINED: 'fail',
 });
 
 /**

@@ -342,7 +342,9 @@
       "title": "splitstick disclose",
       "statement": "Emit a Merkle inclusion proof for a single named event.",
       "source": "Disclosure — splitstick disclose",
-      "verify": "Recipient verifies one event without the rest"
+      "verify": "Recipient verifies one event without the rest",
+      "status": "done",
+      "evidence": "disclose.mjs buildDisclosure/verifyDisclosure + the disclose CLI; a recipient verifies one event holding the pack and nothing else — no store, no network, no credential The pack carries the CONTENT SALT for the disclosed record's payloads, without which a recipient cannot check the plaintext against its commitment at all: substituting the payload entirely once produced a verdict of ok with no findings, because the content check compared an unsalted digest to the salted cid. A shredded record carries its committed leaf so inclusion stays provable, with the limit stated precisely — the leaf's presence in the tree is provable, its binding to the record shown is not. The manifest must name the record the pack holds. The RECORD is the authority for content, not the content entry: the expected locations and their cids come from the authenticated record, whose leaf is bound to the countersigned root, and the recomputation is against its cid rather than the entry's. Comparing a payload to the cid in its own entry accepted a self-consistent replacement — bytes, salt and cid changed together — which let a recipient read a payload from one record under a Merkle proof for another. A committed location with no entry is reported as omitted, which is not the same fact as erased; an entry at a location the record commits to nothing for is refused. committedContent() is shared by the builder and the verifier so the two cannot disagree about which locations exist."
     },
     {
       "id": "FR-33",
@@ -351,7 +353,9 @@
       "title": "Inclusion proof binds to countersigned root",
       "statement": "Inclusion proofs verify against a countersigned root, not a bare local digest.",
       "source": "Disclosure — against a countersigned root",
-      "verify": "Proof rejected when root is unwitnessed"
+      "verify": "Proof rejected when root is unwitnessed",
+      "status": "done",
+      "evidence": "buildDisclosure REFUSES a pack whose covering checkpoints carry no countersignature, rather than handing one over with a caveat, because a caveat is something a recipient has to notice. Verification checks the proof reaches the root the CHECKPOINT commits to and not merely the root the pack supplies alongside it — stopping after the first half would let an operator prove inclusion in a tree nobody countersigned, FR-33 defeated by arithmetic. Every covering checkpoint is considered so an unwitnessed one cannot mask a witnessed later one"
     },
     {
       "id": "FR-34",
@@ -360,7 +364,9 @@
       "title": "Optional batch padding",
       "statement": "Provide optional padding of batches with dummy leaves to obscure activity volume. Padding is applied only at batch close and never retroactively; dummy leaves are explicitly typed so a verifier holding the pack can count them; and a real action can never be reclassified as padding, because its leaf is already committed.",
       "source": "Disclosure — optional batch padding",
-      "verify": "Retroactive padding is rejected; a verifier reports real and dummy leaf counts separately; reclassifying a committed action fails the leaf check"
+      "verify": "Retroactive padding is rejected; a verifier reports real and dummy leaf counts separately; reclassifying a committed action fails the leaf check",
+      "status": "done",
+      "evidence": "Collector.#padBatch at batch close + the verifier's kind census; padding is applied through the ordinary write path BEFORE the root is computed, so rule 2 is enforced by the structure rather than by a check — there is no code path that adds a leaf to a closed batch, because a closed batch is a signed note and leaves are not stored in it. The `padding` config key was in the known-key list and never parsed, so a config asking for padding was accepted and silently ignored: an operator could believe their volume was obscured while nothing padded anything, the same defect as the verifier's --vkey"
     },
     {
       "id": "FR-35",
@@ -380,7 +386,9 @@
       "title": "Crypto-shredding",
       "statement": "Deleting content and its key leaves the chain verifiable and the commitment permanently unlinkable.",
       "source": "Erasure — crypto-shredding",
-      "verify": "Verify passes after content+key deletion"
+      "verify": "Verify passes after content+key deletion",
+      "status": "done",
+      "evidence": "content.mjs shredAll + Store.shredRecord; a shredded record verifies as inconclusive and never as fail, because reporting a lawful deletion as tampering would make compliance look like an attack"
     },
     {
       "id": "FR-37",
@@ -389,7 +397,9 @@
       "title": "Retention policy on storage",
       "statement": "Retention and erasure are configurable at the storage layer, independent of the cryptography.",
       "source": "Erasure — policy settings on your storage",
-      "verify": "Retention config honoured; chain unaffected"
+      "verify": "Retention config honoured; chain unaffected",
+      "status": "done",
+      "evidence": "config retention_ms + Store.applyRetention; the sweep crypto-shreds what is older than the window and a test asserts the leaves and heads are BYTE-IDENTICAL across it — a retention setting that reached the chain would make the cryptography and the policy inseparable. An undated record is not swept, because guessing would delete evidence on the strength of a field just refused. The `retention` key was in the known-key list and never parsed, so `retention: 30d` was accepted and silently meant keep-forever"
     },
     {
       "id": "FR-38",

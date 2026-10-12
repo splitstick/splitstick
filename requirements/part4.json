@@ -372,7 +372,9 @@
     "title": "Padding is a record kind",
     "statement": "A padding leaf is an explicit record kind in the version-1 enum, with its own record_seq, source_seq null, no tool or payload fields, and a random nonce so no two padding records share a leaf. Padding leaves without records would break record_seq equals tree_size.",
     "source": "Disclosure — optional batch padding",
-    "verify": "Two real records plus three padding records yield tree_size 5 and record_seq 5; a verifier counts real and padding records separately; a mixed real-and-padding log verifies end to end"
+    "verify": "Two real records plus three padding records yield tree_size 5 and record_seq 5; a verifier counts real and padding records separately; a mixed real-and-padding log verifies end to end",
+    "status": "done",
+    "evidence": "record.mjs padding kind + Collector.padding(); each nonce is random so no two padding leaves match — identical ones would be a recognisable pattern and therefore no padding at all. record_seq still equals tree_size, which dummy leaves without records would have broken"
   },
   {
     "id": "DOC-11",

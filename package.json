@@ -27,7 +27,10 @@
     "test:kms": "node --test packages/signer-aws-kms/test/integration.test.mjs",
     "drill:restore": "node packages/witness-self/drill/restore.mjs",
     "anchor-wps": "node tools/anchor-wps.mjs",
-    "coverage": "node packages/verify/src/coverage-bin.mjs"
+    "coverage": "node packages/verify/src/coverage-bin.mjs",
+    "disclose": "node packages/verify/src/disclose-bin.mjs",
+    "bench:verify": "node bench/verify.mjs",
+    "bench:verify:quick": "node bench/verify.mjs --events 5000 --repeat 1"
   },
   "dependencies": {
     "@open-multi-agent/core": "1.21.1",

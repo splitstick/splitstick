@@ -38,7 +38,8 @@
     "title": "Verification throughput",
     "statement": "Verify a 100,000-event run in under 2 seconds, offline.",
     "source": "Numbers we are signing up to",
-    "verify": "Benchmark on a documented reference machine"
+    "verify": "Benchmark on a documented reference machine",
+    "evidence": "bench/verify.mjs measures total elapsed against the 2 s budget on the WORST run, not a percentile and not the median: an auditor runs it once and 'usually under two seconds' is not the claim. STATUS: NOT YET ESTABLISHED. It needs a run on bench/reference-env.json's machine, and the development host sat at load average 13 — the project's own discipline puts the ceiling at 1.0 and calls anything else a regression metric. What IS established is that the verifier recomputed treeRoot once per checkpoint, O(checkpoints x n), which was the single largest cost: 585 ms of a 2.3 s run over 8,000 records, extrapolating to roughly 59 s at the size this requirement names. merkle.prefixRoots computes every prefix in one pass instead, proven equal to treeRoot for every prefix size rather than for a sample, and 5x faster in an isolated loop at 8 checkpoints. The remaining floor is JCS canonicalisation at ~19 microseconds a record, which puts 100,000 records near the budget on its own and is the next thing to measure on the reference host"
   },
   {
     "id": "NFR-05",
@@ -47,7 +48,9 @@
     "title": "No network at verification",
     "statement": "Verification completes with networking disabled.",
     "source": "Proof — no network",
-    "verify": "Test executed in a network-isolated sandbox"
+    "verify": "Test executed in a network-isolated sandbox",
+    "status": "done",
+    "evidence": "Two halves: `fetch` replaced with something that throws and the environment emptied, plus a comment-stripped source scan of the modules verification reaches. Neither alone is enough — a node: module namespace is read-only so the behavioural half cannot cover http.request, and the scan is stripped because it once failed on the word `fetch` inside a comment saying this verifier does not fetch"
   },
   {
     "id": "NFR-06",
@@ -56,7 +59,9 @@
     "title": "No credentials at verification",
     "statement": "Verification requires no account, token or credential.",
     "source": "Proof — no credentials, no account",
-    "verify": "Test with an empty environment"
+    "verify": "Test with an empty environment",
+    "status": "done",
+    "evidence": "Verification runs with every environment variable deleted: no account, no token, no credential"
   },
   {
     "id": "NFR-07",
@@ -378,7 +383,9 @@
     "title": "Erasure via crypto-shredding",
     "statement": "Support a documented erasure procedure satisfying a data-subject deletion request, over payloads, content salts, leaf salts, the reference index, the agent label and any approval reviewer. The claim is scoped to that enumerated set, not to all personal information everywhere.",
     "source": "Erasure — GDPR-compatible",
-    "verify": "Procedure executed; the enumerated set is unrecoverable; an independent privacy assessment of the residue is deferred to a funded release and recorded as such"
+    "verify": "Procedure executed; the enumerated set is unrecoverable; an independent privacy assessment of the residue is deferred to a funded release and recorded as such",
+    "status": "done",
+    "evidence": "residue.mjs scanResidue over the five erasable payloads — the agent label, both payloads, the approval reviewer and the reviewed request — each asserted unretrievable afterwards, with an unrelated record's payloads untouched. The independent privacy assessment of the residue remains deferred to a funded release, as the requirement says"
   },
   {
     "id": "PRIV-04",
@@ -387,7 +394,9 @@
     "title": "Chain survives erasure",
     "statement": "The chain still verifies after content deletion.",
     "source": "Erasure — the chain still verifies",
-    "verify": "Verify passes post-deletion"
+    "verify": "Verify passes post-deletion",
+    "status": "done",
+    "evidence": "verifyStore after shredRecord: failed is 0, and every finding is inconclusive — CONTENT_ABSENT and LEAF_INCONCLUSIVE — never fail"
   },
   {
     "id": "PRIV-05",
@@ -396,7 +405,9 @@
     "title": "Minimal retained artefacts",
     "statement": "After erasure the chain retains only the version-1 permanent set: v, collector, run, record_seq, source_seq, ts, kind, consequential, tool, outcome, attempt, correlation, approval.decision, result.ok, args.bytes, result.bytes, a padding record pad nonce, gap spans, unknown-loss intervals, and salted digests, leaf digests and chain heads. Every other field is erasable: payloads, the agent label, the approval reviewer, the reviewed request, content salts, leaf salts and the reference index. The byte lengths and the correlation relationship are documented residual leaks with no mitigation in 1.0.",
     "source": "Erasure — what survives is a salted hash and a timestamp",
-    "verify": "Automated scan after crypto-shredding asserts the residue matches the enumerated permanent set exactly, field for field, across every record kind including padding; the list is derived from the version-1 schema so a schema change fails the test rather than silently passing"
+    "verify": "Automated scan after crypto-shredding asserts the residue matches the enumerated permanent set exactly, field for field, across every record kind including padding; the list is derived from the version-1 schema so a schema change fails the test rather than silently passing",
+    "status": "done",
+    "evidence": "residue.mjs CLASSIFIED + classifySchema + scanResidue, with four codes in the shared vocabulary. The classification is checked against ALLOWED so extending the record format fails the scan rather than letting a new field survive a deletion request by default; classifySchema takes the schema as a parameter so a test can prove it CAN fail, since ALLOWED is frozen and a check nothing can fail proves nothing. It found agent.bytes retained on its first run, which DES-13's inventory does not list — the collector no longer writes label lengths. A first version of the table listed approval.reviewer and approval.request as erasable SUB-KEYS and reported a correctly shredded record as retaining them: they are commitments whose VALUES are erasable, and the dead RESIDUE_ERASABLE_RETAINED code that mistake needed was removed The scan reports what it cannot read rather than skipping it: a chain line carrying a field inside unreadable JSON was invisible and the store was reported clean, while PRIV-05's claim is an exact residue."
   },
   {
     "id": "PRIV-06",
@@ -405,7 +416,9 @@
     "title": "Disclosure minimisation",
     "statement": "A disclosure reveals the named event and nothing else about other events' contents.",
     "source": "Disclosure — without seeing anything else",
-    "verify": "Test asserts a disclosure pack contains exactly one salt and that no sibling leaf is reproducible from the pack"
+    "verify": "Test asserts a disclosure pack contains exactly one salt and that no sibling leaf is reproducible from the pack",
+    "status": "done",
+    "evidence": "Exactly one salt, keyed by the disclosed record_seq, checked at BUILD time because a check on the recipient's side would run after the damage and a disclosure cannot be undone. The test states honestly what a Merkle path does reveal — the HASH of a sibling leaf, which is how an inclusion proof works — and asserts what it does not: no sibling leaf digest, no sibling salt, no sibling payload, so a sibling's content can be neither reproduced nor confirmed Adding the content salt closed one hole and could have opened a worse one, so a test asserts no SIBLING content salt appears: that would let a recipient confirm a guess at a payload nobody disclosed."
   },
   {
     "id": "PRIV-07",
@@ -414,7 +427,9 @@
     "title": "Disclose the tree-size leak",
     "statement": "Document that an inclusion proof reveals the log tree size, and that tree size is the count of ALL records — actions, heartbeats, policy events, gap declarations and padding — not a count of agent actions. The action count is therefore not directly disclosed, which is a weaker leak than an earlier draft claimed.",
     "source": "Disclosure — the honest limit",
-    "verify": "Documentation review; a test asserts tree size exceeds the action count in any run containing heartbeats"
+    "verify": "Documentation review; a test asserts tree size exceeds the action count in any run containing heartbeats",
+    "status": "done",
+    "evidence": "The verifier reports records.by_kind beside tree_size, and a test asserts tree size exceeds the action count in a run holding heartbeats — with padding OFF, so it is not padding doing the work. `real` is named for not-padding rather than for actions, because heartbeats, gaps and policy events are real records and are not agent actions either, and conflating the two is the misreading PRIV-07 exists to prevent"
   },
   {
     "id": "PRIV-08",
@@ -423,7 +438,9 @@
     "title": "Disclose the cadence leak",
     "statement": "Document that anchor cadence leaks activity volume.",
     "source": "Disclosure — anchor cadence likewise leaks",
-    "verify": "Documentation review"
+    "verify": "Documentation review",
+    "evidence": "docs/known-limits.md states the anchor-cadence leak: submitting checkpoints to a witness on a schedule tells that witness when the operator was busy. Published rather than reviewed — the DOC-05 test requires every uncovered attack and leak in that document to stay named",
+    "status": "done"
   },
   {
     "id": "PRIV-09",
@@ -432,6 +449,8 @@
     "title": "Operator-controlled retention",
     "statement": "Retention is a setting on operator-controlled storage, not a vendor policy.",
     "source": "Erasure — policy settings on your storage",
-    "verify": "Configuration test"
+    "verify": "Configuration test",
+    "status": "done",
+    "evidence": "Retention is a setting on the operator's own config applied to the operator's own storage by Store.applyRetention; nothing about it is a vendor policy and nothing about it is recorded in the chain, because a retention sweep is not an agent action"
   }
 ]

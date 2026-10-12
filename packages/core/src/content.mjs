@@ -359,6 +359,26 @@ export class ContentStore {
     return e !== undefined && existsSync(this.blobPath) && statSync(this.blobPath).size >= e.offset + e.length;
   }
 
+  /**
+   * The content salt a payload was committed under — FR-32, PRIV-06.
+   *
+   * A content cid is `SHA-256(0x05 ‖ salt ‖ plaintext)`, so a recipient handed
+   * the plaintext and the cid cannot check one against the other without the
+   * salt. A disclosure pack therefore has to carry it, and this is the only
+   * way to read it: it lives in the first bytes of the stored blob, which is
+   * private, and the store is where it should stay private.
+   *
+   * Revealing it for a payload you are ALSO revealing costs nothing — the
+   * salt's job is to stop a guess at an undisclosed plaintext being confirmed.
+   * Revealing a sibling's would be the whole of PRIV-06's failure, and a
+   * caller gets exactly the cid it asks for.
+   * @param {string} cid @returns {Buffer}
+   */
+  contentSalt(cid) {
+    if (!this.has(cid)) throw new ContentMissing(cid);
+    return Buffer.from(this.#blob(cid).subarray(0, CONTENT_SALT_BYTES));
+  }
+
   /** @param {string} cid @returns {Buffer} */
   get(cid) {
     if (!this.has(cid)) throw new ContentMissing(cid);

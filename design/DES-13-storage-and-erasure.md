@@ -71,6 +71,52 @@ blanket claim was doing too much work:
 | salted content digests, leaf digests, chain heads | the reference index |
 | gap spans and unknown-loss intervals | |
 
+### The residue scan — PRIV-05, PRIV-03
+
+The table above is a claim, and `packages/core/src/residue.mjs` is what stops it from becoming a
+description of a previous version of the schema. Four codes, in the verifier's shared vocabulary
+rather than a second one:
+
+| Code | Verdict | When |
+|---|---|---|
+| `RESIDUE_UNCLASSIFIED_FIELD` | fail | the schema permits a field the inventory does not classify, so the scan cannot say whether it survives — and an unclassified field would survive by default |
+| `RESIDUE_UNEXPECTED_FIELD` | fail | a field, or a sub-key of a commitment, is present and is not retained by this table |
+| `RESIDUE_SALT_RETAINED` | fail | a shredded record's leaf salt is still held, so the commitment is still linkable |
+| `RESIDUE_CONTENT_RETAINED` | fail | a shredded record's payload is still retrievable — the key journal still holds its entry, or the blob still reaches the bytes |
+
+All four are `fail`, because each is a privacy claim broken rather than a weaker one.
+
+**The first code is the one that matters.** A scan that only checked the residue would pass
+forever while the schema grew underneath it, so the classification is checked against `ALLOWED`:
+extending the record format forces a decision about whether the new field survives a deletion
+request. The scan found one on its first run — `agent.bytes` was retained, and this table, which a
+review established as the whole inventory rather than a sample, does not list it. Nothing reads
+it, and a label's length is more identifying per byte than a payload's, because an address or a
+name is short and its length narrows a guess at a person. **The collector no longer writes it**;
+`args.bytes` and `result.bytes` remain, for the reason stated above.
+
+Tightened at emission only. `validateRecord` still accepts `bytes` on any commitment, because it
+is also the read path: refusing it there would turn every record already written into
+`MALFORMED_RECORD`, which the verifier reports as `fail` — a false tampering signal over evidence
+that was correct when it was written.
+
+### Retention — FR-37, PRIV-09
+
+`retention: 30d` in the config, applied by `Store.applyRetention`, which crypto-shreds every
+record older than the window and **never touches the chain**. That independence is the
+requirement: a retention setting that changed what the chain committed to would make the
+cryptography and the policy inseparable, and the chain is the thing that must survive every lawful
+deletion. A test asserts the leaves and heads are byte-identical across a sweep.
+
+Nothing is written into the chain about a sweep. A retention sweep is not an agent action, and
+recording one there would mean the chain grew every time the operator deleted something. A record
+whose `ts` cannot be read is **not** swept — guessing would mean deleting evidence on the strength
+of a field we just refused to read — and the sweep returns it instead.
+
+The key was in the config's known-key list and never parsed, so `retention: 30d` was accepted and
+silently meant *keep forever*. That is the third instance of this shape in the project, after
+`padding` and the verifier's `--vkey`.
+
 This table is the whole inventory, not a sample. An external review found an earlier version
 omitting `approval.decision`, `approval.request_hash`, `result.ok` and the byte lengths — and a
 partial inventory is worse than none, because it reads as exhaustive.

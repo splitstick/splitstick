@@ -114,7 +114,52 @@ function positive(key, ms) {
  * @property {string} [origin]
  * @property {string} [collector]
  * @property {{ upstreams?: string[], interfaces?: string[] }} [capture] FR-64
+ * @property {{ to_multiple: number }|null} padding FR-34 — off by default
+ * @property {number|null} retention_ms FR-37, PRIV-09 — off by default
  */
+
+/**
+ * FR-34 — optional batch padding, OFF by default.
+ *
+ * `padding: { to_multiple: 16 }` rounds each batch's tree size up to a multiple
+ * of 16 with dummy leaves. Off by default because it inflates every proof and
+ * most operators do not need it; DES-13 is explicit that it is not a mitigation
+ * for the per-record length leak, only for activity VOLUME.
+ *
+ * The key was in the known-key list and never parsed, so `padding:` in a config
+ * file was accepted and silently ignored — an operator could believe their
+ * volume was obscured when nothing was padding anything. That is the same
+ * defect as the verifier's `--vkey`, which was accepted and ignored because the
+ * flag is `--key`.
+ * @param {unknown} v
+ * @returns {{ to_multiple: number }|null}
+ */
+function parsePadding(v) {
+  if (v === undefined || v === null || v === false) return null;
+  if (v !== null && typeof v === 'object' && !Array.isArray(v)) {
+    const o = /** @type {Record<string, unknown>} */ (v);
+    for (const k of Object.keys(o)) {
+      if (k !== 'to_multiple') {
+        throw new ConfigError(`padding.${k} is not a known key; expected to_multiple`);
+      }
+    }
+    const n = o.to_multiple;
+    // 1 would pad every batch to a multiple of one, which is every batch
+    // already — an operator asking for that has misunderstood, and silently
+    // doing nothing would leave them believing otherwise.
+    if (!Number.isSafeInteger(n) || Number(n) < 2) {
+      throw new ConfigError(
+        `padding.to_multiple is ${JSON.stringify(n)}; it must be an integer of 2 or more. `
+        + 'A multiple of one pads nothing, and accepting it would leave an operator believing '
+        + 'their activity volume was obscured',
+      );
+    }
+    return { to_multiple: Number(n) };
+  }
+  throw new ConfigError(
+    'padding must be a mapping like { to_multiple: 16 }, or absent to leave it off',
+  );
+}
 
 /**
  * @param {string} text
@@ -218,6 +263,15 @@ export function parseConfig(text, baseDir = process.cwd()) {
     witnesses,
     quorum: /** @type {number} */ (quorum),
     ...(o.capture === undefined ? {} : { capture: /** @type {any} */ (o.capture) }),
+    padding: parsePadding(o.padding),
+    // FR-37, PRIV-09 — a STORAGE setting, so it is parsed here and applied by
+    // Store.applyRetention, never by anything that touches the chain. The key
+    // was in the known-key list and never parsed, so `retention: 30d` was
+    // accepted and silently meant "keep forever" — the third instance of this
+    // shape in the project, after `padding` and the verifier's `--vkey`.
+    retention_ms: o.retention === undefined || o.retention === null
+      ? null
+      : positive('retention', parseDuration(o.retention)),
     ...(typeof o.origin === 'string' ? { origin: o.origin } : {}),
     ...(typeof o.collector === 'string' ? { collector: o.collector } : {}),
   };

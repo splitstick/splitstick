@@ -29,7 +29,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { Store } from '@splitstick/core/store';
 import { recomputeChain } from '@splitstick/core/chain';
-import { treeRoot, consistencyProof, verifyConsistency } from '@splitstick/core/merkle';
+import { treeRoot, prefixRoots, consistencyProof, verifyConsistency } from '@splitstick/core/merkle';
 import { parseNote, parseCheckpointText, parseVkey, SUITES } from '@splitstick/core/note';
 import { verifyNoteSignature } from '@splitstick/core/signer';
 import { successionReport } from '@splitstick/core/succession';
@@ -93,6 +93,26 @@ function combine(vs) {
 }
 
 /**
+ * A memoised prefix-root lookup — NFR-04.
+ *
+ * `treeRoot(leaves.slice(0, n))` once per checkpoint is O(checkpoints · n) and
+ * was the single largest cost in verification: 585 ms of a 2.3 s run over
+ * 8,000 records, which extrapolates to about 59 s at the 100,000 NFR-04 names.
+ * `prefixRoots` computes every requested prefix in one left-to-right pass.
+ *
+ * Lazy and batched: the first call collects nothing, so the sizes are gathered
+ * up front by the caller. A root for a size beyond the leaves is undefined,
+ * which the SIZE_REGRESSED check above handles before asking.
+ *
+ * @param {Buffer[]} leaves @param {number[]} sizes
+ */
+function rootsFor(leaves, sizes) {
+  const map = prefixRoots(leaves, sizes.filter(n => n <= leaves.length));
+  /** @param {number} n */
+  return (n) => map.get(n) ?? treeRoot(leaves.slice(0, n));
+}
+
+/**
  * @param {string} root the store directory
  * @param {object} [opts]
  * @param {string} [opts.collector] the collector instance whose chain to read
@@ -110,6 +130,7 @@ function combine(vs) {
  *   cross-pack comparison
  * @returns {Promise<{
  *   verdict: Verdict, tree_size: number, anchored_tree_size: number,
+ *   records: { tree_size: number, by_kind: Record<string, number>, padding: number, real: number },
  *   summary: { passed: number, unanswered: number, failed: number },
  *   checks: { name: string, verdict: Verdict, detail?: string }[],
  *   findings: Finding[],
@@ -239,6 +260,12 @@ export async function verifyStore(root, opts = {}) {
   const envelopes = [];
   const pinned = opts.vkey ? parseVkey(opts.vkey) : null;
   const leaves = entries.map(e => e.leaf);
+  // Every prefix size anybody below will ask about, in one pass. Gathering
+  // them up front is what turns O(checkpoints · n) into O(n log n).
+  const rootAt = rootsFor(leaves, [
+    ...store.readCheckpoints().map(({ blob }) => parseEnvelope(blob).tree_size ?? 0),
+    ...(opts.disclosed ?? []).map(d => Number(d.tree_size)),
+  ]);
   let anchored = 0;
 
   // FR-11 — the succession chain, walked from the pinned root before any
@@ -361,7 +388,7 @@ export async function verifyStore(root, opts = {}) {
         code: 'SIZE_REGRESSED', verdict: 'fail',
         detail: `checkpoint ${seq} commits to ${cp.tree_size} records but the log holds ${leaves.length}: the tail was removed below a size already committed`,
       });
-    } else if (!treeRoot(leaves.slice(0, cp.tree_size)).equals(cp.root)) {
+    } else if (!rootAt(cp.tree_size).equals(cp.root)) {
       treeVs.push('fail');
       findings.push({
         code: 'TREE_MISMATCH', verdict: 'fail',
@@ -548,7 +575,7 @@ export async function verifyStore(root, opts = {}) {
       });
       continue;
     }
-    const here = treeRoot(leaves.slice(0, d.tree_size)).toString('base64');
+    const here = rootAt(d.tree_size).toString('base64');
     if (here !== d.root) {
       findings.push({
         code: 'TREE_MISMATCH', verdict: 'fail',
@@ -558,8 +585,20 @@ export async function verifyStore(root, opts = {}) {
     }
   }
 
+  // FR-34 rule 3, FR-69 — real and padding records counted SEPARATELY.
+  //
+  // Indistinguishable padding would make a disclosed tree size meaningless,
+  // which is the whole reason padding is a typed record kind rather than a
+  // bare leaf. Counted here from the records, so the numbers describe the
+  // evidence rather than the operator's configuration.
+  /** @type {Record<string, number>} */
+  const census = {};
+  for (const e of entries) {
+    const k = String(e.record?.kind ?? 'unreadable');
+    census[k] = (census[k] ?? 0) + 1;
+  }
   return report(entries.length, anchored, checks, findings, notes, collector, opts.vkey,
-    succession, wit, rollup, discontinuities);
+    succession, wit, rollup, discontinuities, census);
 }
 
 /**
@@ -573,9 +612,11 @@ export async function verifyStore(root, opts = {}) {
  * @param {ReturnType<typeof successionReport>|null} [succession]
  * @param {Awaited<ReturnType<typeof verifyWitnesses>>} [wit]
  * @param {Awaited<ReturnType<typeof verifyRollups>>} [rollup]
+ * @param {any[]} [discontinuities]
+ * @param {Record<string, number>} [census] records by kind — FR-34, FR-69
  */
 function report(tree_size, anchored, checks, findings, notes, collector, vkey, succession = null, wit, rollup,
-  /** @type {any[]} */ discontinuities = []) {
+  /** @type {any[]} */ discontinuities = [], /** @type {Record<string, number>} */ census = {}) {
   const verdict = combine([...checks.map(c => c.verdict), ...findings.map(f => f.verdict)]);
 
   // DES-12's own shape: a verdict is reported with how many checks could and
@@ -584,6 +625,20 @@ function report(tree_size, anchored, checks, findings, notes, collector, vkey, s
   // evidence — and a bare `ok` would imply more than was checked, which is
   // exactly what an external review pushed back on. `failed` is therefore the
   // number a red-team gate reads, not the verdict string.
+  // FR-34, FR-69 — the counts a reader needs to make sense of `tree_size`.
+  // PRIV-07: tree size is the count of ALL records and is not an action count,
+  // which is only checkable if the kinds are reported beside it.
+  const padding = census.padding ?? 0;
+  const records = {
+    tree_size,
+    by_kind: census,
+    padding,
+    // Everything that is not padding. Named `real` rather than `actions`
+    // because heartbeats, gaps and policy events are real records and are not
+    // agent actions either — conflating the two is the misreading PRIV-07
+    // exists to prevent.
+    real: tree_size - padding,
+  };
   const summary = {
     passed: checks.filter(c => c.verdict === 'ok').length,
     unanswered: checks.filter(c => c.verdict === 'inconclusive').length,
@@ -831,7 +886,7 @@ function report(tree_size, anchored, checks, findings, notes, collector, vkey, s
   }
 
   return {
-    verdict, summary, tree_size, anchored_tree_size: anchored,
+    verdict, summary, tree_size, anchored_tree_size: anchored, records,
     checks,
     // The last boundary before a reader. Everything forwarded from another
     // layer passes through here, so an unrecognised code cannot be printed to

@@ -83,12 +83,12 @@ Batch boundaries, tree shape, odd-leaf handling, and root computation — the co
 
 | Requirement | | Status |
 |---|---|---|
-| `FR-32` | splitstick disclose | ☐ |
-| `FR-33` | Inclusion proof binds to countersigned root | ☐ |
-| `FR-34` | Optional batch padding | ☐ |
+| `FR-32` | splitstick disclose | ✅ |
+| `FR-33` | Inclusion proof binds to countersigned root | ✅ |
+| `FR-34` | Optional batch padding | ✅ |
 | `FR-53` | Roll-up anchoring | ✅ |
-| `PRIV-06` | Disclosure minimisation | ☐ |
-| `FR-69` | Padding is a record kind | ☐ |
+| `PRIV-06` | Disclosure minimisation | ✅ |
+| `FR-69` | Padding is a record kind | ✅ |
 
 ### [DES-06 — Key hierarchy, signing and epoch ratchet](../design/DES-06-keys-and-ratchet.md)
 
@@ -191,7 +191,7 @@ The artifact an auditor receives: records, salts, inclusion paths, every counter
 | Requirement | | Status |
 |---|---|---|
 | `FR-31` | Evidence pack carries all countersignatures | ✅ |
-| `INT-03` | Documented evidence pack format | ☐ |
+| `INT-03` | Documented evidence pack format | ✅ |
 
 ### [DES-12 — Verification algorithm](../design/DES-12-verification-algorithm.md)
 
@@ -203,8 +203,8 @@ The ordered checks, the verdict taxonomy including an inconclusive outcome, and 
 |---|---|---|
 | `FR-29` | splitstick verify | ✅ |
 | `NFR-04` | Verification throughput | ☐ |
-| `NFR-05` | No network at verification | ☐ |
-| `NFR-06` | No credentials at verification | ☐ |
+| `NFR-05` | No network at verification | ✅ |
+| `NFR-06` | No credentials at verification | ✅ |
 | `SEC-03` | No trust in operator or vendor | ✅ |
 | `SEC-04` | One honest witness assumption | ✅ |
 | `FR-57` | Verifier states witness-set capabilities | ✅ |
@@ -220,13 +220,13 @@ The content store, pointer scheme, crypto-shredding procedure, and how retention
 | Requirement | | Status |
 |---|---|---|
 | `FR-35` | Payloads are content-addressed and externalised | ✅ |
-| `FR-36` | Crypto-shredding | ☐ |
-| `FR-37` | Retention policy on storage | ☐ |
+| `FR-36` | Crypto-shredding | ✅ |
+| `FR-37` | Retention policy on storage | ✅ |
 | `PRIV-02` | No content in the chain | ✅ |
-| `PRIV-03` | Erasure via crypto-shredding | ☐ |
-| `PRIV-04` | Chain survives erasure | ☐ |
-| `PRIV-05` | Minimal retained artefacts | ☐ |
-| `PRIV-09` | Operator-controlled retention | ☐ |
+| `PRIV-03` | Erasure via crypto-shredding | ✅ |
+| `PRIV-04` | Chain survives erasure | ✅ |
+| `PRIV-05` | Minimal retained artefacts | ✅ |
+| `PRIV-09` | Operator-controlled retention | ✅ |
 
 ### [DES-14 — Collector architecture](../design/DES-14-collector-architecture.md)
 
