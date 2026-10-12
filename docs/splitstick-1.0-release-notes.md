@@ -433,7 +433,7 @@ word at all.
 and database writes.
 
 **If this is ever funded**, in rough order of value: a hosted witness with an independent
-non-hyperscaler countersignature, accreditation so the eIDAS presumption attaches to it, a
+non-hyperscaler countersignature, accreditation as a qualified trust service, without which the eIDAS presumption cannot attach to it, a
 certification mark with a published grant procedure, and a cash bounty. Each is a moat you buy
 rather than build, which is exactly why none of them is promised here.
 

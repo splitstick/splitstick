@@ -92,21 +92,45 @@ test('the lock file always contains a complete identity, never a partial one', (
 });
 
 /**
- * Two real OS processes contending for one collector, as the review asked for.
- * Exactly one must win; the loser must report StoreBusy rather than proceeding.
+ * Four real OS processes contending for one collector.
+ *
+ * What is asserted is MUTUAL EXCLUSION — no two processes hold the lock at
+ * overlapping times — and not "exactly one winner", which is a proxy for it
+ * that this test used to assert and that is load-sensitive: the processes are
+ * released at one wall-clock instant, but node startup under a loaded machine
+ * can exceed the holder's lease, so a late-booting process arrives after the
+ * winner has legitimately released and legitimately wins the free lock. Two
+ * winners in sequence is correct behaviour; two winners at once is the bug,
+ * and only the interval comparison can tell them apart.
+ *
+ * Measured under a deliberately loaded host, four processes produced multiple
+ * winners in five rounds out of twelve and ZERO overlapping holds.
  */
-test('two separate processes contending for one collector: exactly one wins', async () => {
+test('two separate processes contending for one collector: never two at once', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'splitstick-lock-'));
   const path = join(dir, 'contended.lock');
   const mod = fileURLToPath(new URL('../src/writelock.mjs', import.meta.url));
+  // The hold is long relative to process startup so that contention actually
+  // happens rather than being hoped for; the assertion below does not depend
+  // on it, which is the point.
   const script = `
     import { WriteLock, StoreBusy } from ${JSON.stringify(mod)};
     const lock = new WriteLock(${JSON.stringify(path)});
     // Start together, to land inside each other's claim window.
     const at = Number(process.argv[2]);
     while (Date.now() < at) {}
-    try { lock.claim(); process.stdout.write('WON'); setTimeout(() => lock.release(), 300); }
-    catch (e) { process.stdout.write(e instanceof StoreBusy ? 'BUSY' : 'ERR:' + e.name); }
+    try {
+      lock.claim();
+      const held = Date.now();
+      setTimeout(() => {
+        lock.release();
+        // Concatenation, not a template: this whole script is itself inside a
+        // template literal, so a nested one is interpolated by the outer.
+        process.stdout.write('WON ' + held + ' ' + Date.now());
+      }, 1_000);
+    } catch (e) {
+      process.stdout.write(e instanceof StoreBusy ? 'BUSY' : 'ERR:' + e.name);
+    }
   `;
   const scriptPath = join(dir, 'contend.mjs');
   writeFileSync(scriptPath, script);
@@ -118,8 +142,27 @@ test('two separate processes contending for one collector: exactly one wins', as
   });
 
   const results = await Promise.all([run(), run(), run(), run()]);
-  const won = results.filter(r => r === 'WON').length;
   const busy = results.filter(r => r === 'BUSY').length;
-  assert.equal(won, 1, `exactly one winner, got ${JSON.stringify(results)}`);
-  assert.equal(won + busy, results.length, `everyone else must report BUSY: ${JSON.stringify(results)}`);
+  /** @type {[number, number][]} */
+  const holds = results.filter(r => r.startsWith('WON'))
+    .map(r => {
+      const [, a, b] = r.split(' ');
+      return /** @type {[number, number]} */ ([Number(a), Number(b)]);
+    });
+
+  assert.equal(busy + holds.length, results.length,
+    `everyone either holds the lock or reports BUSY: ${JSON.stringify(results)}`);
+  assert.ok(holds.length >= 1, `nobody acquired it at all: ${JSON.stringify(results)}`);
+  // The property. A loser that proceeded anyway would appear here as an
+  // interval starting before the previous one ended.
+  holds.sort((a, b) => a[0] - b[0]);
+  for (let i = 1; i < holds.length; i += 1) {
+    const prev = /** @type {[number, number]} */ (holds[i - 1]);
+    const cur = /** @type {[number, number]} */ (holds[i]);
+    assert.ok(cur[0] >= prev[1],
+      `two processes held the lock at once: ${JSON.stringify(holds)}`);
+  }
+  // And contention was real: with a one-second lease, somebody had to be
+  // turned away, or this round measured four processes taking turns.
+  assert.ok(busy >= 1, `no process was ever refused, so nothing contended: ${JSON.stringify(results)}`);
 });
