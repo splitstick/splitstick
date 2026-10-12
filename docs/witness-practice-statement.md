@@ -208,7 +208,10 @@ what a countersignature is worth:
 
 The verdict is taken from the ordinary verifier, not decided by the command, so
 the timestamp-token, certificate-path and extended-key-usage checks that apply
-to any other evidence apply to this statement too. Which signatures count is
+to any other evidence apply to this statement too. It is also scoped to **this**
+version: a proof counts only when the tree its checkpoint committed to reaches
+this version's record, so an earlier version's countersignature — however well
+it verifies — never anchors a later statement. Which signatures count is
 the reader's acceptance policy (DES-09), a separate file from the one naming
 who gets asked: a verification that terminated at the key of the party who
 requested the signature would establish nothing.

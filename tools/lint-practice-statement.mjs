@@ -137,6 +137,10 @@ const ROWS = [
     // is also what makes the TSA token and trust-path checks apply here.
     tool: /verified = present\.filter\(w => w\.accepted && w\.verdict === 'ok'\)/,
     tool2: /await verifyStore\(/,
+    // And the verdict must be SCOPED to the version being reported. The
+    // verifier answers about the whole store; reading that aggregate
+    // attributed one version's countersignature to another.
+    tool3: /w\.tree_size !== null && w\.tree_size >= recordSeq/,
   },
   {
     req: 'LEG-19', what: 'names the time source and the limits of the time assertion',
@@ -173,7 +177,7 @@ for (const row of ROWS) {
   if (row.also && !row.also.test(wps)) {
     errs.push(`${row.req}: the statement is missing its second half (${row.also}).`);
   }
-  for (const key of /** @type {const} */ (['tool', 'tool2'])) {
+  for (const key of /** @type {const} */ (['tool', 'tool2', 'tool3'])) {
     const pat = row[key];
     if (pat && !pat.test(toolSrc)) {
       errs.push(

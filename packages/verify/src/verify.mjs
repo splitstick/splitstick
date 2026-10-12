@@ -48,6 +48,13 @@ import { createHash as nodeCreateHash } from 'node:crypto';
  * @property {boolean} accepted
  * @property {Verdict} verdict
  * @property {string} detail
+ * @property {number} checkpoint_seq the checkpoint this proof sits on. Every
+ *   detail string already began "checkpoint N:", so the attribution was in the
+ *   prose and not in the data — and a caller asking "is THIS record anchored?"
+ *   had no way to tell which of these entries spoke to it.
+ * @property {number|null} tree_size the size that checkpoint committed to. A
+ *   proof on a checkpoint whose tree reaches record N is evidence about record
+ *   N; one on an earlier checkpoint is not, however well it verifies.
  * @property {string} [received_at] FR-39 — the witness's own clock
  * @property {'absent'|'witness-asserted, unsigned'|'signed by the TSA, inside the token'}
  *   [received_at_basis] what that value rests on. A C2SP note has nowhere
@@ -893,13 +900,15 @@ async function verifyWitnesses({ envelopes, policy, leaves, findings, anchored, 
   const credited = new Map();
 
   for (const { seq, env } of envelopes) {
+    /** @type {Omit<WitnessEntry, 'checkpoint_seq'|'tree_size'>[]} */
+    const local = [];
     for (const cs of env.countersignatures) {
       seen.add(cs.issuer);
       const spec = named.get(cs.issuer);
       if (!spec) {
         // Present, reported, counted for nothing. Dropping it would hide
         // evidence a reader with a different policy could use.
-        witnesses.push({
+        local.push({
           id: cs.issuer, type: cs.type, establishes: '(not accepted)', accepted: false,
           verdict: 'inconclusive',
           detail: `checkpoint ${seq}: this reader's acceptance policy does not name ${cs.issuer}, so `
@@ -910,7 +919,7 @@ async function verifyWitnesses({ envelopes, policy, leaves, findings, anchored, 
       }
       const classes = spec.establishes ?? [];
       if (cs.verdict !== 'ok' || !cs.entry) {
-        witnesses.push({
+        local.push({
           id: cs.issuer, type: cs.type, establishes: classes.join('+'), accepted: false,
           verdict: 'inconclusive', detail: `checkpoint ${seq}: ${cs.detail ?? 'the entry is not usable'}`,
         });
@@ -928,7 +937,7 @@ async function verifyWitnesses({ envelopes, policy, leaves, findings, anchored, 
         const r = await checkNoteLine(env.note ?? '', cs.entry, spec);
         if (r === 'ok' || (typeof r === 'object' && 'via' in r)) {
           credit(credited, cs.issuer, classes);
-          witnesses.push({
+          local.push({
             id: cs.issuer, type: cs.type, establishes: classes.join('+'), accepted: true,
             verdict: 'ok',
             detail: `checkpoint ${seq}: countersigned by ${cs.issuer}`
@@ -938,7 +947,7 @@ async function verifyWitnesses({ envelopes, policy, leaves, findings, anchored, 
           continue;
         }
         if (r === 'no-key') {
-          witnesses.push({
+          local.push({
             id: cs.issuer, type: cs.type, establishes: classes.join('+'), accepted: false,
             verdict: 'inconclusive',
             detail: `checkpoint ${seq}: the acceptance policy names ${cs.issuer} but supplies no `
@@ -952,7 +961,7 @@ async function verifyWitnesses({ envelopes, policy, leaves, findings, anchored, 
           // cannot attribute is a witness this reader does not know, and
           // calling that tampering would make a rotation somebody forgot to
           // publish look like an attack.
-          witnesses.push({
+          local.push({
             id: cs.issuer, type: cs.type, establishes: classes.join('+'), accepted: false,
             verdict: 'inconclusive', detail: `checkpoint ${seq}: ${r.detail}`,
           });
@@ -964,7 +973,7 @@ async function verifyWitnesses({ envelopes, policy, leaves, findings, anchored, 
             + "checkpoint's note. A witness signs what it was shown; this is what it looks like when "
             + 'history was rewritten after the witness saw it, because the signature could not be forged',
         });
-        witnesses.push({
+        local.push({
           id: cs.issuer, type: cs.type, establishes: classes.join('+'), accepted: false,
           verdict: 'fail', detail: `checkpoint ${seq}: the countersignature does not verify`,
         });
@@ -983,7 +992,7 @@ async function verifyWitnesses({ envelopes, policy, leaves, findings, anchored, 
         );
         if (r.ok) {
           credit(credited, cs.issuer, classes);
-          witnesses.push({
+          local.push({
             id: cs.issuer, type: cs.type, establishes: classes.join('+'), accepted: true,
             verdict: 'ok', detail: `checkpoint ${seq}: ${r.detail}`,
           });
@@ -1001,7 +1010,7 @@ async function verifyWitnesses({ envelopes, policy, leaves, findings, anchored, 
           // evidence any timestamp was obtained at all, and counting it would
           // let a quorum be met by submitting noise.
           if (!r.malformed) credit(credited, cs.issuer, classes);
-          witnesses.push({
+          local.push({
             id: cs.issuer, type: cs.type, establishes: classes.join('+'),
             accepted: !r.malformed,
             verdict: 'inconclusive', detail: `checkpoint ${seq}: ${r.detail}`,
@@ -1012,7 +1021,7 @@ async function verifyWitnesses({ envelopes, policy, leaves, findings, anchored, 
           code: 'WITNESS_MISMATCH', verdict: 'fail',
           detail: `checkpoint ${seq}: the RFC 3161 token from ${cs.issuer} does not verify — ${r.detail}`,
         });
-        witnesses.push({
+        local.push({
           id: cs.issuer, type: cs.type, establishes: classes.join('+'), accepted: false,
           verdict: 'fail', detail: `checkpoint ${seq}: ${r.detail}`,
         });
@@ -1032,13 +1041,13 @@ async function verifyWitnesses({ envelopes, policy, leaves, findings, anchored, 
           detail: `checkpoint ${seq}: the OpenTimestamps proof from ${cs.issuer} commits a different `
             + `digest — ${ots.detail}`,
         });
-        witnesses.push({
+        local.push({
           id: cs.issuer, type: cs.type, establishes: classes.join('+'), accepted: false,
           verdict: 'fail', detail: `checkpoint ${seq}: ${ots.detail}`,
         });
         continue;
       }
-      witnesses.push({
+      local.push({
         id: cs.issuer, type: cs.type, establishes: classes.join('+'),
         accepted: !ots.malformed,
         verdict: 'inconclusive', detail: `checkpoint ${seq}: ${ots.detail}`,
@@ -1046,6 +1055,14 @@ async function verifyWitnesses({ envelopes, policy, leaves, findings, anchored, 
       // A mangled proof is credited with nothing, for the same reason an
       // unparseable token is: there is no evidence anything was submitted.
       if (!ots.malformed) credit(credited, cs.issuer, classes);
+    }
+
+    // Attribute everything this envelope produced to the checkpoint it came
+    // from. Collected locally and stamped on the way out, rather than repeated
+    // at each of the push sites above, so a branch added later cannot omit it
+    // — the type will not let it.
+    for (const w of local) {
+      witnesses.push({ ...w, checkpoint_seq: seq, tree_size: env.tree_size });
     }
   }
 

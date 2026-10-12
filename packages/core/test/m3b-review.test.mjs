@@ -607,3 +607,138 @@ test('OPS-02: the operator document names real result fields and the real dequeu
   }
   store.close();
 });
+
+/**
+ * Countersign one checkpoint in a `wps` store and write the acceptance policy
+ * that accepts the issuer.
+ * @param {string} out @param {number} seq @param {string} policyPath
+ */
+async function countersignCheckpoint(out, seq, policyPath) {
+  const { Store } = await import('../src/store.mjs');
+  const { generateDevSigner } = await import('../src/signer-file.mjs');
+  const { parseNote, encodeNote } = await import('../src/note.mjs');
+  const { signNote } = await import('../src/signer.mjs');
+  const { parseEnvelope, addCountersignature } = await import('../src/envelope.mjs');
+  const { writeFileSync } = await import('node:fs');
+  const issuer = 'audit.example';
+  const key = await generateDevSigner(issuer);
+  const store = new Store(out, 'wps');
+  const raw = /** @type {string} */ (store.readCheckpointEnvelope(seq));
+  const text = parseNote(/** @type {string} */ (parseEnvelope(raw).note)).text;
+  const line = encodeNote(text, [await signNote(text, key)]).trim().split('\n').at(-1);
+  store.writeCheckpointEnvelope(seq, addCountersignature(JSON.parse(raw), {
+    type: 'c2sp-note', issuer, covers: 'note', line: /** @type {string} */ (line),
+  }));
+  store.close();
+  writeFileSync(policyPath, JSON.stringify({
+    witnesses: [{
+      id: issuer,
+      public_key: Buffer.from(key.publicKey).toString('base64'),
+      establishes: ['sequence'],
+    }],
+  }));
+}
+
+test('LEG-09: one version\'s countersignature does not anchor another version', async () => {
+  // verifyStore reports every countersignature in the store, across every
+  // checkpoint. Reading that aggregate as the answer attributed one version's
+  // evidence to another: with v1.0 witnessed and v1.1's own checkpoint signed
+  // by nobody, v1.1 was reported ANCHORED (verified) on the strength of v1.0's
+  // proof — a false assurance about precisely what anchoring is for, the
+  // publication time of the newer statement.
+  const { writeFileSync } = await import('node:fs');
+  const dir = mkdtempSync(join(tmpdir(), 'ss-wps-attrib-'));
+  const statement = join(dir, 'wps.md');
+  const out = join(dir, 'store');
+  const policy = join(dir, 'acceptance.json');
+
+  writeFileSync(statement, '**Version 1.0**\n\nfirst\n');
+  await anchorWps(['--statement', statement, '--out', out]);
+  await countersignCheckpoint(out, 1, policy);
+  assert.match(await anchorWps(['--statement', statement, '--out', out, '--policy', policy]),
+    /v1\.0 — ANCHORED \(verified\)/, 'v1.0 is anchored by the proof on its own checkpoint');
+
+  // v1.1 gets its own checkpoint, which nobody has signed.
+  writeFileSync(statement, '**Version 1.1**\n\nsecond\n');
+  const newer = await anchorWps(['--statement', statement, '--out', out, '--policy', policy]);
+  assert.match(newer, /v1\.1 — RECORDED \(not anchored\)/,
+    'the newer version is NOT anchored by the older version\'s evidence');
+  assert.doesNotMatch(newer, /ANCHORED/);
+  assert.match(newer, /not counted   1 proof\(s\) on checkpoint\(s\) 1/,
+    'and the proof that was excluded is reported, not silently dropped');
+
+  // Sign v1.1's own checkpoint, and only then is it anchored.
+  const policy2 = join(dir, 'acceptance2.json');
+  await countersignCheckpoint(out, 2, policy2);
+  assert.match(await anchorWps(['--statement', statement, '--out', out, '--policy', policy2]),
+    /v1\.1 — ANCHORED \(verified\)/);
+});
+
+test('LEG-09: a later checkpoint whose tree reaches the record does anchor it', async () => {
+  // The other half of the rule. A proof is evidence about a record when the
+  // tree its checkpoint committed to REACHES that record — so a checkpoint
+  // taken after the statement was recorded anchors it too, and scoping by
+  // exact checkpoint equality would have refused real evidence.
+  const { writeFileSync } = await import('node:fs');
+  const { Store } = await import('../src/store.mjs');
+  const { Collector } = await import('../src/collector.mjs');
+  const { parseConfig } = await import('../src/config.mjs');
+  const { fileSigner } = await import('../src/signer-file.mjs');
+  const dir = mkdtempSync(join(tmpdir(), 'ss-wps-later-cp-'));
+  const statement = join(dir, 'wps.md');
+  const out = join(dir, 'store');
+  const policy = join(dir, 'acceptance.json');
+
+  writeFileSync(statement, '**Version 1.0**\n\nfirst\n');
+  await anchorWps(['--statement', statement, '--out', out]);
+
+  // Another record and checkpoint land after the statement's, under the same
+  // identity the command persisted.
+  const store = new Store(out, 'wps');
+  const signer = await fileSigner('splitstick.dev/wps', join(out, 'wps-dev-key.pem'));
+  let t = Date.parse('2026-10-11T12:00:00.000Z');
+  const c = new Collector({
+    store, signer, collector: 'wps', origin: 'splitstick.dev/wps',
+    config: parseConfig('version: 1\nstore: ./s\n', out),
+    now: () => new Date(t += 1000),
+  });
+  c.action(tx({ correlation: 'later' }));
+  const cp2 = await c.checkpoint();
+  store.close();
+  assert.equal(cp2.checkpoint_seq, 2);
+
+  // Only the LATER checkpoint is countersigned. The statement's record is at
+  // seq 1, which that checkpoint's tree reaches.
+  await countersignCheckpoint(out, 2, policy);
+  const out1 = await anchorWps(['--statement', statement, '--out', out, '--policy', policy]);
+  assert.match(out1, /v1\.0 — ANCHORED \(verified\), already recorded/);
+  assert.match(out1, /record_seq    1/);
+  assert.doesNotMatch(out1, /not counted/, 'nothing was excluded');
+});
+
+test('the verifier attributes each witness entry to the checkpoint it sits on', async () => {
+  // The attribution used to exist only in the prose of each detail string
+  // ("checkpoint 3: countersigned by ..."), so a caller asking whether a
+  // PARTICULAR record was anchored had no field to read and no way to tell
+  // which entries spoke to it.
+  const { verifyStore } = await import('../../verify/src/index.mjs');
+  const { writeFileSync } = await import('node:fs');
+  const dir = mkdtempSync(join(tmpdir(), 'ss-attrib-'));
+  const statement = join(dir, 'wps.md');
+  const out = join(dir, 'store');
+  const policy = join(dir, 'acceptance.json');
+  writeFileSync(statement, '**Version 1.0**\n\nfirst\n');
+  await anchorWps(['--statement', statement, '--out', out]);
+  await countersignCheckpoint(out, 1, policy);
+
+  const { readFileSync } = await import('node:fs');
+  const report = await verifyStore(out, {
+    collector: 'wps', policy: JSON.parse(readFileSync(policy, 'utf8')),
+  });
+  assert.equal(report.witnesses.length, 1);
+  const w = report.witnesses[0];
+  assert.equal(w?.checkpoint_seq, 1);
+  assert.equal(w?.tree_size, 1);
+  assert.equal(w?.accepted, true);
+  assert.equal(w?.verdict, 'ok');
+});

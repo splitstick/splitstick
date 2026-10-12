@@ -259,8 +259,22 @@ const report = await verifyStore(OUT, {
   collector: 'wps',
   ...(acceptance ? { policy: acceptance } : {}),
 });
-const present = report.witnesses;
+
+// SCOPED TO THIS VERSION. verifyStore reports every countersignature in the
+// store, across every checkpoint, and reading that aggregate as the answer
+// attributed one version's evidence to another: with v1.0 witnessed and v1.1's
+// own checkpoint signed by nobody, v1.1 was reported ANCHORED (verified) on
+// the strength of v1.0's proof — a false assurance about exactly the thing
+// anchoring is for, the publication time of the newer statement.
+//
+// A proof is evidence about this record when the tree its checkpoint committed
+// to REACHES this record. That covers the checkpoint found above and any later
+// one, and excludes every earlier one however well it verifies.
+const covers = (/** @type {{ tree_size: number|null }} */ w) =>
+  w.tree_size !== null && w.tree_size >= recordSeq;
+const present = report.witnesses.filter(covers);
 const verified = present.filter(w => w.accepted && w.verdict === 'ok');
+const elsewhere = report.witnesses.filter(w => !covers(w));
 const status = verified.length > 0
   ? 'ANCHORED (verified)'
   : present.length > 0 ? 'COUNTERSIGNED (unverified)' : 'RECORDED (not anchored)';
@@ -275,7 +289,8 @@ Witness Practice Statement v${version} — ${status}${unchanged ? ', already rec
   versions      ${policies.length + (unchanged ? 0 : 1)} in this chain
   store         ${OUT}
   identity      ${formatVkey(ORIGIN, signer.publicKey)}
-  countersigned ${present.length === 0 ? 'nobody' : present.map(w => `${w.id} [${w.accepted ? w.verdict : 'not accepted by your policy'}]`).join(', ')}
+  countersigned ${present.length === 0 ? 'nobody' : present.map(w => `${w.id} [${w.accepted ? w.verdict : 'not accepted by your policy'}]`).join(', ')}${elsewhere.length > 0 ? `
+  not counted   ${elsewhere.length} proof(s) on checkpoint(s) ${[...new Set(elsewhere.map(w => w.checkpoint_seq))].sort((a, b) => a - b).join(', ')}, whose tree does not reach record ${recordSeq}` : ''}
 ${unchanged ? `
 Nothing appended: re-recording an unchanged statement would put a second record
 of the same version in the chain and make one publication look like two. The

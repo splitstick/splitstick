@@ -280,3 +280,41 @@ having been told the evidence must survive, I made it survive and then reported
 its mere existence as its sufficiency. Presence is not proof, and a record is
 not an anchor. That is the third and fourth time in this branch that the defect
 was a value checked against the wrong thing.
+
+## Defect found by the second re-review of PR #8
+
+16. **Verified evidence was attributed to the wrong statement version.** The
+    command located the checkpoint covering the current version correctly, then
+    read `verifyStore`'s witness list — which reports every countersignature in
+    the store, across every checkpoint — as though it answered about that
+    checkpoint. Reproduced: v1.0 recorded and countersigned, v1.1 recorded
+    under a new checkpoint nobody had signed, and v1.1 reported **ANCHORED
+    (verified)** on the strength of v1.0's proof. A false assurance about
+    exactly the thing anchoring exists to establish, the publication time of
+    the newer statement.
+
+    The root cause was in the verifier, not only in the command: every witness
+    entry's detail string already began `checkpoint N:`, so the attribution
+    existed in the *prose* and not in the *data*, and a caller asking whether a
+    particular record was anchored had no field to read. `WitnessEntry` now
+    carries `checkpoint_seq` and `tree_size`, stamped once as entries leave the
+    envelope loop rather than repeated at each of the eleven push sites — the
+    type refuses an entry without them, so a branch added later cannot omit it.
+
+    The rule the command applies: a proof is evidence about a record when the
+    tree its checkpoint committed to **reaches** that record. That admits the
+    covering checkpoint and any later one, and excludes every earlier one
+    however well it verifies. Scoping by exact checkpoint equality would have
+    refused real evidence — a checkpoint taken after the statement was recorded
+    anchors it too — so both halves are tested. Proofs deliberately not counted
+    are reported as `not counted`, with the checkpoints they sit on, rather than
+    silently dropped.
+
+**Where this one came from.** Findings 12, 14, 15 and 16 are four defects in one
+small command, each found in the fix for the last. The command was the only
+place in the project where a human-readable assurance is composed from
+evidence, and composing an assurance turns out to be where the assurance can
+be made to say more than the evidence supports: a deleted history (12), a step
+that could not be taken (14), presence read as proof (15), and now one
+subject's evidence read as another's (16). The verifier itself was sound each
+time; what was wrong was the question being asked of it.
