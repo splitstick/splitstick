@@ -9,8 +9,9 @@ import { evaluateGates, formatGates } from '../gates.mjs';
 const plan = JSON.parse(fs.readFileSync('requirements/milestones.json', 'utf8'));
 
 /**
- * The real assignment, as the harness declares it.
- * @type {[string, string, 'detected'|'undetected'][]}
+ * The real assignment, as the harness declares it. A fourth element is the
+ * requirement that declares an attack out of scope, where there is one.
+ * @type {[string, string, 'detected'|'undetected', string?][]}
  */
 const SUITE = [
   ['A1', 'AC-1', 'detected'], ['A2', 'AC-1', 'detected'], ['A3', 'AC-1', 'detected'],
@@ -18,29 +19,41 @@ const SUITE = [
   ['C', 'AC-2', 'detected'], ['C2', 'AC-3', 'undetected'], ['C3', 'AC-3', 'detected'],
   ['D', 'AC-4', 'undetected'], ['D2', 'AC-4', 'detected'],
   ['F', 'AC-5', 'detected'], ['F2', 'AC-5', 'detected'], ['F3', 'AC-5', 'undetected'],
+  ['G', 'AC-6', 'detected'],
+  // The declared limit: a patched collector reporting a valid digest. It stays
+  // undetected in BOTH runs, because a witness countersigns the record and
+  // this attack is about the collector.
+  ['G2', 'AC-6', 'undetected', 'SEC-11, FR-25 and DOC-10 (remote attestation, rejected by SCOPE-12)'],
+  ['H', 'AC-7', 'detected'], ['H2', 'AC-7', 'detected'],
 ];
 /**
  * @param {Record<string, 'detected'|'undetected'>} overrides keyed by attack id,
  *   or `<id>:w` for the witnessed run
  * @returns {import('../gates.mjs').Observation[]}
  */
-const observed = (overrides = {}) => SUITE.map(([id, gate, expect]) => ({
+const observed = (overrides = {}) => SUITE.map(([id, gate, expect, outOfScope]) => ({
   id, gate, expect, observed: overrides[id] ?? expect,
   // The three that only close with a second party. The witnessed run is what
-  // M3a's gates read, and it is the harness's own declaration.
-  expect_witnessed: /** @type {'detected'} */ ('detected'),
-  observed_witnessed: overrides[`${id}:w`] ?? /** @type {'detected'} */ ('detected'),
+  // M3a's gates read, and it is the harness's own declaration. A declared
+  // limit stays undetected there too: a witness countersigns the record, and
+  // the limit is about the collector.
+  expect_witnessed: outOfScope ? expect : /** @type {'detected'} */ ('detected'),
+  observed_witnessed: overrides[`${id}:w`]
+    ?? (outOfScope ? expect : /** @type {'detected'} */ ('detected')),
+  ...(outOfScope ? { out_of_scope: outOfScope } : {}),
 }));
 
 test('the gates the shipped milestones claim are held by observed detections', () => {
   const r = evaluateGates(plan, observed());
   assert.equal(r.unmet, 0);
-  assert.deepEqual(r.due.map((g) => g.gate).sort(), ['AC-1', 'AC-2', 'AC-3', 'AC-4', 'AC-5']);
+  assert.deepEqual(r.due.map((g) => g.gate).sort(),
+    ['AC-1', 'AC-2', 'AC-3', 'AC-4', 'AC-5', 'AC-6', 'AC-7']);
   assert.deepEqual(r.due.find((g) => g.gate === 'AC-1')?.detected, ['A1', 'A2', 'A3', 'B', 'E']);
   // M1's two are local; M3a's three are claimed in the configuration M3a
   // delivers, and the report says which is which.
   assert.deepEqual(
-    r.due.filter((g) => g.evidence === 'local').map((g) => g.gate).sort(), ['AC-1', 'AC-2']);
+    r.due.filter((g) => g.evidence === 'local').map((g) => g.gate).sort(),
+    ['AC-1', 'AC-2', 'AC-6', 'AC-7']);
   assert.deepEqual(
     r.due.filter((g) => g.evidence === 'witnessed').map((g) => g.gate).sort(),
     ['AC-3', 'AC-4', 'AC-5']);
@@ -72,10 +85,17 @@ test('M3a shipped holds its gates on the WITNESSED run, and says which run that 
   assert.ok(m3a.every((g) => g.evidence === 'witnessed'));
   assert.match(formatGates(r), /HELD with a witness configured/);
   // And the local run is unchanged: C2, D and F3 are still undetected from
-  // files alone, which is the thing M3a never claimed to fix.
+  // files alone, which is the thing M3a never claimed to fix. G2 joins them
+  // with M4 and is a different kind of entry — declared out of scope rather
+  // than merely open — which the next assertion separates.
   assert.deepEqual(
     observed().filter((o) => o.observed !== 'detected').map((o) => o.id),
+    ['C2', 'D', 'F3', 'G2'],
+  );
+  assert.deepEqual(
+    observed().filter((o) => o.observed !== 'detected' && !o.out_of_scope).map((o) => o.id),
     ['C2', 'D', 'F3'],
+    'the three M3a closes with a second party, as distinct from the one nothing closes',
   );
 });
 
@@ -125,9 +145,12 @@ test('a gate no attack exercises is not closed either', () => {
 test('unshipped gates are listed as scheduled and are never due', () => {
   const r = evaluateGates(plan, observed());
   // M4 has not shipped, so its classes are scheduled and not evaluated.
-  assert.ok(r.scheduled.some((s) => s.gate === 'AC-6' && s.milestone === 'M4'));
-  assert.ok(r.scheduled.some((s) => s.gate === 'AC-7' && s.milestone === 'M4'));
-  assert.ok(!r.due.some((g) => g.gate === 'AC-6' || g.gate === 'AC-7'));
+  // M4 has shipped, so AC-6 and AC-7 are due rather than scheduled. The
+  // assertion this replaces was correct until it was not, which is what a
+  // milestone shipping means.
+  assert.ok(r.due.some((g) => g.gate === 'AC-6' && g.milestone === 'M4'));
+  assert.ok(r.due.some((g) => g.gate === 'AC-7' && g.milestone === 'M4'));
+  assert.ok(!r.scheduled.some((s) => s.gate === 'AC-6' || s.gate === 'AC-7'));
 });
 
 test('the suite in this test matches the attacks the harness actually declares', () => {
@@ -139,4 +162,60 @@ test('the suite in this test matches the attacks the harness actually declares',
   }
   const declared = src.match(/\bid: '[A-Z]\d?',/g) ?? [];
   assert.equal(declared.length, SUITE.length, 'the harness has an attack this test does not cover');
+});
+
+// ── declared non-coverage, added with M4's AC-6 ──────────────────────────────
+
+const PLAN = { milestones: [{ id: 'MX', gate: ['AC-X'], shipped: true }] };
+
+test('an attack declared out of scope does not fail the gate, and is reported', () => {
+  const r = evaluateGates(PLAN, [
+    { id: 'P', gate: 'AC-X', expect: 'detected', observed: 'detected' },
+    {
+      id: 'Q', gate: 'AC-X', expect: 'undetected', observed: 'undetected',
+      out_of_scope: 'SEC-11 and DOC-10',
+    },
+  ]);
+  const g = r.due.find((x) => x.gate === 'AC-X');
+  assert.equal(g.held, true, '"we said we would not" is not "we tried and failed"');
+  assert.deepEqual(g.detected, ['P']);
+  assert.deepEqual(g.outstanding, []);
+  assert.deepEqual(g.out_of_scope, [{ id: 'Q', declared_by: 'SEC-11 and DOC-10' }]);
+  // And it is never silent: a HELD line with nothing beside it would read as a
+  // fully closed class.
+  assert.match(formatGates(r), /NOT CLOSED: Q, declared by SEC-11 and DOC-10/);
+});
+
+test('an undetected attack with NO declaration still fails the gate', () => {
+  // The rule this module exists for. If the marker were optional in effect,
+  // every inconvenient result could be quieted by omitting a field.
+  const r = evaluateGates(PLAN, [
+    { id: 'P', gate: 'AC-X', expect: 'undetected', observed: 'undetected' },
+  ]);
+  const g = r.due.find((x) => x.gate === 'AC-X');
+  assert.equal(g.held, false);
+  assert.deepEqual(g.outstanding, ['P']);
+  assert.equal(r.unmet, 1);
+});
+
+test('a class exercised ONLY by declared limits is not closed', () => {
+  // Otherwise a gate could be held by declaring away everything that tests it,
+  // which is the inverse of evidence.
+  const r = evaluateGates(PLAN, [
+    { id: 'Q', gate: 'AC-X', expect: 'undetected', observed: 'undetected', out_of_scope: 'SEC-11' },
+  ]);
+  const g = r.due.find((x) => x.gate === 'AC-X');
+  assert.equal(g.held, false);
+  assert.equal(g.missing, true, 'nothing measured means nothing demonstrated');
+});
+
+test('a declared limit that turns out to be detected is reported as stale', () => {
+  // Leaving the project claiming a weakness it no longer has is its own kind
+  // of dishonesty, and the declaration is the thing that went out of date.
+  const r = evaluateGates(PLAN, [
+    { id: 'Q', gate: 'AC-X', expect: 'undetected', observed: 'detected', out_of_scope: 'SEC-11' },
+  ]);
+  const g = r.due.find((x) => x.gate === 'AC-X');
+  assert.equal(g.held, false);
+  assert.match(g.outstanding.join(' '), /declared out of scope, yet detected/);
 });

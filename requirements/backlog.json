@@ -243,7 +243,9 @@
       "title": "Policy changes as chain events",
       "statement": "Record any change to the witness set or quorum as a timestamped event inside the chain.",
       "source": "Independence — written into the chain",
-      "verify": "Red-team: policy downgrade is visible in the record"
+      "verify": "Red-team: policy downgrade is visible in the record",
+      "status": "done",
+      "evidence": "policy.mjs effectivePolicy/policyDigest + Collector's pending-policy flush; the collector refuses to write ANYTHING until the change is chained, so the weakening is strictly earlier in the chain than whatever follows it. The pending event was first flushed in #write, but #envelope is what fixes record_seq, so the policy record and the record that triggered it both claimed the same sequence — a duplicate a verifier reports as SEQ_BROKEN"
     },
     {
       "id": "FR-24",
@@ -252,7 +254,9 @@
       "title": "Signed heartbeats",
       "statement": "Emit signed heartbeats into the collector-scoped chain at a configured interval, independently of whether any run is active, because the dangerous window is precisely when none is.",
       "source": "Coverage attestation — signed heartbeats",
-      "verify": "Stopping the collector produces a detectable gap, including during an interval with no agent run"
+      "verify": "Stopping the collector produces a detectable gap, including during an interval with no agent run",
+      "status": "done",
+      "evidence": "Collector.heartbeat carrying its own interval + coverage.mjs continuity; the chain is collector-scoped, so a heartbeat stream proves liveness BETWEEN runs, which is the window an operator would choose. Liveness is evidenced by any record, not by heartbeats alone: measuring heartbeat-to-heartbeat reported a two-minute outage over an interval holding three signed actions, which overstates a stop on evidence that says the opposite"
     },
     {
       "id": "FR-25",
@@ -261,7 +265,9 @@
       "title": "Build digest in heartbeat",
       "statement": "Each heartbeat carries the collector build digest, binding a run to a traceable artifact for configuration assurance and non-repudiation by an honest operator. It is not an attestation of the running process and does not detect a dishonest patch.",
       "source": "Coverage attestation — build digest",
-      "verify": "Digest present and resolvable to a published provenance attestation; test asserts no claim of patch detection appears in output"
+      "verify": "Digest present and resolvable to a published provenance attestation; test asserts no claim of patch detection appears in output",
+      "status": "done",
+      "evidence": "Collector build digest + coverage report's build section and PATCH_LIMIT; red-team G2 runs the limit as an attack so it is a measured result rather than a sentence, and it is declared out of scope at the gate rather than quietly undetected. The default was the string sha256:unattested, which is not a digest and validated anyway"
     },
     {
       "id": "FR-26",
@@ -292,7 +298,9 @@
       "title": "splitstick coverage",
       "statement": "Produce a coverage report over a date range stating the proportion of actions the collector reported that were captured, chained and anchored, plus heartbeat continuity — never a claim about actions the collector did not report. Attempts and logical actions are counted separately, since one action may span several attempts.",
       "source": "Coverage attestation — splitstick coverage",
-      "verify": "Report wording asserted by test; injected gaps appear exactly; attempt and logical-action counts are both present and differ under retry; a suppressed action does not appear and the report does not imply completeness"
+      "verify": "Report wording asserted by test; injected gaps appear exactly; attempt and logical-action counts are both present and differ under retry; a suppressed action does not appear and the report does not imply completeness",
+      "status": "done",
+      "evidence": "coverage.mjs + coverage-report.mjs + coverage-cli.mjs; attempts and logical actions are counted separately because one number makes a retried action look like several. Every count names its subject — what the COLLECTOR REPORTED — in the sentence rather than a footnote, and the verdict ladder distinguishes undeclared absence (incomplete) from evidence that cannot support the claim (inconclusive), with a DECLARED gap leaving a complete verdict because penalising the disclosure would penalise the honesty it exists to produce A window with NO heartbeat at all is never complete: the verdict read COMPLETE over three countersigned actions and zero heartbeats, with SEC-11's whole mechanism absent and nothing saying so. And the report speaks only to the intersection of the window and the chain's span — a window opening before the log existed produced a 6.8-year COVERAGE_GAP, a fail-class accusation about time the report says it cannot speak to. Anchoring means VERIFIED anchoring: the witness results come from verifyStore, never from the envelope's issuer list, which is why the report lives in @splitstick/verify. Counting issuers meant a countersignature from an unrelated key over different bytes produced a COMPLETE verdict — presence read as proof, the same defect as the practice-statement command's one milestone earlier. Four categories now separate verified anchoring from a present-but-unvalidated proof, a checkpoint nobody signed, and no checkpoint at all."
     },
     {
       "id": "FR-29",
@@ -412,7 +420,9 @@
       "title": "Late anchors reported as gaps",
       "statement": "Windows anchored late are reported as coverage gaps.",
       "source": "Operations — reported as a coverage gap",
-      "verify": "Coverage report flags the widened window"
+      "verify": "Coverage report flags the widened window",
+      "status": "done",
+      "evidence": "coverage.mjs anchorCoverage late windows + COVERAGE_UNKNOWN; a record anchored eleven minutes after the fact was mutable for eleven minutes, which is honestly weaker evidence rather than silently absent. The delay rests on the witness's own clock, unsigned for a C2SP note, and the report says so Lateness is measured against the ATTESTED anchor interval, not a hardcoded minute: an operator anchoring every ten minutes by declared policy had nine of them reported as lateness. Where no attested policy document is held, lateness is not asserted at all rather than asserted against a guess. Every covering checkpoint is considered, not the earliest: an unwitnessed checkpoint used to mask a validly witnessed later one whose committed tree reached the same record, discarding real evidence in the direction of reporting the operator as unwitnessed. The delay is measured from the earliest VERIFIED receipt, because an unverified one is an unchecked party's unchecked claim about when."
     },
     {
       "id": "FR-41",

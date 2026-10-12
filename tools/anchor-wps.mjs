@@ -190,7 +190,7 @@ let recordSeq;
 if (unchanged) {
   recordSeq = Number(current?.record_seq);
 } else {
-  collector.policy({ previous, next: digest });
+  collector.policy({ previous, next: digest, subject: 'practice-statement' });
   await collector.checkpoint();
   const appended = store.readChain().map(e => e.record).filter(r => r?.kind === 'policy').at(-1);
   recordSeq = Number(appended?.record_seq);

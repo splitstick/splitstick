@@ -26,6 +26,14 @@ collector emits positive evidence that it was alive and which build it was.
 Chained and anchored like any record, every 5 seconds by default, **whether or not a run is
 active** (FR-24, FR-56). A window with no heartbeat is as loud as a broken hash.
 
+**Deviation, M4 — `policy` carries the EFFECTIVE policy, not the capture configuration alone.**
+The effective policy is a superset of the capture surface — it adds the witness set, the quorum and
+the anchor and roll-up intervals — so `FR-64` is unaffected and `FR-23`/`SEC-12` gain something
+the design did not have: every heartbeat commits to the policy in force, so a reader can say which
+policy *any* window ran under rather than reconstructing it from change events. It also removes the
+need for a baseline policy record. An earlier attempt wrote one at `record_seq` 1 of every store;
+it worked, cost a record in every log, and shifted the sequence of 76 existing tests.
+
 This is why the chain is collector-scoped (DES-04). A heartbeat stream living inside a run would
 prove nothing about the interval between runs — which is precisely when stopping the collector is
 invisible, and therefore precisely the window an operator would choose.
@@ -89,6 +97,46 @@ verdict         COMPLETE with 1 declared gap
 **FR-40** requires late-anchored windows to appear here as gaps. A batch anchored eleven minutes
 after the fact had an eleven-minute mutability window, and that is weaker evidence — honestly
 weaker, rather than silently absent.
+
+### What the report can conclude — the failure codes
+
+Three codes, in the verifier's shared vocabulary (`spec/failure-codes.json`) rather than a second
+set invented for coverage, because a reader should not have to know which tool is talking before
+they can read a code:
+
+| Code | Verdict | When |
+|---|---|---|
+| `COVERAGE_GAP` | fail | a window with no record of any kind and no declaration — nothing attests the collector was running |
+| `COVERAGE_UNKNOWN` | inconclusive | a `gap_unknown` is declared, the heartbeat resolution is not established by the records, or the window holds no record at all |
+| `UNDATED_RECORD` | inconclusive | a record carries no usable `ts`, so it cannot be placed in a window; excluded from the counts and reported rather than silently dropped |
+
+**Anchoring means VERIFIED anchoring, and the report lives in `@splitstick/verify` because of
+it.** Four categories, not three: a record is *anchored* when a covering checkpoint carries a proof
+the reader's acceptance policy accepts and that verifies; *countersigned_unverified* when a proof is
+present and nothing validated it; *checkpointed_only* when no proof is present; *unanchored* when no
+checkpoint covers it. The witness results come from `verifyStore`, never from the envelope's issuer
+list — counting issuers meant a countersignature from an unrelated key over different bytes produced
+a COMPLETE verdict, which is presence read as proof.
+
+**Every covering checkpoint is considered, not the earliest.** A proof is evidence about a record
+when the tree its checkpoint committed to *reaches* that record, so an unwitnessed checkpoint cannot
+mask a validly witnessed later one. Lateness is measured from the earliest *verified* receipt, since
+an unverified one is an unchecked party's unchecked claim about when.
+
+**Liveness is evidenced by ANY record, not by heartbeats alone.** The first implementation measured
+heartbeat-to-heartbeat and reported a two-minute outage over an interval in which three actions had
+been written — signed, chained records proving the collector was running. Overstating a stop on the
+strength of evidence that says the opposite is the one direction this report must never overstate
+in. The heartbeat remains what makes a *quiet* window checkable, which is the whole reason there is
+one; both failures are still caught, because a stopped collector writes nothing of either sort.
+
+**The three verdicts.** `incomplete` means something undeclared is missing or damaged.
+`inconclusive` means nothing is known to be missing and the evidence cannot support a completeness
+claim anyway. `complete` means everything the collector reported is chained, the resolution is
+established, liveness is unbroken, and every record falls under a countersigned checkpoint. A
+*declared* gap does not downgrade it — that is this document's own example above — because a
+disclosed loss is what the project converts an undeclared absence into, and penalising the
+disclosure would penalise the honesty it exists to produce.
 
 ## What this does not prove — SEC-11's boundary
 

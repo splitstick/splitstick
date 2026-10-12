@@ -161,8 +161,8 @@ Two separate schemas: the collector's witness set, and the verifier's acceptance
 |---|---|---|
 | `FR-41` | Configuration file | ✅ |
 | `FR-30` | Acceptance policy as input | ✅ |
-| `FR-23` | Policy changes as chain events | ☐ |
-| `SEC-12` | Resist policy downgrade | ☐ |
+| `FR-23` | Policy changes as chain events | ✅ |
+| `SEC-12` | Resist policy downgrade | ✅ |
 | `SCOPE-15` | Hard anchor must be disableable | ✅ |
 | `NFR-03` | Default mutability window | ✅ |
 
@@ -174,13 +174,13 @@ Heartbeat cadence and contents, the build digest, gap declaration semantics, and
 
 | Requirement | | Status |
 |---|---|---|
-| `FR-24` | Signed heartbeats | ☐ |
-| `FR-25` | Build digest in heartbeat | ☐ |
-| `FR-28` | splitstick coverage | ☐ |
-| `FR-40` | Late anchors reported as gaps | ☐ |
-| `SEC-11` | Resist collector stoppage | ☐ |
-| `DOC-10` | Document the collector-patch limit | ☐ |
-| `FR-64` | Collector self-reported configuration attestation | ☐ |
+| `FR-24` | Signed heartbeats | ✅ |
+| `FR-25` | Build digest in heartbeat | ✅ |
+| `FR-28` | splitstick coverage | ✅ |
+| `FR-40` | Late anchors reported as gaps | ✅ |
+| `SEC-11` | Resist collector stoppage | ✅ |
+| `DOC-10` | Document the collector-patch limit | ✅ |
+| `FR-64` | Collector self-reported configuration attestation | ✅ |
 
 ### [DES-11 — Evidence pack format](../design/DES-11-evidence-pack-format.md)
 
@@ -209,7 +209,7 @@ The ordered checks, the verdict taxonomy including an inconclusive outcome, and 
 | `SEC-04` | One honest witness assumption | ✅ |
 | `FR-57` | Verifier states witness-set capabilities | ✅ |
 | `FR-63` | Pinned operator identity | ✅ |
-| `FR-66` | Compare expected witnesses against proofs present | ☐ |
+| `FR-66` | Compare expected witnesses against proofs present | ✅ |
 
 ### [DES-13 — Storage and erasure](../design/DES-13-storage-and-erasure.md)
 

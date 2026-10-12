@@ -50,6 +50,10 @@ const KNOWN = new Set([
   'version', 'store', 'signer', 'anchor_interval', 'rollup_interval',
   'heartbeat_interval', 'unwitnessed_ceiling', 'on_unavailable', 'witnesses',
   'quorum', 'retention', 'origin', 'collector', 'padding',
+  // FR-64 — the capture surface the collector reports for itself. Validated by
+  // capture.mjs rather than here, because the digest and the validation must
+  // not be able to disagree about what the surface is.
+  'capture',
 ]);
 
 const UNITS = { ms: 1, s: 1000, m: 60_000, h: 3_600_000, d: 86_400_000 };
@@ -109,6 +113,7 @@ function positive(key, ms) {
  * @property {number} quorum
  * @property {string} [origin]
  * @property {string} [collector]
+ * @property {{ upstreams?: string[], interfaces?: string[] }} [capture] FR-64
  */
 
 /**
@@ -212,6 +217,7 @@ export function parseConfig(text, baseDir = process.cwd()) {
     on_unavailable: /** @type {'mark_gap'} */ (onUnavailable),
     witnesses,
     quorum: /** @type {number} */ (quorum),
+    ...(o.capture === undefined ? {} : { capture: /** @type {any} */ (o.capture) }),
     ...(typeof o.origin === 'string' ? { origin: o.origin } : {}),
     ...(typeof o.collector === 'string' ? { collector: o.collector } : {}),
   };

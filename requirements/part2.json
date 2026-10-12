@@ -245,7 +245,9 @@
     "title": "Resist collector stoppage",
     "statement": "Stopping the collector and claiming a quiet period must be detectable, by heartbeat discontinuity. Patching the collector is NOT covered: a modified build can report the original digest, and a self-reported digest is not remote attestation.",
     "source": "Attack class table, row 6",
-    "verify": "Kill the collector mid-window; the coverage report shows an undeclared gap. A separate test asserts a collector reporting a forged digest is NOT flagged, so the limit is pinned by a test rather than by prose"
+    "verify": "Kill the collector mid-window; the coverage report shows an undeclared gap. A separate test asserts a collector reporting a forged digest is NOT flagged, so the limit is pinned by a test rather than by prose",
+    "status": "done",
+    "evidence": "Heartbeat discontinuity as COVERAGE_GAP (red-team G, detected) and the patched collector as a declared limit (red-team G2, undetected by construction — a patched collector never allocates the number, so there is nothing to remove). G2 first removed the action from an honest store and was DETECTED via the source_seq hole, which would have credited AC-6 for catching something it does not catch The coverage report refuses a completeness claim when no heartbeat falls in the window, because the mechanism being absent is not the mechanism reporting continuity."
   },
   {
     "id": "SEC-12",
@@ -254,7 +256,9 @@
     "title": "Resist policy downgrade",
     "statement": "Weakening the anchoring policy before tampering must be visible in the record.",
     "source": "Attack class table, row 7",
-    "verify": "Test weakens the witness set, then asserts a countersigned policy event appears in the chain before the next batch"
+    "verify": "Test weakens the witness set, then asserts a countersigned policy event appears in the chain before the next batch",
+    "status": "done",
+    "evidence": "policy.mjs + Store.writePolicyDocument/readPolicyDocument; red-team H (tamper after a recorded downgrade, LEAF_MISMATCH) and H2 (delete the policy record, SEQ_BROKEN + CHAIN_BROKEN). DES-09 specified two digests and called the result a record of the weakening; two opaque digests make the change detectable without making its DIRECTION identifiable, so the document the chain commits to is stored and a substituted one is not returned"
   },
   {
     "id": "SEC-13",

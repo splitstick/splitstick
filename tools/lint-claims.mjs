@@ -87,6 +87,42 @@ for (const file of markdown(ROOT)) {
   }
 }
 
+/**
+ * DOC-10 — the collector-patch limit, required in three places.
+ *
+ * "Documentation review" is not a thing that fails a build, which is the same
+ * reason SEC-17 is checked above rather than read. DOC-10 asks for the limit
+ * wherever coverage attestation is described: the threat model, DES-10, and
+ * the coverage report's own OUTPUT. The last of those is the one that matters
+ * most and the one most easily lost in a refactor — an auditor acts on the
+ * report, and a limit they never see does not constrain them.
+ *
+ * Checked by looking for the two things the limit must join: that a patched
+ * collector is not detectable, and that remote attestation is what would
+ * change it and is not provided here.
+ */
+const PATCHED = /patch(ed|ing)?[^.]{0,140}(not|neither|never|NOT)[^.]{0,80}detect/i;
+const ATTESTATION = /remote attestation/i;
+/** @type {{ file: string, missing: string }[]} */
+const disclosures = [];
+for (const rel of ['docs/threat-model.md', 'design/DES-10-coverage-model.md',
+  'packages/verify/src/coverage-report.mjs']) {
+  const text = readFileSync(join(ROOT, rel), 'utf8');
+  if (!PATCHED.test(text)) disclosures.push({ file: rel, missing: 'that a patched collector is NOT detectable' });
+  else if (!ATTESTATION.test(text)) disclosures.push({ file: rel, missing: 'that remote attestation is what would change it, and is not provided' });
+}
+
+if (disclosures.length > 0) {
+  console.error('\nCLAIMS LINT FAILED — DOC-10\n');
+  for (const d of disclosures) {
+    console.error(`  ${d.file}`);
+    console.error(`    does not state ${d.missing}.`);
+    console.error('    DOC-10 requires the collector-patch limit wherever coverage attestation is');
+    console.error('    described, including in the report output itself.\n');
+  }
+  process.exit(1);
+}
+
 if (findings.length > 0) {
   console.error('\nCLAIMS LINT FAILED — SEC-17\n');
   for (const f of findings) {
@@ -98,4 +134,5 @@ if (findings.length > 0) {
   process.exit(1);
 }
 
-console.log('\n  claims: every forward-secrecy claim states its precondition in the same place (SEC-17)\n');
+console.log('\n  claims: every forward-secrecy claim states its precondition in the same place (SEC-17)');
+console.log('  claims: the collector-patch limit is stated in all three coverage surfaces (DOC-10)\n');

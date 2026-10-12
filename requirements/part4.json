@@ -240,7 +240,9 @@
     "title": "Document the collector-patch limit",
     "statement": "State plainly, wherever coverage attestation is described, that a collector patched to report a valid digest while suppressing actions is not detectable without remote attestation, which this release does not provide.",
     "source": "Coverage attestation; Threat model — residual risk",
-    "verify": "Statement present in the threat model, the coverage report output, and DES-10; claims audit checks no surface implies otherwise"
+    "verify": "Statement present in the threat model, the coverage report output, and DES-10; claims audit checks no surface implies otherwise",
+    "status": "done",
+    "evidence": "The limit in the threat model, DES-10 and the coverage report's OUTPUT, with tools/lint-claims.mjs checking all three — a limit in a design file is one the person acting on the report never sees. Each half of the check was shown to fail when removed"
   },
   {
     "id": "FR-57",
@@ -326,7 +328,9 @@
     "title": "Collector self-reported configuration attestation",
     "statement": "Each heartbeat carries a digest of the capture configuration the collector reports for itself — upstreams proxied, interfaces bound, heartbeat and anchor intervals — so a change to THAT configuration is recorded and visible. It does not detect an execution path created outside the collector: such a path leaves the collector reporting an unchanged digest and nothing diverges. This is provenance of a self-report, not independent observation.",
     "source": "Coverage attestation",
-    "verify": "Changing a declared upstream alters the attested digest and emits a policy record; a test asserts that a path bypassing the collector entirely produces NO signal, so the limit is pinned by a test rather than by prose"
+    "verify": "Changing a declared upstream alters the attested digest and emits a policy record; a test asserts that a path bypassing the collector entirely produces NO signal, so the limit is pinned by a test rather than by prose",
+    "status": "done",
+    "evidence": "capture.mjs captureSurface/captureDigest, attested in every heartbeat; duplicates and unknown keys refused rather than collapsed or ignored, because two different declarations must not produce one digest and a misspelled `upstream:` would attest to a narrower surface than was written. The bypass test is PAIRED: it asserts a path outside the collector produces no signal AND, over the same store, that a declared change produces one — without that half it would pass against a deleted implementation"
   },
   {
     "id": "FR-65",
@@ -346,7 +350,9 @@
     "title": "Compare expected witnesses against proofs present",
     "statement": "Each checkpoint records which witnesses were expected for it, given their tier and cadence, and the verifier compares that against the proofs in the pack. A proof that is expected and absent is reported as missing and inconclusive — it may be pending under fail-open, the witness may have been unavailable, or the receipt may have been removed, and the verifier cannot tell which from absence alone. Demonstrating removal requires an earlier pack that contained it, which is cross-pack comparison.",
     "source": "Proof — offline verification",
-    "verify": "Remove a proof: WITNESS_MISSING is reported as inconclusive, never as deletion. A witness on a slower tier with no proof yet is reported as not-yet-expected. A pack pair where one holds the proof and the later one does not yields removal"
+    "verify": "Remove a proof: WITNESS_MISSING is reported as inconclusive, never as deletion. A witness on a slower tier with no proof yet is reported as not-yet-expected. A pack pair where one holds the proof and the later one does not yields removal",
+    "status": "done",
+    "evidence": "verify.mjs tier-aware expectation; a witness on the roll-up tier is reported not-yet-expected rather than missing, because its proofs live in the roll-up envelopes and a permanent inconclusive on every correctly configured log is how a finding stops being read. Absence is never reported as deletion: pending, unavailable and removed are indistinguishable from absence alone, and demonstrating removal takes FR-54's cross-pack comparison"
   },
   {
     "id": "FR-68",

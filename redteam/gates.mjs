@@ -33,6 +33,9 @@
  * @property {'detected'|'undetected'} [expect_witnessed] what the suite declares
  *   for a reader who also holds a stateful witness's retained heights
  * @property {'detected'|'undetected'} [observed_witnessed] what THAT run produced
+ * @property {string} [out_of_scope] the requirement(s) declaring that this
+ *   project does not close this attack. Naming them is the cost of the claim:
+ *   a bare boolean would be reachable whenever a result was inconvenient.
  */
 
 /**
@@ -44,6 +47,9 @@
  * @property {boolean} missing true when no attack exercises the class at all
  * @property {string[]} detected
  * @property {string[]} outstanding
+ * @property {{ id: string, declared_by: string }[]} out_of_scope attacks the
+ *   project declares it does not close, each naming the requirement that says
+ *   so. They do not count against the gate and they are always reported.
  */
 
 /**
@@ -75,18 +81,44 @@ export function evaluateGates(plan, observations) {
       const assigned = observations.filter(o => o.gate === gate);
       const result = (/** @type {Observation} */ o) =>
         (evidence === 'witnessed' ? (o.observed_witnessed ?? o.observed) : o.observed);
-      const detected = assigned.filter(o => result(o) === 'detected').map(o => o.id);
-      const outstanding = assigned.filter(o => result(o) !== 'detected').map(o => o.id);
+      // AN ATTACK THE PROJECT DECLARES IT DOES NOT CLOSE is not a gate failure.
+      //
+      // "We tried and failed" and "we said we would not" are different facts,
+      // and a gate that cannot tell them apart has to either lie or lose the
+      // measurement. AC-6 is the case that forced this: its class is "stop or
+      // patch the collector", the stop is closed by heartbeat discontinuity,
+      // and the patch is NOT closed by anything in this release — SEC-11 says
+      // so, DOC-10 requires it stated wherever coverage is described, and
+      // SCOPE-12 rejects the remote attestation that would change it.
+      //
+      // The marker is deliberately expensive to use: it must name the
+      // requirement that declares the limit, so it cannot be reached for to
+      // quiet an inconvenient result. An undetected attack with no such
+      // declaration still fails the gate, which is the rule this whole module
+      // exists to enforce.
+      const declared = assigned.filter(o => typeof o.out_of_scope === 'string' && o.out_of_scope);
+      const measured = assigned.filter(o => !declared.includes(o));
+      const detected = measured.filter(o => result(o) === 'detected').map(o => o.id);
+      const outstanding = measured.filter(o => result(o) !== 'detected').map(o => o.id);
+      for (const o of declared) {
+        // A declared limit that turns out to BE detected is a stale
+        // declaration, and saying nothing would leave the project claiming a
+        // weakness it no longer has.
+        if (result(o) === 'detected') outstanding.push(`${o.id} (declared out of scope, yet detected)`);
+      }
       due.push({
         gate,
         milestone: m.id,
         evidence,
         // A class with no attack at all is not closed either: a gate nothing
         // exercises cannot be evidence of anything.
-        missing: assigned.length === 0,
-        held: assigned.length > 0 && outstanding.length === 0,
+        // A class exercised ONLY by attacks declared out of scope is not
+        // closed: `measured` is what the gate is evidence from.
+        missing: measured.length === 0,
+        held: measured.length > 0 && outstanding.length === 0,
         detected,
         outstanding,
+        out_of_scope: declared.map(o => ({ id: o.id, declared_by: String(o.out_of_scope) })),
       });
     }
   }
@@ -101,8 +133,13 @@ export function formatGates(result) {
     .map(g => {
       const how = g.evidence === 'witnessed' ? ' with a witness configured' : ' from files alone';
       if (g.missing) return `gate ${g.gate}   NOT MET   (${g.milestone} claims it and no attack exercises it)`;
-      if (g.held) return `gate ${g.gate}   HELD${how}   (${g.detected.join(', ')})`;
-      return `gate ${g.gate}   NOT MET${how}   (still undetected: ${g.outstanding.join(', ')})`;
+      // The declared limits are printed WITH the gate, never only in a
+      // document. A gate line reading HELD with nothing beside it would let a
+      // reader take the class as fully closed when half of it is out of scope.
+      const limits = g.out_of_scope.length === 0 ? '' : g.out_of_scope
+        .map(o => `\n            NOT CLOSED: ${o.id}, declared by ${o.declared_by}`).join('');
+      if (g.held) return `gate ${g.gate}   HELD${how}   (${g.detected.join(', ')})${limits}`;
+      return `gate ${g.gate}   NOT MET${how}   (still undetected: ${g.outstanding.join(', ')})${limits}`;
     });
   if (result.scheduled.length) {
     lines.push('', 'scheduled   ' + result.scheduled

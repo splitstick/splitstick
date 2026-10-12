@@ -190,3 +190,54 @@ test('FR-51: with no history, only the pinned key is accepted — unchanged beha
   });
   assert.equal(r.witnesses.find(x => x.id === WITNESS)?.verdict, 'fail');
 });
+
+// ── FR-66: expected against present, and the tier is what makes it mean something
+
+test('FR-66: a witness on the slower roll-up tier is not-yet-expected, not missing', async () => {
+  // Reporting a roll-up-tier witness as missing from a CHECKPOINT pack would
+  // put a permanent inconclusive on every correctly configured log that has
+  // one, which is how a finding stops being read. Its proofs live in the
+  // roll-up envelopes.
+  const { mkdtempSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { Store } = await import('@splitstick/core/store');
+  const { Collector } = await import('@splitstick/core/collector');
+  const { parseConfig } = await import('@splitstick/core/config');
+  const { generateDevSigner } = await import('@splitstick/core/signer-file');
+  const { verifyStore } = await import('../src/verify.mjs');
+
+  const root = mkdtempSync(join(tmpdir(), 'ss-fr66-'));
+  const origin = 'splitstick.dev/host-1';
+  const signer = await generateDevSigner(origin);
+  const store = new Store(root, 'host-1');
+  let t = Date.parse('2026-10-12T10:00:00.000Z');
+  const c = new Collector({
+    store, config: parseConfig('version: 1\nstore: ./s\n', root), signer,
+    collector: 'host-1', origin, now: () => new Date(t += 1000),
+  });
+  c.heartbeat();
+  await c.checkpoint();
+  store.close();
+
+  const policy = {
+    quorum: 1,
+    witnesses: [
+      { id: 'slow.example', establishes: ['existence'], tier: /** @type {const} */ ('rollup') },
+      { id: 'fast.example', establishes: ['sequence'], tier: /** @type {const} */ ('anchor') },
+    ],
+  };
+  const r = await verifyStore(root, { collector: 'host-1', policy });
+  const missing = r.findings.filter(f => f.code === 'WITNESS_MISSING');
+  assert.equal(missing.length, 1, 'only the anchor-tier witness is expected here');
+  assert.match(String(missing[0]?.detail), /fast\.example/);
+  assert.doesNotMatch(String(missing[0]?.detail), /slow\.example/);
+  assert.equal(missing[0]?.verdict, 'inconclusive', 'and never reported as deletion');
+
+  // The paired half: without the tier, the same witness IS expected — so the
+  // silence above is the tier doing work and not an absent check.
+  const untyped = { quorum: 1, witnesses: [{ id: 'slow.example', establishes: ['existence'] }] };
+  const r2 = await verifyStore(root, { collector: 'host-1', policy: untyped });
+  assert.ok(r2.findings.some(f => f.code === 'WITNESS_MISSING' && /slow\.example/.test(f.detail)),
+    'so the silence above is the tier doing work, not an absent check');
+});

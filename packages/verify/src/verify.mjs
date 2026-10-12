@@ -98,7 +98,7 @@ function combine(vs) {
  * @param {string} [opts.collector] the collector instance whose chain to read
  * @param {string} [opts.vkey] the pinned operator identity, as a note vkey
  * @param {{ quorum?: number, witnesses?: { id: string, public_key?: string,
- *   establishes?: string[], anchors?: string[],
+ *   establishes?: string[], anchors?: string[], tier?: 'anchor'|'rollup',
  *   key_history?: { keys?: { public_key?: string }[], note?: string } }[] }} [opts.policy]
  *   FR-30 — the ACCEPTANCE POLICY,
  *   supplied by the reader. Not a hardcoded trust store: two readers with
@@ -513,8 +513,16 @@ export async function verifyStore(root, opts = {}) {
   const latestBatchTs = entries.length === 0
     ? null
     : (/** @type {any} */ (entries[entries.length - 1]).record?.ts ?? null);
+  // FR-66 — the roll-up envelopes go in too, so a witness on the slower tier
+  // is told apart from one that is absent. Read before the WITNESS check
+  // rather than inside the ROLLUP check below, because the expectation is
+  // about the witness set and not about whether the roll-ups check out.
+  const rollupIssuers = store.readRollups().map(({ blob }) => ({
+    issuers: parseEnvelope(blob).issuers,
+  }));
   const wit = await verifyWitnesses({
     envelopes, policy: opts.policy, leaves, findings, anchored, latestBatchTs,
+    rollups: rollupIssuers,
   });
   check('WITNESS', wit.verdict, wit.detail);
 
@@ -879,7 +887,11 @@ function commitments(record) {
  *
  * @param {object} o
  * @param {{ seq: number, env: ReturnType<typeof parseEnvelope> }[]} o.envelopes
- * @param {{ quorum?: number, witnesses?: { id: string, public_key?: string, establishes?: string[], anchors?: string[] }[] }} [o.policy]
+ * @param {{ quorum?: number, witnesses?: { id: string, public_key?: string, establishes?: string[],
+ *   anchors?: string[], tier?: 'anchor'|'rollup' }[] }} [o.policy]
+ * @param {{ issuers: Set<string> }[]} [o.rollups] FR-66 — the roll-up
+ *   envelopes, so a witness on the slower tier can be told apart from one that
+ *   is simply absent
  * @param {Buffer[]} o.leaves
  * @param {Finding[]} o.findings appended to
  * @param {number} o.anchored
@@ -887,7 +899,7 @@ function commitments(record) {
  *   for FR-39's gap. Self-asserted is the point: the gap between it and the
  *   witness's receipt time is the unwitnessed window.
  */
-async function verifyWitnesses({ envelopes, policy, leaves, findings, anchored, latestBatchTs }) {
+async function verifyWitnesses({ envelopes, policy, leaves, findings, anchored, latestBatchTs, rollups }) {
   /** @type {WitnessEntry[]} */
   const witnesses = [];
   /** @type {Record<string, number>} */
@@ -1070,17 +1082,49 @@ async function verifyWitnesses({ envelopes, policy, leaves, findings, anchored, 
     for (const c of classes) observed[c] = (observed[c] ?? 0) + 1;
   }
 
-  // FR-66 — a policy witness with nothing in the pack. Absence is consistent
-  // with pending under fail-open, a slower roll-up tier, an unavailable
-  // witness, or a removed receipt, and nothing in the pack distinguishes them.
-  for (const [id] of named) {
+  // FR-66 — expected against present, and the tier is what makes the
+  // comparison mean something.
+  //
+  // A witness on the slower ROLL-UP tier is not expected in a checkpoint pack
+  // at all: its proofs live in the roll-up envelopes, so its absence from the
+  // checkpoints says nothing. Reporting that as missing would put a permanent
+  // inconclusive on every correctly configured log that has one, which is how
+  // a finding stops being read.
+  //
+  // What absence still cannot establish, for a witness that WAS expected:
+  // pending under fail-open, an unavailable witness, and a removed receipt are
+  // indistinguishable from absence alone. Demonstrating removal takes an
+  // earlier pack that contained it, which is FR-54's cross-pack comparison.
+  /** @type {string[]} */
+  const notYetExpected = [];
+  const rollupIssuers = new Set((rollups ?? []).flatMap(r => [...r.issuers]));
+  for (const [id, spec] of named) {
     if (seen.has(id)) continue;
+    if (spec.tier === 'rollup' && !rollupIssuers.has(id)) {
+      if ((rollups ?? []).length === 0) {
+        // No roll-up has been produced yet, so nothing from this witness is
+        // due. Not a finding: an expectation that has not come round yet is
+        // not an expectation that went unmet.
+        notYetExpected.push(id);
+        continue;
+      }
+      findings.push({
+        code: 'WITNESS_MISSING', verdict: 'inconclusive',
+        detail: `the acceptance policy names ${id} on the roll-up tier and ${rollups?.length} `
+          + 'roll-up(s) are present with no proof from it. That is consistent with a submission '
+          + 'still pending under fail-open, with the witness having been unavailable, and with a '
+          + 'receipt having been removed — nothing here distinguishes them, and demonstrating '
+          + 'removal takes an earlier pack that held it',
+      });
+      continue;
+    }
+    if (spec.tier === 'rollup') { notYetExpected.push(id); continue; }
     findings.push({
       code: 'WITNESS_MISSING', verdict: 'inconclusive',
       detail: `the acceptance policy names ${id} but no proof from it is in this pack. That is `
-        + 'consistent with a submission still pending under fail-open, with a slower roll-up tier, '
-        + 'with the witness having been unavailable, and with a receipt having been removed — '
-        + 'nothing here distinguishes them',
+        + 'consistent with a submission still pending under fail-open, with the witness having '
+        + 'been unavailable, and with a receipt having been removed — nothing here distinguishes '
+        + 'them, and demonstrating removal takes an earlier pack that held it',
     });
   }
 
@@ -1094,7 +1138,7 @@ async function verifyWitnesses({ envelopes, policy, leaves, findings, anchored, 
       detail: envelopes.some(e => !e.env.unwitnessed)
         ? 'countersignatures are present but this reader named no witness to accept'
         : 'no countersignature in this store',
-      witnesses, observed, met, quorum,
+      witnesses, observed, met, quorum, not_yet_expected: notYetExpected,
     };
   }
   if (CAPABILITY_CLASSES.every(c => (observed[c] ?? 0) === 0)) {
@@ -1110,7 +1154,7 @@ async function verifyWitnesses({ envelopes, policy, leaves, findings, anchored, 
         ? 'a proof in this pack does not verify under the key the acceptance policy supplies'
         : 'no proof in this pack could be attributed to a witness the acceptance policy accepts, '
           + 'which is a statement about what this reader can check rather than about the evidence',
-      witnesses, observed, met, quorum,
+      witnesses, observed, met, quorum, not_yet_expected: notYetExpected,
     };
   }
   const short = CAPABILITY_CLASSES.filter(c => (observed[c] ?? 0) > 0 && !met[c]);
@@ -1124,13 +1168,13 @@ async function verifyWitnesses({ envelopes, policy, leaves, findings, anchored, 
     return {
       verdict: /** @type {Verdict} */ ('fail'),
       detail: `quorum of ${quorum} not met for ${short.join(', ')}`,
-      witnesses, observed, met, quorum,
+      witnesses, observed, met, quorum, not_yet_expected: notYetExpected,
     };
   }
   return {
     verdict: /** @type {Verdict} */ ('ok'),
     detail: CAPABILITY_CLASSES.filter(c => met[c]).map(c => `${c} quorum ${observed[c]}/${quorum}`).join(', '),
-    witnesses, observed, met, quorum,
+    witnesses, observed, met, quorum, not_yet_expected: notYetExpected,
   };
 }
 

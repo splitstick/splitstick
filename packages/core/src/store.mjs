@@ -29,11 +29,12 @@
  */
 
 import { mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync, openSync, writeSync, closeSync, renameSync, unlinkSync, truncateSync } from 'node:fs';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, createHash } from 'node:crypto';
 
 
 import { join } from 'node:path';
 import { ContentStore } from './content.mjs';
+import { canonicalBytes } from './jcs.mjs';
 import { isTimestamp } from './record.mjs';
 import { buildEnvelope, parseEnvelope } from './envelope.mjs';
 import { WriteLock } from './writelock.mjs';
@@ -51,7 +52,7 @@ export class Store {
   constructor(root, collector) {
     this.root = root;
     this.collector = collector;
-    for (const d of ['chain', 'salts', 'queue', 'succession', 'counter', 'reserve']) {
+    for (const d of ['chain', 'salts', 'queue', 'succession', 'counter', 'reserve', 'policies']) {
       mkdirSync(join(root, d), { recursive: true });
     }
     // Checkpoints are scoped to the collector, like the chain and the salts.
@@ -76,6 +77,13 @@ export class Store {
     // failures compound rather than being independent.
     this.queuePath = join(root, 'queue', `${collector}.jsonl`);
     this.counterPath = join(root, 'counter', `${collector}.json`);
+    // FR-23, SEC-12 — the effective policy documents the chain commits to, each
+    // under its own digest. Never deleted: a policy record naming a digest
+    // whose document is gone is still a visible change, but its CONTENT is
+    // then unestablished, and the point of keeping them is that an auditor can
+    // see a quorum fall from two to one rather than only that something moved.
+    this.policyDir = join(root, 'policies', collector);
+    mkdirSync(this.policyDir, { recursive: true });
     // FR-58 — space kept back so a gap declaration can be written when
     // everything else has failed. A store that cannot record its own failure
     // reports a clean history for a lossy run, which is the worst outcome
@@ -152,6 +160,51 @@ export class Store {
       this.#writeAll(fd, JSON.stringify(entry) + '\n', this.successionPath);
     } finally {
       closeSync(fd);
+    }
+  }
+
+  /**
+   * Record the effective policy document under its digest — FR-23, SEC-12.
+   *
+   * Idempotent by construction: the filename IS the digest, so writing the
+   * same policy twice writes the same bytes. Written before the policy record
+   * that names it, because a record citing a document that is not there yet
+   * would be a commitment to something unavailable at exactly the moment a
+   * reader looks.
+   * @param {string} digest @param {unknown} policy
+   */
+  writePolicyDocument(digest, policy) {
+    if (!/^sha256:[0-9a-f]{64}$/.test(digest)) {
+      throw new TypeError(`a policy document is stored under its digest, not ${JSON.stringify(digest)}`);
+    }
+    const path = join(this.policyDir, `${digest.slice('sha256:'.length)}.json`);
+    writeFileSync(path, `${JSON.stringify(policy, null, 1)}\n`, { mode: 0o600 });
+  }
+
+  /**
+   * The policy document for a digest, or null when it is not held.
+   *
+   * Null is a real answer and not an error: the change is in the chain either
+   * way, and a reader is told the content is unestablished rather than being
+   * shown nothing or being told the log is damaged.
+   * @param {string} digest
+   * @returns {unknown}
+   */
+  readPolicyDocument(digest) {
+    if (!/^sha256:[0-9a-f]{64}$/.test(digest)) return null;
+    const path = join(this.policyDir, `${digest.slice('sha256:'.length)}.json`);
+    if (!existsSync(path)) return null;
+    try {
+      const doc = JSON.parse(readFileSync(path, 'utf8'));
+      // The filename is the claim; recomputing is what makes it a commitment.
+      // A document that does not hash to the name it is filed under is damage,
+      // and returning it would let a substituted policy be read as the one the
+      // chain committed to — which is the whole attack SEC-12 is about.
+      const actual = `sha256:${createHash('sha256').update(canonicalBytes(doc)).digest('hex')}`;
+      if (actual !== digest) return null;
+      return doc;
+    } catch {
+      return null;
     }
   }
 

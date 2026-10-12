@@ -630,7 +630,9 @@
     "title": "Publish honest limits",
     "statement": "Publish the known information leaks and the attacks not covered.",
     "source": "Disclosure — the honest limit; Threat model — out of scope",
-    "verify": "Documentation review"
+    "verify": "Documentation review",
+    "status": "done",
+    "evidence": "docs/known-limits.md + packages/core/test/known-limits.test.mjs; every attack the harness still declares undetected must appear there by name, parsed per attack BLOCK rather than per line, with both the declaration count and the open count asserted so a blind parser cannot report everything as fine"
   },
   {
     "id": "DOC-06",
