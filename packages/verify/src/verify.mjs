@@ -29,7 +29,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { Store } from '@splitstick/core/store';
 import { recomputeChain } from '@splitstick/core/chain';
-import { treeRoot, consistencyProof, verifyConsistency } from '@splitstick/core/merkle';
+import { treeRoot, prefixRoots, consistencyProof, verifyConsistency } from '@splitstick/core/merkle';
 import { parseNote, parseCheckpointText, parseVkey, SUITES } from '@splitstick/core/note';
 import { verifyNoteSignature } from '@splitstick/core/signer';
 import { successionReport } from '@splitstick/core/succession';
@@ -90,6 +90,26 @@ function combine(vs) {
   if (vs.includes('fail')) return 'fail';
   if (vs.includes('inconclusive')) return 'inconclusive';
   return 'ok';
+}
+
+/**
+ * A memoised prefix-root lookup — NFR-04.
+ *
+ * `treeRoot(leaves.slice(0, n))` once per checkpoint is O(checkpoints · n) and
+ * was the single largest cost in verification: 585 ms of a 2.3 s run over
+ * 8,000 records, which extrapolates to about 59 s at the 100,000 NFR-04 names.
+ * `prefixRoots` computes every requested prefix in one left-to-right pass.
+ *
+ * Lazy and batched: the first call collects nothing, so the sizes are gathered
+ * up front by the caller. A root for a size beyond the leaves is undefined,
+ * which the SIZE_REGRESSED check above handles before asking.
+ *
+ * @param {Buffer[]} leaves @param {number[]} sizes
+ */
+function rootsFor(leaves, sizes) {
+  const map = prefixRoots(leaves, sizes.filter(n => n <= leaves.length));
+  /** @param {number} n */
+  return (n) => map.get(n) ?? treeRoot(leaves.slice(0, n));
 }
 
 /**
@@ -240,6 +260,12 @@ export async function verifyStore(root, opts = {}) {
   const envelopes = [];
   const pinned = opts.vkey ? parseVkey(opts.vkey) : null;
   const leaves = entries.map(e => e.leaf);
+  // Every prefix size anybody below will ask about, in one pass. Gathering
+  // them up front is what turns O(checkpoints · n) into O(n log n).
+  const rootAt = rootsFor(leaves, [
+    ...store.readCheckpoints().map(({ blob }) => parseEnvelope(blob).tree_size ?? 0),
+    ...(opts.disclosed ?? []).map(d => Number(d.tree_size)),
+  ]);
   let anchored = 0;
 
   // FR-11 — the succession chain, walked from the pinned root before any
@@ -362,7 +388,7 @@ export async function verifyStore(root, opts = {}) {
         code: 'SIZE_REGRESSED', verdict: 'fail',
         detail: `checkpoint ${seq} commits to ${cp.tree_size} records but the log holds ${leaves.length}: the tail was removed below a size already committed`,
       });
-    } else if (!treeRoot(leaves.slice(0, cp.tree_size)).equals(cp.root)) {
+    } else if (!rootAt(cp.tree_size).equals(cp.root)) {
       treeVs.push('fail');
       findings.push({
         code: 'TREE_MISMATCH', verdict: 'fail',
@@ -549,7 +575,7 @@ export async function verifyStore(root, opts = {}) {
       });
       continue;
     }
-    const here = treeRoot(leaves.slice(0, d.tree_size)).toString('base64');
+    const here = rootAt(d.tree_size).toString('base64');
     if (here !== d.root) {
       findings.push({
         code: 'TREE_MISMATCH', verdict: 'fail',

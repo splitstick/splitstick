@@ -38,7 +38,8 @@
     "title": "Verification throughput",
     "statement": "Verify a 100,000-event run in under 2 seconds, offline.",
     "source": "Numbers we are signing up to",
-    "verify": "Benchmark on a documented reference machine"
+    "verify": "Benchmark on a documented reference machine",
+    "evidence": "bench/verify.mjs measures total elapsed against the 2 s budget on the WORST run, not a percentile and not the median: an auditor runs it once and 'usually under two seconds' is not the claim. STATUS: NOT YET ESTABLISHED. It needs a run on bench/reference-env.json's machine, and the development host sat at load average 13 — the project's own discipline puts the ceiling at 1.0 and calls anything else a regression metric. What IS established is that the verifier recomputed treeRoot once per checkpoint, O(checkpoints x n), which was the single largest cost: 585 ms of a 2.3 s run over 8,000 records, extrapolating to roughly 59 s at the size this requirement names. merkle.prefixRoots computes every prefix in one pass instead, proven equal to treeRoot for every prefix size rather than for a sample, and 5x faster in an isolated loop at 8 checkpoints. The remaining floor is JCS canonicalisation at ~19 microseconds a record, which puts 100,000 records near the budget on its own and is the next thing to measure on the reference host"
   },
   {
     "id": "NFR-05",
@@ -437,7 +438,9 @@
     "title": "Disclose the cadence leak",
     "statement": "Document that anchor cadence leaks activity volume.",
     "source": "Disclosure — anchor cadence likewise leaks",
-    "verify": "Documentation review"
+    "verify": "Documentation review",
+    "evidence": "docs/known-limits.md states the anchor-cadence leak: submitting checkpoints to a witness on a schedule tells that witness when the operator was busy. Published rather than reviewed — the DOC-05 test requires every uncovered attack and leak in that document to stay named",
+    "status": "done"
   },
   {
     "id": "PRIV-09",

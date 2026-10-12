@@ -175,3 +175,60 @@ export function verifyConsistency(size1, root1, size2, root2, proof) {
   }
   return sn === 0 && eq(h1, root1) && eq(h2, root2);
 }
+
+/**
+ * The root of every PREFIX of a leaf list, in one pass — NFR-04.
+ *
+ * A verifier checks each checkpoint against the root of the tree it committed
+ * to, which is a prefix of the leaves on disk. Calling `treeRoot` once per
+ * checkpoint is O(checkpoints · n): at 100 checkpoints over 100,000 records
+ * that is 10^7 leaf operations and roughly a minute, and it was the single
+ * largest cost in verification — 585 ms of a 2.3 s run over only 8,000
+ * records, which extrapolates to about 59 s at the size NFR-04 names.
+ *
+ * This computes them all in one left-to-right pass instead, O(n log n) total,
+ * by keeping the standard forest of complete subtree roots and folding it at
+ * each requested size. RFC 6962's tree is history-independent, so the fold of
+ * the forest at size k IS the root at size k — the same value `treeRoot` would
+ * return, which a test asserts for every size rather than for a sample.
+ *
+ * @param {Buffer[]} leaves
+ * @param {number[]} sizes the prefix sizes wanted; 0 maps to the empty root
+ * @returns {Map<number, Buffer>} size -> root
+ */
+export function prefixRoots(leaves, sizes) {
+  const want = [...new Set(sizes)].filter(n => Number.isInteger(n) && n >= 0).sort((a, b) => a - b);
+  /** @type {Map<number, Buffer>} */
+  const out = new Map();
+  if (want.length === 0) return out;
+
+  // A forest of complete-subtree roots, smallest last. Appending a leaf and
+  // merging equal-height neighbours is the standard incremental construction.
+  /** @type {{ root: Buffer, size: number }[]} */
+  const forest = [];
+  let next = 0;
+  /** Fold the forest right-to-left: the root of the tree built so far. */
+  const fold = () => {
+    if (forest.length === 0) return treeRoot([]);
+    let acc = /** @type {{root: Buffer}} */ (forest[forest.length - 1]).root;
+    for (let i = forest.length - 2; i >= 0; i -= 1) {
+      acc = nodeHash(/** @type {{root: Buffer}} */ (forest[i]).root, acc);
+    }
+    return acc;
+  };
+
+  while (next < want.length && want[next] === 0) { out.set(0, fold()); next += 1; }
+  for (let i = 0; i < leaves.length && next < want.length; i += 1) {
+    forest.push({ root: leafHash(/** @type {Buffer} */ (leaves[i])), size: 1 });
+    // Merge while the last two subtrees are the same height.
+    while (forest.length > 1
+      && /** @type {{size: number}} */ (forest[forest.length - 1]).size
+         === /** @type {{size: number}} */ (forest[forest.length - 2]).size) {
+      const r = /** @type {{root: Buffer, size: number}} */ (forest.pop());
+      const l = /** @type {{root: Buffer, size: number}} */ (forest.pop());
+      forest.push({ root: nodeHash(l.root, r.root), size: l.size + r.size });
+    }
+    while (next < want.length && want[next] === i + 1) { out.set(i + 1, fold()); next += 1; }
+  }
+  return out;
+}
