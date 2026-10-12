@@ -342,7 +342,9 @@
       "title": "splitstick disclose",
       "statement": "Emit a Merkle inclusion proof for a single named event.",
       "source": "Disclosure — splitstick disclose",
-      "verify": "Recipient verifies one event without the rest"
+      "verify": "Recipient verifies one event without the rest",
+      "status": "done",
+      "evidence": "disclose.mjs buildDisclosure/verifyDisclosure + the disclose CLI; a recipient verifies one event holding the pack and nothing else — no store, no network, no credential"
     },
     {
       "id": "FR-33",
@@ -351,7 +353,9 @@
       "title": "Inclusion proof binds to countersigned root",
       "statement": "Inclusion proofs verify against a countersigned root, not a bare local digest.",
       "source": "Disclosure — against a countersigned root",
-      "verify": "Proof rejected when root is unwitnessed"
+      "verify": "Proof rejected when root is unwitnessed",
+      "status": "done",
+      "evidence": "buildDisclosure REFUSES a pack whose covering checkpoints carry no countersignature, rather than handing one over with a caveat, because a caveat is something a recipient has to notice. Verification checks the proof reaches the root the CHECKPOINT commits to and not merely the root the pack supplies alongside it — stopping after the first half would let an operator prove inclusion in a tree nobody countersigned, FR-33 defeated by arithmetic. Every covering checkpoint is considered so an unwitnessed one cannot mask a witnessed later one"
     },
     {
       "id": "FR-34",

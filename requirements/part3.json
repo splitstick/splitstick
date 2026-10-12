@@ -415,7 +415,9 @@
     "title": "Documented evidence pack format",
     "statement": "Publish and version the evidence pack format so third parties can write verifiers.",
     "source": "Proof; Licence and governance — wire format open",
-    "verify": "Spec published; independent verifier implementation validates a pack"
+    "verify": "Spec published; independent verifier implementation validates a pack",
+    "status": "done",
+    "evidence": "spec/disclosure-pack-v1.md + pack-conformance.test.mjs, which checks the emitted pack against the document field for field AND verifies a reference pack with a second implementation written from the spec alone, sharing no code with the project's verifier. That second implementation found two gaps in the document on its first run — the vkey's algorithm byte, and that base64 contains '+' so an identity must be split at the first two separators only — which is exactly what INT-03 is for, since a third party would have made the same two mistakes"
   },
   {
     "id": "INT-04",

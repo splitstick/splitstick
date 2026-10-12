@@ -47,7 +47,9 @@
     "title": "No network at verification",
     "statement": "Verification completes with networking disabled.",
     "source": "Proof — no network",
-    "verify": "Test executed in a network-isolated sandbox"
+    "verify": "Test executed in a network-isolated sandbox",
+    "status": "done",
+    "evidence": "Two halves: `fetch` replaced with something that throws and the environment emptied, plus a comment-stripped source scan of the modules verification reaches. Neither alone is enough — a node: module namespace is read-only so the behavioural half cannot cover http.request, and the scan is stripped because it once failed on the word `fetch` inside a comment saying this verifier does not fetch"
   },
   {
     "id": "NFR-06",
@@ -56,7 +58,9 @@
     "title": "No credentials at verification",
     "statement": "Verification requires no account, token or credential.",
     "source": "Proof — no credentials, no account",
-    "verify": "Test with an empty environment"
+    "verify": "Test with an empty environment",
+    "status": "done",
+    "evidence": "Verification runs with every environment variable deleted: no account, no token, no credential"
   },
   {
     "id": "NFR-07",
@@ -411,7 +415,9 @@
     "title": "Disclosure minimisation",
     "statement": "A disclosure reveals the named event and nothing else about other events' contents.",
     "source": "Disclosure — without seeing anything else",
-    "verify": "Test asserts a disclosure pack contains exactly one salt and that no sibling leaf is reproducible from the pack"
+    "verify": "Test asserts a disclosure pack contains exactly one salt and that no sibling leaf is reproducible from the pack",
+    "status": "done",
+    "evidence": "Exactly one salt, keyed by the disclosed record_seq, checked at BUILD time because a check on the recipient's side would run after the damage and a disclosure cannot be undone. The test states honestly what a Merkle path does reveal — the HASH of a sibling leaf, which is how an inclusion proof works — and asserts what it does not: no sibling leaf digest, no sibling salt, no sibling payload, so a sibling's content can be neither reproduced nor confirmed"
   },
   {
     "id": "PRIV-07",
