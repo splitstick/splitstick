@@ -44,6 +44,10 @@ export const CAPABILITY_CLASSES = Object.freeze(['sequence', 'time', 'existence'
 /** Default bound on the unwitnessed queue. */
 export const QUEUE_CEILING = 1024;
 
+/** First retry delay, and the cap it grows to — OPS-02. */
+export const BACKOFF_BASE_MS = 30_000;
+export const BACKOFF_CEILING_MS = 3_600_000;
+
 /** Default per-witness wait. A witness is not on NFR-01's path, but it is on a wall clock. */
 export const TIMEOUT_MS = 10_000;
 
@@ -72,15 +76,41 @@ export class Anchorer {
    *   for the `c2sp-note` witnesses whose signatures can be checked locally
    * @param {number} [o.timeout_ms]
    * @param {number} [o.queue_ceiling]
+   * @param {() => number} [o.now] injected so backoff is testable
+   * @param {number} [o.unwitnessed_ceiling_ms] FR-68
+   * @param {number} [o.backoff_ceiling_ms]
+   * @param {(e: { oldest_checkpoint_seq: number, unwitnessed_for_ms: number,
+   *   since: string, queued: number }) => void} [o.onCeilingBreached] FR-68 —
+   *   raised OUT OF BAND. It must not write a record: an alert about the log's
+   *   integrity, written into that log, asks the suspect to carry the complaint.
    */
-  constructor({ store, witnesses = [], quorum = 1, acceptance = {}, timeout_ms = TIMEOUT_MS, queue_ceiling = QUEUE_CEILING }) {
+  constructor({
+    store, witnesses = [], quorum = 1, acceptance = {}, timeout_ms = TIMEOUT_MS,
+    queue_ceiling = QUEUE_CEILING, now, unwitnessed_ceiling_ms, backoff_ceiling_ms,
+    onCeilingBreached,
+  }) {
     this.store = store;
     this.quorum = quorum;
     this.acceptance = acceptance;
     this.timeout_ms = timeout_ms;
     this.queue_ceiling = queue_ceiling;
-    /** Checkpoints written but not yet witnessed. @type {number[]} */
-    this.queue = [];
+    this.now = now ?? (() => Date.now());
+    this.unwitnessed_ceiling_ms = unwitnessed_ceiling_ms ?? null;
+    this.backoff_ceiling_ms = backoff_ceiling_ms ?? BACKOFF_CEILING_MS;
+    this.onCeilingBreached = onCeilingBreached ?? null;
+    /**
+     * Breaches observed, kept after they clear. The window happened; a cleared
+     * alert must not erase it.
+     * @type {{ oldest_checkpoint_seq: number, unwitnessed_for_ms: number,
+     *          since: string, queued: number }[]}
+     */
+    this.breaches = [];
+    this.#breached = false;
+    /**
+     * Checkpoints written but not yet witnessed — NFR-13, read from disk.
+     * @type {{ checkpoint_seq: number, since: string, attempts: number }[]}
+     */
+    this.entries = store.readQueue();
     /** How many the ceiling has discarded. Reported, never silent. */
     this.dropped = 0;
 
@@ -106,8 +136,76 @@ export class Anchorer {
     this.witnesses = witnesses;
   }
 
+  /** @type {boolean} */
+  #breached;
+
   /** @returns {number[]} a copy, oldest first */
-  queued() { return [...this.queue]; }
+  queued() { return this.entries.map(e => e.checkpoint_seq).sort((a, b) => a - b); }
+
+  /**
+   * When checkpoint `seq` may next be attempted — OPS-02.
+   *
+   * Exponential from BACKOFF_BASE_MS and capped, because an unbounded doubling
+   * schedules the next attempt past the life of the deployment, and a witness
+   * that returns after a long outage should be used rather than waited for.
+   * @param {number} seq
+   */
+  nextAttemptAt(seq) {
+    const e = this.entries.find(x => x.checkpoint_seq === seq);
+    if (!e) return 0;
+    const since = Date.parse(e.since);
+    // An entry fresh from anchor() is eligible IMMEDIATELY. Its failure has
+    // already been counted — anchor() tried and the witness was down — and the
+    // caller choosing to flush is itself the cadence. A first version imposed
+    // the base delay on attempts 0, so a witness that came back in two seconds
+    // went unused for thirty, which is the opposite of what OPS-02 asks for.
+    //
+    // The delay applies after a failed RETRY, doubling each time and capped:
+    // an unbounded doubling schedules the next attempt past the life of the
+    // deployment.
+    const delay = e.attempts === 0
+      ? 0
+      : Math.min(BACKOFF_BASE_MS * 2 ** (e.attempts - 1), this.backoff_ceiling_ms);
+    return (Number.isNaN(since) ? this.now() : since) + delay;
+  }
+
+  /** FR-68 — is the oldest unwitnessed batch past the ceiling? */
+  ceilingBreached() { return this.#breached; }
+
+  /**
+   * Check the ceiling and raise the alert at most once per breach.
+   *
+   * Once per breach, not once per flush: an alert that repeats on every retry
+   * is an alert nobody reads, and the retry cadence is not information about
+   * the outage.
+   */
+  #checkCeiling() {
+    const ceiling = this.unwitnessed_ceiling_ms;
+    if (ceiling === null || this.entries.length === 0) {
+      this.#breached = false;
+      return;
+    }
+    const first = this.entries[0];
+    if (!first) { this.#breached = false; return; }
+    const oldest = this.entries.reduce(
+      (m, e) => (Date.parse(e.since) < Date.parse(m.since) ? e : m), first);
+    const age = this.now() - Date.parse(oldest.since);
+    const over = Number.isFinite(age) && age > ceiling;
+    if (over && !this.#breached) {
+      const event = {
+        oldest_checkpoint_seq: oldest.checkpoint_seq,
+        unwitnessed_for_ms: age,
+        since: oldest.since,
+        queued: this.entries.length,
+      };
+      this.breaches.push(event);
+      this.#breached = true;
+      // Out of band. Deliberately not a record: see the constructor's note.
+      if (this.onCeilingBreached) this.onCeilingBreached(event);
+      return;
+    }
+    if (!over) this.#breached = false;
+  }
 
   /**
    * Submit checkpoint `seq` to the `anchor`-tier witnesses — FR-20.
@@ -153,23 +251,36 @@ export class Anchorer {
     /** @type {number[]} */
     const superseded = [];
     /** @type {number[]} */
+    const waiting = [];
+    /** @type {typeof this.entries} */
     const still = [];
-    const descending = [...this.queue].sort((a, b) => b - a);
-    for (const seq of descending) {
+    const descending = [...this.entries].sort((a, b) => b.checkpoint_seq - a.checkpoint_seq);
+    for (const entry of descending) {
+      const seq = entry.checkpoint_seq;
       if (anchored.length > 0) {
         // Something higher is already countersigned, and it covers this one.
         superseded.push(seq);
         continue;
       }
+      if (this.now() < this.nextAttemptAt(seq)) {
+        // OPS-02 — still inside its backoff window. Reported rather than
+        // silently retried, so a caller can tell waiting from failing.
+        waiting.push(seq);
+        still.push(entry);
+        continue;
+      }
       const r = await this.#submit(seq, 'anchor', { requeue: false });
       if (r.attached.length > 0) anchored.push(seq);
-      else still.push(seq);
+      else still.push({ ...entry, attempts: entry.attempts + 1 });
     }
-    this.queue = still.sort((a, b) => a - b);
+    this.entries = still.sort((a, b) => a.checkpoint_seq - b.checkpoint_seq);
+    this.store.writeQueue(this.entries);
+    this.#checkCeiling();
     return {
       anchored,
       superseded: superseded.sort((a, b) => a - b),
-      queued: [...this.queue],
+      waiting: waiting.sort((a, b) => a - b),
+      queued: this.queued(),
     };
   }
 
@@ -260,7 +371,11 @@ export class Anchorer {
     // set is SCOPE-15's supported configuration, and queueing for witnesses
     // that do not exist would report an outage that is not happening.
     if (opts.requeue !== false && due.length > 0 && attached.length === 0) this.#enqueue(seq);
-    if (attached.length > 0) this.queue = this.queue.filter(q => q !== seq);
+    if (attached.length > 0 && this.entries.some(e => e.checkpoint_seq === seq)) {
+      this.entries = this.entries.filter(e => e.checkpoint_seq !== seq);
+      this.store.writeQueue(this.entries);
+    }
+    this.#checkCeiling();
 
     /** @type {Record<string, number>} */
     const quorum = Object.fromEntries(CAPABILITY_CLASSES.map(c => [c, 0]));
@@ -289,12 +404,21 @@ export class Anchorer {
    * @param {number} seq
    */
   #enqueue(seq) {
-    if (this.queue.includes(seq)) return;
-    this.queue.push(seq);
-    while (this.queue.length > this.queue_ceiling) {
-      this.queue.shift();
+    if (this.entries.some(e => e.checkpoint_seq === seq)) return;
+    this.entries.push({
+      checkpoint_seq: seq,
+      since: new Date(this.now()).toISOString(),
+      attempts: 0,
+    });
+    this.entries.sort((a, b) => a.checkpoint_seq - b.checkpoint_seq);
+    let trimmed = false;
+    while (this.entries.length > this.queue_ceiling) {
+      this.entries.shift();
       this.dropped += 1;
+      trimmed = true;
     }
+    if (trimmed) this.store.writeQueue(this.entries);
+    else this.store.appendQueue(/** @type {any} */ (this.entries.at(-1)));
   }
 
   /**
