@@ -39,6 +39,32 @@ import { verifyTimeStampToken } from '@splitstick/core/rfc3161';
 import { describeOtsProof } from '@splitstick/core/opentimestamps';
 import { parseEnvelope } from '@splitstick/core/envelope';
 
+/**
+ * @typedef {object} WitnessEntry
+ * @property {string} id
+ * @property {string} type
+ * @property {string} establishes
+ * @property {boolean} accepted
+ * @property {Verdict} verdict
+ * @property {string} detail
+ * @property {string} [received_at] FR-39 — the witness's own clock
+ * @property {'absent'|'witness-asserted, unsigned'|'signed by the TSA, inside the token'}
+ *   [received_at_basis] what that value rests on. A C2SP note has nowhere
+ *   inside it to carry a time, so the value sits beside the proof rather than
+ *   under it, and the report says which.
+ * @property {number} [unwitnessed_for_ms] how long the batch went unwitnessed
+ * @property {number} [clock_disagreement] by how much the witness's clock is
+ *   EARLIER than the batch's self-asserted ts
+ */
+
+/**
+ * RFC 3339 with milliseconds and a Z, the same shape DES-01 requires of every
+ * timestamp. Used for FR-39's receipt time because `Date.parse` is lenient: it
+ * reads "12345" as the year 12345, which would produce a receipt time ten
+ * thousand years out and an unwitnessed window to match.
+ */
+const RECEIPT_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+
 import { noteKeyId } from '@splitstick/core/note';
 
 /** @typedef {'ok'|'fail'|'inconclusive'} Verdict */
@@ -77,8 +103,7 @@ function combine(vs) {
  *   summary: { passed: number, unanswered: number, failed: number },
  *   checks: { name: string, verdict: Verdict, detail?: string }[],
  *   findings: Finding[],
- *   witnesses: { id: string, type: string, establishes: string, accepted: boolean,
- *                verdict: Verdict, detail: string }[],
+ *   witnesses: WitnessEntry[],
  *   quorum: { required: number, observed: Record<string, number>, met: Record<string, boolean> },
  *   capability: { can: string[], cannot: string[] },
  *   trusting: string[],
@@ -453,8 +478,11 @@ export async function verifyStore(root, opts = {}) {
   check('OP-SIG', combine(sigVs));
 
   // 7 WITNESS — DES-08, DES-20, FR-19, FR-30, FR-31, INT-02.
+  const latestBatchTs = entries.length === 0
+    ? null
+    : (/** @type {any} */ (entries[entries.length - 1]).record?.ts ?? null);
   const wit = await verifyWitnesses({
-    envelopes, policy: opts.policy, leaves, findings, anchored,
+    envelopes, policy: opts.policy, leaves, findings, anchored, latestBatchTs,
   });
   check('WITNESS', wit.verdict, wit.detail);
 
@@ -647,6 +675,42 @@ function report(tree_size, anchored, checks, findings, notes, collector, vkey, s
       ? `no witness in this set maintains sequence state, so truncation above record_seq ${anchored} is NOT detectable from this evidence alone`
       : 'no checkpoint commits to any height here, so truncation anywhere in this log is NOT detectable from this evidence alone');
   }
+  // FR-39 — the unwitnessed window, its size, and what the receipt time rests on.
+  for (const w of witnesses.filter(x => x.accepted)) {
+    if (w.clock_disagreement !== undefined) {
+      cannot.push(
+        `${w.id} says it received this root ${w.clock_disagreement} ms BEFORE the batch's own `
+        + 'timestamp, so the two clocks disagree. Either the witness\'s is wrong or the '
+        + "operator's is, and this verifier does not prefer one — the ts field is self-asserted "
+        + 'and the receipt time is the witness\'s claim',
+      );
+    } else if (w.unwitnessed_for_ms !== undefined && w.unwitnessed_for_ms > 0) {
+      const hours = w.unwitnessed_for_ms / 3_600_000;
+      can.push(
+        `that ${w.id} received this root at ${w.received_at}, which is `
+        + `${hours >= 1 ? `${hours.toFixed(2)} hours` : `${w.unwitnessed_for_ms} ms`} after the `
+        + 'batch claims to have been written',
+      );
+      cannot.push(
+        `the batch was unwitnessed for ${hours >= 1 ? `${hours.toFixed(2)} hours` : `${w.unwitnessed_for_ms} ms`} `
+        + `before ${w.id} saw it: anything that happened to the log inside that window is `
+        + 'outside what this countersignature reaches',
+      );
+    }
+    if (w.received_at_basis === 'absent') {
+      cannot.push(
+        `${w.id} supplied no receipt time, so WHEN it saw this root is not established — and it `
+        + "is not assumed to be the batch's own timestamp",
+      );
+    } else if (w.received_at_basis === 'witness-asserted, unsigned') {
+      cannot.push(
+        `${w.id}'s receipt time is witness-asserted and UNSIGNED: a C2SP note has nowhere inside `
+        + 'it to carry a time, so the value sits beside the proof rather than under it. It is '
+        + "exactly as good as that witness's word",
+      );
+    }
+  }
+
   if (witnesses.length > 0 && quorum.required > 0) {
     // Three numbers, never one. An aggregate figure would let an operator look
     // well-witnessed while being unable to detect truncation at all.
@@ -761,9 +825,12 @@ function commitments(record) {
  * @param {Buffer[]} o.leaves
  * @param {Finding[]} o.findings appended to
  * @param {number} o.anchored
+ * @param {string|null} [o.latestBatchTs] the newest record's self-asserted ts,
+ *   for FR-39's gap. Self-asserted is the point: the gap between it and the
+ *   witness's receipt time is the unwitnessed window.
  */
-async function verifyWitnesses({ envelopes, policy, leaves, findings, anchored }) {
-  /** @type {{ id: string, type: string, establishes: string, accepted: boolean, verdict: Verdict, detail: string }[]} */
+async function verifyWitnesses({ envelopes, policy, leaves, findings, anchored, latestBatchTs }) {
+  /** @type {WitnessEntry[]} */
   const witnesses = [];
   /** @type {Record<string, number>} */
   const observed = Object.fromEntries(CAPABILITY_CLASSES.map(c => [c, 0]));
@@ -799,6 +866,9 @@ async function verifyWitnesses({ envelopes, policy, leaves, findings, anchored }
         continue;
       }
 
+      // FR-39 — the witness's own clock, and how far it is from the batch's.
+      const time = receiptTime(cs, latestBatchTs ?? null);
+
       if (cs.type === 'c2sp-note') {
         // The only type checkable offline, and therefore the only one that can
         // produce WITNESS_MISMATCH — the strongest finding available, because
@@ -809,7 +879,9 @@ async function verifyWitnesses({ envelopes, policy, leaves, findings, anchored }
           credit(credited, cs.issuer, classes);
           witnesses.push({
             id: cs.issuer, type: cs.type, establishes: classes.join('+'), accepted: true,
-            verdict: 'ok', detail: `checkpoint ${seq}: countersigned by ${cs.issuer}`,
+            verdict: 'ok',
+            detail: `checkpoint ${seq}: countersigned by ${cs.issuer}${time.detail}`,
+            ...time.fields,
           });
           continue;
         }
@@ -1163,5 +1235,62 @@ async function verifyRollups({ store, notes, pinned, epochKeys, findings }) {
         : `${rollups.length} roll-up(s) present, but not checkable by this reader`,
     count: rollups.length,
     covers,
+  };
+}
+
+/**
+ * What the witness says about when it received the root — FR-39.
+ *
+ * A retroactive countersignature must record the witness's ACTUAL receipt time,
+ * not the batch's claimed time: backdating it to the batch would turn the one
+ * independent clock in the system into an echo of the operator's. The gap
+ * between the two IS the unwitnessed window, and a reader needs its size.
+ *
+ * The basis is reported, not just the value. A `c2sp-note` has nowhere inside
+ * it to put a time, so `received_at` is a bare claim sitting in the envelope;
+ * an `rfc3161` token carries its genTime under the signature. Reporting the
+ * first as though it were the second would be the most useful-looking lie
+ * available here.
+ *
+ * A receipt time EARLIER than the batch's is reported and not preferred. Either
+ * the witness's clock is wrong or the operator's is, and choosing between them
+ * is deciding whose account to believe — the one thing a verifier must not do.
+ *
+ * @param {import('@splitstick/core/envelope').ParsedCountersignature} cs
+ * @param {string|null} batchTs
+ */
+function receiptTime(cs, batchTs) {
+  const raw = cs.entry?.received_at;
+  // Strict RFC 3339, the same shape DES-01 requires of `ts`. Date.parse is
+  // lenient: it reads "12345" as the year 12345, which would have produced a
+  // receipt time ten thousand years out and an unwitnessed window to match.
+  const at = typeof raw === 'string' && RECEIPT_TIME.test(raw) ? Date.parse(raw) : NaN;
+  if (Number.isNaN(at)) {
+    return {
+      detail: '',
+      fields: { received_at_basis: /** @type {const} */ ('absent') },
+    };
+  }
+  const basis = cs.type === 'rfc3161'
+    ? /** @type {const} */ ('signed by the TSA, inside the token')
+    : /** @type {const} */ ('witness-asserted, unsigned');
+  const batch = batchTs === null ? NaN : Date.parse(batchTs);
+  if (Number.isNaN(batch)) {
+    return { detail: ` at ${raw}`, fields: { received_at: raw, received_at_basis: basis } };
+  }
+  const delta = at - batch;
+  if (delta < 0) {
+    return {
+      detail: ` at ${raw}, which is BEFORE the batch's own timestamp`,
+      fields: {
+        received_at: raw,
+        received_at_basis: basis,
+        clock_disagreement: Math.abs(delta),
+      },
+    };
+  }
+  return {
+    detail: ` at ${raw}, ${delta} ms after the batch`,
+    fields: { received_at: raw, received_at_basis: basis, unwitnessed_for_ms: delta },
   };
 }
