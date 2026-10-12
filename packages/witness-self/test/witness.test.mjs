@@ -131,14 +131,18 @@ test('row 12: a size that jumps by more than one is accepted with a consistency 
 
 // ── Rows 10, 11, 14 — regression, fork, same height different root ───────────
 
-test('row 10: a tree_size below last_size is 400, a regression', async () => {
+test('row 10: a tree_size below last_size is 409, a regression', async () => {
+  // Was 400. A regression is a well-formed submission conflicting with state
+  // the witness holds — 409 — not a malformed request. It is also the same
+  // class of event as the fork and proof-failure cases below, which were
+  // already 409. The conformance suite found the inconsistency.
   const { w, opkey } = await fixture();
   w.enrol(OPERATOR, opkey.publicKey);
   const all = leaves(20);
   await w.addCheckpoint({ note: await submission(opkey, all, 10), old_size: 0 });
   await assert.rejects(
     async () => w.addCheckpoint({ note: await submission(opkey, all, 6), old_size: 10 }),
-    (/** @type {any} */ e) => e instanceof WitnessRefused && e.status === 400 && /regress/.test(e.message),
+    (/** @type {any} */ e) => e instanceof WitnessRefused && e.status === 409 && /regress/.test(e.message),
   );
   assert.equal(w.state(OPERATOR).last_size, 10, 'a refused submission must not move the state');
 });
@@ -347,7 +351,9 @@ test('state survives a restart: a witness that forgets is not a witness', async 
   assert.equal(w2.state(OPERATOR).last_size, 100);
   await assert.rejects(
     async () => w2.addCheckpoint({ note: await submission(opkey, all, 50), old_size: 100 }),
-    (/** @type {any} */ e) => e.status === 400,
+    // 409, as a regression now is everywhere: it conflicts with state the
+    // witness holds rather than being a malformed request.
+    (/** @type {any} */ e) => e.status === 409,
   );
 });
 

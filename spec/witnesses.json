@@ -1,0 +1,57 @@
+{
+  "note": "The list of witnesses known to be conformant — FR-47, GOV-05, GOV-08, GOV-09.\n\nThis file is DATA, not an endorsement. Nobody vets, ranks, or charges for inclusion: entries arrive by pull request (GOV-08), anyone including competitors and hyperscalers may run a conformant witness (GOV-05), and this project does not gatekeep the list (GOV-09). There is deliberately no field expressing preference, quality, trust or recommendation, and a test asserts none appears — a `recommended` flag would be gatekeeping wearing a different name.\n\nEvery entry states its acceptable-use position, its rate limits and whether it retains submissions publicly, because an operator choosing a witness is choosing who learns their anchor cadence (PRIV-08) and under whose terms. An absent position would read as 'no restriction', which is the one reading that is never safe, so the parser refuses an entry missing any of them.\n\nThe entries here are not a shipped default. The collector's default witness set is chosen in config, and OPS-05's zero-egress deployment uses none of these.",
+  "version": 1,
+  "entries": [
+    {
+      "id": "opentimestamps.pool",
+      "type": "opentimestamps",
+      "operator": "the OpenTimestamps project",
+      "operated_by_splitstick": false,
+      "endpoints": [
+        "https://a.pool.opentimestamps.org",
+        "https://b.pool.opentimestamps.org"
+      ],
+      "establishes": ["existence"],
+      "acceptable_use": "Public calendars operated as a free community service. No service level is offered or implied, and the operators ask that submissions be aggregated rather than per-event.",
+      "rate_limits": "Unstated by the operators; aggregate rather than submitting per event.",
+      "retains_publicly": true,
+      "retention_note": "Submissions become part of a public Bitcoin-anchored calendar. The digest is public forever; the digest alone reveals nothing about the content, and the SUBMISSION TIME is public (PRIV-08)."
+    },
+    {
+      "id": "freetsa.org",
+      "type": "rfc3161",
+      "operator": "FreeTSA",
+      "operated_by_splitstick": false,
+      "endpoints": ["https://freetsa.org/tsr"],
+      "establishes": ["time"],
+      "acceptable_use": "A free RFC 3161 timestamping service. Not a qualified trust service under eIDAS, so the Article 41 presumption does NOT attach to its timestamps (LEG-12).",
+      "rate_limits": "Unstated by the operator; intended for modest volumes.",
+      "retains_publicly": false,
+      "retention_note": "The TSA returns a token and the operator keeps it; nothing is published."
+    },
+    {
+      "id": "sigstore.rekor.public",
+      "type": "rekor",
+      "operator": "the Sigstore project / OpenSSF",
+      "operated_by_splitstick": false,
+      "endpoints": ["https://rekor.sigstore.dev"],
+      "establishes": ["existence", "time"],
+      "acceptable_use": "A public transparency log for software supply-chain artefacts. Entries are PUBLIC AND PERMANENT. Read the project's own acceptable-use policy before submitting anything derived from customer data.",
+      "rate_limits": "Published by the operator and subject to change; this file does not restate them, because a stale limit is worse than a pointer.",
+      "retains_publicly": true,
+      "retention_note": "Every entry is public and cannot be removed. A digest is not a payload, and submitting one still publishes the fact and the time of a submission."
+    },
+    {
+      "id": "splitstick.self-hosted",
+      "type": "splitstick",
+      "operator": "the operator themselves",
+      "operated_by_splitstick": false,
+      "endpoints": [],
+      "establishes": ["sequence"],
+      "acceptable_use": "Run by the operator, under their own terms. SEC-04's uncomfortable half applies: a witness the operator controls is not a second party, and a set whose members share an interest is one witness wearing several hats.",
+      "rate_limits": "Whatever the operator provisions.",
+      "retains_publicly": false,
+      "retention_note": "Nothing leaves the perimeter. This is the witness OPS-05's zero-egress deployment uses."
+    }
+  ]
+}

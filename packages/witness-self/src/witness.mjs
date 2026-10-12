@@ -539,7 +539,18 @@ export class StatefulWitness {
     const root_b64 = cp.root.toString('base64');
 
     if (cp.tree_size < last_size) {
-      throw new WitnessRefused(400,
+      // 409, NOT 400. A regression is a well-formed submission that conflicts
+      // with state this witness holds, which is exactly what 409 means; 400
+      // says the client sent something wrong at the protocol level, and a
+      // monitoring system reading that would triage a truncation attempt as a
+      // broken client.
+      //
+      // It is also the same CLASS of event as the two cases below — an
+      // operator presenting a history that contradicts what this witness
+      // signed — and both of those were already 409. The conformance suite
+      // (FR-46) found the inconsistency on its first run against this witness,
+      // which is what the suite is for.
+      throw new WitnessRefused(409,
         `tree_size ${cp.tree_size} regresses below the ${last_size} this witness already signed`,
         { last_size, last_root });
     }

@@ -30,7 +30,8 @@
     "coverage": "node packages/verify/src/coverage-bin.mjs",
     "disclose": "node packages/verify/src/disclose-bin.mjs",
     "bench:verify": "node bench/verify.mjs",
-    "bench:verify:quick": "node bench/verify.mjs --events 5000 --repeat 1"
+    "bench:verify:quick": "node bench/verify.mjs --events 5000 --repeat 1",
+    "conformance": "node tools/conformance.mjs"
   },
   "dependencies": {
     "@open-multi-agent/core": "1.21.1",

@@ -232,7 +232,9 @@
     "title": "Third-party witnesses permitted",
     "statement": "Anyone, including competitors and hyperscalers, may run a conformant witness.",
     "source": "Licence and governance",
-    "verify": "No technical or licence barrier; third-party witness interoperates"
+    "verify": "No technical or licence barrier; third-party witness interoperates",
+    "status": "done",
+    "evidence": "Nothing in the suite refers to a party: it takes a factory returning any witness exposing addCheckpoint, and whatever setup an implementation needs — enrolment, provisioning, an account — belongs in that factory. Prescribing the setup would make it a conformance test for our witness rather than for the property every witness must have"
   },
   {
     "id": "GOV-06",
@@ -241,7 +243,9 @@
     "title": "Open conformance suite",
     "statement": "Publish the conformance suite so implementations can self-check.",
     "source": "Licence and governance",
-    "verify": "Suite in the repository under the open licence"
+    "verify": "Suite in the repository under the open licence",
+    "status": "done",
+    "evidence": "The suite is in the repository under Apache-2.0 and needs nothing this project operates: a test runs it with fetch replaced by something that throws and with an empty environment, because a suite requiring our infrastructure would be a gate rather than a check"
   },
   {
     "id": "GOV-07",
@@ -259,7 +263,9 @@
     "title": "Witness list by pull request",
     "statement": "Accept witness-list entries by pull request.",
     "source": "Licence and governance — arrive by pull request",
-    "verify": "Contribution path documented and exercised"
+    "verify": "Contribution path documented and exercised",
+    "status": "done",
+    "evidence": "Entries arrive by pull request: spec/witnesses.json is a plain file, the parser is the whole acceptance criterion, and CONTRIBUTING documents the path"
   },
   {
     "id": "GOV-09",
@@ -268,7 +274,9 @@
     "title": "No gatekeeping of the witness list",
     "statement": "Do not vet, rank, or charge for inclusion in the witness list.",
     "source": "Licence and governance — open data, not a gate",
-    "verify": "Policy published; list contains entries not controlled by us"
+    "verify": "Policy published; list contains entries not controlled by us",
+    "status": "done",
+    "evidence": "The parser REFUSES any field expressing preference — recommended, rating, rank, score, preferred, endorsed, verified, trusted, certified, quality, stars, grade — because a `recommended: true` is gatekeeping wearing a different name, and the refusal is in code rather than in a review checklist because a review is a thing somebody skips. The rendering applies no ordering of its own, including the subtle kind where the good ones go first. Every published entry is operated by somebody else, which is the strongest form of GOV-09's own verify"
   },
   {
     "id": "GOV-10",
@@ -448,7 +456,9 @@
     "title": "Reuse rather than reimplement",
     "statement": "Build on Sigstore, Rekor, Trillian and C2SP rather than reimplementing their roles.",
     "source": "Credit; Independence — we did not invent a protocol",
-    "verify": "Dependency review; no bespoke transparency log"
+    "verify": "Dependency review; no bespoke transparency log",
+    "status": "done",
+    "evidence": "No cryptographic primitive and no transparency log is written here: JCS from RFC 8785, the tree from RFC 6962, checkpoints from C2SP, signatures from node:crypto, timestamps from RFC 3161, and the witness list points at Sigstore/Rekor and OpenTimestamps rather than at anything of ours"
   },
   {
     "id": "SCOPE-01",

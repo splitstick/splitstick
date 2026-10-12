@@ -4,10 +4,21 @@
   "type": "module",
   "license": "Apache-2.0",
   "description": "Builds the configured witness set from a Splitstick config. The shipped default is a TSA plus an OpenTimestamps roll-up.",
-  "publishConfig": { "access": "public", "provenance": true },
-  "exports": { ".": "./src/index.mjs" },
-  "files": ["src", "README.md"],
-  "engines": { "node": ">=20" },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "exports": {
+    ".": "./src/index.mjs",
+    "./*": "./src/*.mjs"
+  },
+  "files": [
+    "src",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
   "dependencies": {
     "@splitstick/core": "0.1.0",
     "@splitstick/witness-ots": "0.1.0",
