@@ -107,6 +107,12 @@ export function recomputeChain(entries) {
   // attempt dropped before anything was written — the one hole no verifier
   // could see.
   let lastSource = 0;
+  /**
+   * The upper bound of a gap declaration not yet consumed by the observation
+   * that follows it. Null when no declaration is outstanding.
+   * @type {number|null}
+   */
+  let declared = null;
 
   for (const e of entries) {
     const seq = Number(e.record.record_seq);
@@ -125,17 +131,61 @@ export function recomputeChain(entries) {
       });
     }
 
+    // A gap declaration accounts for EXACTLY the span it names — FR-26.
+    //
+    // M3a built this record and never taught the verifier to read it, so a log
+    // that correctly declared its own loss was reported as SEQ_BROKEN: the
+    // honest collector accused of the thing the declaration exists to
+    // disclose. Found by a test asserting the chain still verified after
+    // FR-61's reconciliation wrote one.
+    //
+    // The declaration is not a licence. It covers the span it names and
+    // nothing else, it does not carry forward to a later jump, and a span
+    // wider or narrower than the jump is itself reported — otherwise
+    // "declare a gap" would become a way to delete records.
+    if (e.record.kind === 'gap') {
+      const from = /** @type {number} */ (e.record.from_source_seq);
+      const to = /** @type {number} */ (e.record.to_source_seq);
+      // Against the ACCOUNTED position, which includes any earlier
+      // declaration. Comparing only against the last written observation let
+      // the same span be declared any number of times — every repeat met
+      // `lastSource + 1` and every repeat was accepted, by the verifier as
+      // well as the collector. It also refused two genuinely adjacent
+      // declarations, which a collector that lost two windows before writing
+      // anything produces.
+      const accounted = declared === null ? lastSource : declared;
+      if (from !== accounted + 1) {
+        findings.push({
+          code: 'SEQ_BROKEN', record_seq: seq,
+          detail: `the gap declared ${from}-${to} does not begin at ${accounted + 1}, the next `
+            + 'observation this log has not yet accounted for: a declaration that does not meet '
+            + 'the sequence accounts for nothing, and a span already declared cannot be declared '
+            + 'again',
+        });
+      } else {
+        declared = to;
+      }
+    }
+
     // Observation gaps are read from consecutive persisted source_seq values,
     // independently of record_seq. The two counters are never compared.
     const src = e.record.source_seq;
     if (typeof src === 'number') {
-      if (src !== lastSource + 1) {
+      const expected = declared === null ? lastSource + 1 : declared + 1;
+      if (src !== expected) {
         findings.push({
           code: 'SEQ_BROKEN', record_seq: seq,
-          detail: `source_seq jumped from ${lastSource} to ${src}: ${src - lastSource - 1} observed attempt(s) were never written`,
+          detail: declared === null
+            ? `source_seq jumped from ${lastSource} to ${src}: ${src - lastSource - 1} observed `
+              + 'attempt(s) were never written'
+            : `source_seq is ${src} but the gap declaration before it accounts only up to `
+              + `${declared}, so the sequence should resume at ${expected}: the declaration does `
+              + 'not account for this jump',
         });
       }
       lastSource = src;
+      // Spent. A declaration explains one jump, not every jump after it.
+      declared = null;
     }
 
     // CHAIN

@@ -444,7 +444,7 @@ export class StatefulWitness {
    * should have arrived.
    *
    * @param {{ note: string, old_size?: number, consistency_proof?: string[] }} req
-   * @returns {Promise<{ status: 200, note: string }>}
+   * @returns {Promise<{ status: 200, note: string, received_at: string }>}
    */
   async addCheckpoint(req) {
     // Two layers, because they answer different questions. The promise chain
@@ -490,7 +490,7 @@ export class StatefulWitness {
    * @param {{ note: string, old_size?: number, consistency_proof?: string[] }} req
    * @param {ReturnType<typeof parseNote>} note
    * @param {ReturnType<typeof parseCheckpointText>} cp
-   * @returns {Promise<{ status: 200, note: string }>}
+   * @returns {Promise<{ status: 200, note: string, received_at: string }>}
    */
   async #commit(req, note, cp) {
     // Under the lock, before anything is validated: another process may have
@@ -550,8 +550,15 @@ export class StatefulWitness {
           { last_size, last_root });
       }
       // Idempotent. A retry after a dropped response is not an attack, and must
-      // not produce a second distinct signature over the same subject.
-      return { status: /** @type {200} */ (200), note: await this.#countersign(note.text, req.note) };
+      // not produce a second distinct signature over the same subject. The
+      // receipt time is the ORIGINAL one: this submission is the same
+      // submission, and restamping it would make a retry look like a fresh
+      // observation of the root (FR-39).
+      return {
+        status: /** @type {200} */ (200),
+        note: await this.#countersign(note.text, req.note),
+        received_at: prev?.received_at ?? this.now().toISOString(),
+      };
     }
     if (last_size > 0) {
       if (req.old_size !== last_size) {
@@ -579,7 +586,14 @@ export class StatefulWitness {
     }) + '\n', { mode: 0o600 });
     s.seq[cp.origin] = { last_size: cp.tree_size, last_root: root_b64, received_at: at };
     this.#write(s);
-    return { status: /** @type {200} */ (200), note: await this.#countersign(note.text, req.note) };
+    // FR-39 — the witness's own clock, returned so the operator can carry it
+    // in the envelope. For a late submission this is hours after the batch's
+    // own `ts`, and that gap is the unwitnessed window.
+    return {
+      status: /** @type {200} */ (200),
+      note: await this.#countersign(note.text, req.note),
+      received_at: at,
+    };
   }
 
   /**

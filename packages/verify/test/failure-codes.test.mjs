@@ -253,6 +253,18 @@ const SCENARIOS = {
       disclosed: [{ tree_size: 99, root: Buffer.alloc(32).toString('base64') }],
     };
   },
+  async DISCONTINUITY(ctx) {
+    // The operator declares a key compromise, naming the last epoch they
+    // believe sound and a new root. The declaration is signed by the key it
+    // disowns, because that is the only key that exists at that moment.
+    const fresh = await generateDevSigner(ORIGIN);
+    ctx.collector.declareDiscontinuity({
+      last_sound_epoch: 0,
+      new_root_public_key: fresh.publicKey,
+      reason: 'signing key compromise suspected after host intrusion',
+    });
+    await ctx.collector.checkpoint();
+  },
   async OPSIG_UNCHECKED() {
     return { vkey: undefined };          // nothing pinned
   },

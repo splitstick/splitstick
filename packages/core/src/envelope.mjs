@@ -60,6 +60,13 @@ export function noteDigest(noteBlob) {
  * @property {string} [line] c2sp-note: the signature line
  * @property {string} [token] rfc3161: base64 DER TimeStampToken
  * @property {string} [proof] opentimestamps: base64 .ots
+ * @property {string} [received_at] FR-39 — when the WITNESS says it received
+ *   the root, by its own clock. Carried for a `c2sp-note` proof because a C2SP
+ *   note has nowhere to put a time, which makes this a bare claim in the
+ *   envelope rather than something signed; an `rfc3161` token carries its
+ *   genTime INSIDE the signature and does not need this field. The verifier
+ *   labels the difference, because reporting an unsigned claim as a signed one
+ *   would be the most useful-looking lie available.
  */
 
 /**
@@ -206,6 +213,12 @@ export function parseEnvelope(raw, opts = {}) {
       continue;
     }
     const expected = COVERS[/** @type {keyof typeof COVERS} */ (cs.type)];
+    if (cs.received_at !== undefined && typeof cs.received_at !== 'string') {
+      findings.push({
+        code: 'FORMAT_UNSUPPORTED',
+        detail: `${cs.issuer}'s received_at is not a string`,
+      });
+    }
     if (cs.covers !== 'note' && cs.covers !== 'note_digest') {
       countersignatures.push({
         type: cs.type, issuer: cs.issuer, covers: cs.covers, verdict: 'inconclusive',

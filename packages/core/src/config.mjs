@@ -70,6 +70,24 @@ export function parseDuration(v) {
 }
 
 /**
+ * A duration that must be greater than zero — FR-68.
+ *
+ * A ceiling of zero would make every batch instantly overdue, which makes the
+ * alert meaningless rather than strict: an alarm that is always sounding is an
+ * alarm nobody looks at, and the point of the ceiling is that somebody does.
+ * @param {string} key @param {number} ms @returns {number}
+ */
+function positive(key, ms) {
+  if (!Number.isInteger(ms) || ms <= 0) {
+    throw new ConfigError(
+      `${key} must be greater than zero, not ${ms}. Zero would make every batch instantly `
+      + 'overdue, so the alert would fire constantly and mean nothing.',
+    );
+  }
+  return ms;
+}
+
+/**
  * @typedef {object} Witness
  * @property {string} id
  * @property {string} type
@@ -189,7 +207,8 @@ export function parseConfig(text, baseDir = process.cwd()) {
     anchor_interval_ms: dur('anchor_interval', DEFAULTS.anchor_interval_ms),
     rollup_interval_ms: dur('rollup_interval', DEFAULTS.rollup_interval_ms),
     heartbeat_interval_ms: dur('heartbeat_interval', DEFAULTS.heartbeat_interval_ms),
-    unwitnessed_ceiling_ms: dur('unwitnessed_ceiling', DEFAULTS.unwitnessed_ceiling_ms),
+    unwitnessed_ceiling_ms: positive(
+      'unwitnessed_ceiling', dur('unwitnessed_ceiling', DEFAULTS.unwitnessed_ceiling_ms)),
     on_unavailable: /** @type {'mark_gap'} */ (onUnavailable),
     witnesses,
     quorum: /** @type {number} */ (quorum),

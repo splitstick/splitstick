@@ -104,7 +104,7 @@ What an epoch is, how the signing key evolves, how the predecessor is destroyed,
 | `SEC-08` | Resist re-signing history | ✅ |
 | `SEC-14` | Operator key never leaves operator | ✅ |
 | `SEC-17` | State the forward-secrecy precondition | ✅ |
-| `SEC-24` | Key compromise recovery | ☐ |
+| `SEC-24` | Key compromise recovery | ✅ |
 | `OPS-04` | Separation-of-duties guidance | ✅ |
 | `FR-65` | Operator-declared key custody | ✅ |
 | `FR-70` | Validate a provider custody attestation | ✅ |
@@ -142,7 +142,7 @@ Submission and response, enrolment, per-operator sequence enforcement, countersi
 | `FR-43` | Witness verifies consistency, not increments | ✅ |
 | `FR-44` | Witness retains roots | ✅ |
 | `FR-50` | Witness publishes signed tree heads | ✅ |
-| `FR-51` | Witness key rotation | ☐ |
+| `FR-51` | Witness key rotation | ✅ |
 | `FR-15` | transparency-dev/witness adapter | ☐ |
 | `FR-48` | Shipped default witness configuration | ✅ |
 | `INT-02` | Verify third-party countersignatures | ✅ |
@@ -255,17 +255,17 @@ Fail-open behaviour, the durable queue, retry and backoff, late countersignature
 
 | Requirement | | Status |
 |---|---|---|
-| `FR-38` | Fail-open with marked batch | ☐ |
-| `FR-39` | Late countersignature records real time | ☐ |
-| `NFR-12` | Never degrade availability | ☐ |
-| `NFR-13` | Durable local queue | ☐ |
-| `OPS-02` | Queue drain and retry | ☐ |
-| `OPS-06` | Witness store durability | ☐ |
+| `FR-38` | Fail-open with marked batch | ✅ |
+| `FR-39` | Late countersignature records real time | ✅ |
+| `NFR-12` | Never degrade availability | ✅ |
+| `NFR-13` | Durable local queue | ✅ |
+| `OPS-02` | Queue drain and retry | ✅ |
+| `OPS-06` | Witness store durability | ✅ |
 | `SCOPE-16` | No fail-closed option | ☐ |
-| `FR-58` | Reserved slot for gap declarations | ☐ |
-| `FR-60` | Unknown-loss intervals | ☐ |
-| `FR-61` | Observation counter durability | ☐ |
-| `FR-68` | Unwitnessed outage ceiling | ☐ |
+| `FR-58` | Reserved slot for gap declarations | ✅ |
+| `FR-60` | Unknown-loss intervals | ✅ |
+| `FR-61` | Observation counter durability | ✅ |
+| `FR-68` | Unwitnessed outage ceiling | ✅ |
 
 ### [DES-16 — Format versioning and algorithm agility](../design/DES-16-format-versioning.md)
 
@@ -302,16 +302,16 @@ What the countersignature asserts and disclaims, how the statement is versioned 
 
 | Requirement | | Status |
 |---|---|---|
-| `LEG-01` | Publish a Witness Practice Statement | ☐ |
-| `LEG-02` | WPS asserts receipt time | ☐ |
-| `LEG-03` | WPS asserts successor ordering | ☐ |
-| `LEG-04` | WPS asserts retention | ☐ |
-| `LEG-05` | WPS disclaims occurrence | ☐ |
-| `LEG-06` | WPS disclaims truthfulness | ☐ |
-| `LEG-07` | WPS disclaims completeness | ☐ |
-| `LEG-08` | WPS disclaims lawfulness | ☐ |
+| `LEG-01` | Publish a Witness Practice Statement | ✅ |
+| `LEG-02` | WPS asserts receipt time | ✅ |
+| `LEG-03` | WPS asserts successor ordering | ✅ |
+| `LEG-04` | WPS asserts retention | ✅ |
+| `LEG-05` | WPS disclaims occurrence | ✅ |
+| `LEG-06` | WPS disclaims truthfulness | ✅ |
+| `LEG-07` | WPS disclaims completeness | ✅ |
+| `LEG-08` | WPS disclaims lawfulness | ✅ |
 | `LEG-09` | WPS versioned and anchored | ☐ |
-| `LEG-19` | WPS states the time discipline | ☐ |
+| `LEG-19` | WPS states the time discipline | ✅ |
 | `OPS-03` | Self-hosted witness deployment guide | ☐ |
 | `OPS-05` | Zero-egress mode | ☐ |
 

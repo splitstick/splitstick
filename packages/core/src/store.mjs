@@ -8,7 +8,9 @@
  *   rollups/<collector>/<n>.json  roll-up envelopes        [FR-53]
  *   content/<collector>/      payloads, encrypted.      DELETABLE
  *   keys/<collector>/         per-content keys.         DELETABLE
- *   queue/                    unwitnessed batches                 [DES-15]
+ *   queue/<collector>.jsonl   unwitnessed batches.     DURABLE  [DES-15, NFR-13]
+ *   counter/<collector>.json  the observation counter           [FR-61]
+ *   reserve/<collector>.slot  space kept for a gap declaration  [FR-58]
  *
  * The split is the whole point: Article 19 asks for months of logs accessible
  * and Article 17 asks for erasure, and those are only compatible if the two
@@ -26,10 +28,13 @@
  * takes nothing away.
  */
 
-import { mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync, openSync, writeSync, closeSync, renameSync, unlinkSync } from 'node:fs';
+import { mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync, openSync, writeSync, closeSync, renameSync, unlinkSync, truncateSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
+
+
 import { join } from 'node:path';
 import { ContentStore } from './content.mjs';
+import { isTimestamp } from './record.mjs';
 import { buildEnvelope, parseEnvelope } from './envelope.mjs';
 import { WriteLock } from './writelock.mjs';
 
@@ -46,7 +51,7 @@ export class Store {
   constructor(root, collector) {
     this.root = root;
     this.collector = collector;
-    for (const d of ['chain', 'salts', 'queue', 'succession']) {
+    for (const d of ['chain', 'salts', 'queue', 'succession', 'counter', 'reserve']) {
       mkdirSync(join(root, d), { recursive: true });
     }
     // Checkpoints are scoped to the collector, like the chain and the salts.
@@ -66,6 +71,30 @@ export class Store {
     // its old signatures verifiable, so erasing the succession journal would
     // destroy the ability to check history rather than the history's content.
     this.successionPath = join(root, 'succession', `${collector}.jsonl`);
+    // NFR-13 — durable. An in-memory queue loses exactly the evidence an
+    // outage created, and an outage is when a restart is most likely: the two
+    // failures compound rather than being independent.
+    this.queuePath = join(root, 'queue', `${collector}.jsonl`);
+    this.counterPath = join(root, 'counter', `${collector}.json`);
+    // FR-58 — space kept back so a gap declaration can be written when
+    // everything else has failed. A store that cannot record its own failure
+    // reports a clean history for a lossy run, which is the worst outcome
+    // available: the log looks complete precisely when it is not.
+    //
+    // 64 KiB, which is four orders of magnitude more than one declaration
+    // needs. The number is generous on purpose: the cost is a file nobody
+    // reads, and the thing being bought is the ability to say what went wrong.
+    this.reserveBytes = 64 * 1024;
+    this.reservePath = join(root, 'reserve', `${collector}.slot`);
+    if (!existsSync(this.reservePath)) {
+      try {
+        writeFileSync(this.reservePath, Buffer.alloc(this.reserveBytes, 0), { mode: 0o600 });
+      } catch {
+        // Already out of space, or a read-only store. Opening must still
+        // succeed: a verifier opens a store it cannot write to, and refusing
+        // here would make damage unreadable.
+      }
+    }
     // One lock per collector, covering the journals AND the content store.
     // Holding it only inside ContentStore.putGroup() left every record that
     // externalises nothing — heartbeat, gap, policy, padding — unprotected, so
@@ -413,6 +442,181 @@ export class Store {
   readCheckpointEnvelope(seq) {
     return this.readCheckpoints().find(c => c.seq === seq)?.blob ?? null;
   }
+
+  /**
+   * Append one queue entry. The newline is the commit marker.
+   * @param {{ checkpoint_seq: number, since: string, attempts: number }} entry
+   */
+  appendQueue(entry) {
+    this.lock.claim();
+    this.#repairTornLine(this.queuePath);
+    const fd = openSync(this.queuePath, 'a', 0o600);
+    try {
+      this.#writeAll(fd, JSON.stringify(entry) + '\n', this.queuePath);
+    } finally {
+      closeSync(fd);
+    }
+  }
+
+  /**
+   * Replace the queue wholesale — a drain, or an attempt count changing.
+   *
+   * Atomic by staging and rename, because a reader must see the old queue or
+   * the new one. Rewriting is affordable here in a way it is not for the chain:
+   * the queue holds only what is UNWITNESSED, which is bounded by the ceiling
+   * (FR-68) rather than by the log's length.
+   * @param {{ checkpoint_seq: number, since: string, attempts: number }[]} entries
+   */
+  writeQueue(entries) {
+    this.lock.claim();
+    const tmp = `${this.queuePath}.${randomBytes(6).toString('hex')}.staging`;
+    try {
+      writeFileSync(tmp, entries.map(e => JSON.stringify(e) + '\n').join(''), { mode: 0o600 });
+      renameSync(tmp, this.queuePath);
+    } catch (e) {
+      try { unlinkSync(tmp); } catch { /* may not exist */ }
+      throw e;
+    }
+  }
+
+  /**
+   * Read the queue, tolerating a torn tail and refusing damage in the middle.
+   *
+   * The same rule as the succession journal and the witness's retained roots,
+   * for the same reason: a torn tail is the ordinary consequence of a crash,
+   * and damage in the middle would let one corrupted byte silently drop a
+   * queued checkpoint — which is the evidence the queue exists to keep.
+   * @returns {{ checkpoint_seq: number, since: string, attempts: number }[]}
+   */
+  readQueue() {
+    if (!existsSync(this.queuePath)) return [];
+    const raw = readFileSync(this.queuePath, 'utf8');
+    const lines = raw.split('\n');
+    if (raw.length > 0 && !raw.endsWith('\n')) lines.pop();
+    /** @type {{ checkpoint_seq: number, since: string, attempts: number }[]} */
+    const out = [];
+    lines.forEach((line, i) => {
+      if (line === '') return;
+      /** @type {any} */
+      let e;
+      try {
+        e = JSON.parse(line);
+      } catch {
+        throw new Error(
+          `${this.queuePath} line ${i + 1} is unreadable and is not the last line. A torn tail is `
+          + 'the ordinary consequence of a crash; damage in the middle is not, and skipping it '
+          + 'would silently drop a queued checkpoint.',
+        );
+      }
+      if (!Number.isSafeInteger(e?.checkpoint_seq) || e.checkpoint_seq < 1) {
+        throw new Error(
+          `${this.queuePath} line ${i + 1} has checkpoint_seq ${JSON.stringify(e?.checkpoint_seq)}, `
+          + 'which is not a positive integer. Refused rather than skipped: an entry that '
+          + 'disappears from the queue is a batch that never gets witnessed.',
+        );
+      }
+      // `since` is validated, not coerced. It was defaulted to '' when
+      // unreadable, so Date.parse gave NaN, the age computed from it was NaN,
+      // and FR-68's ceiling never fired — one corrupted byte silenced the
+      // unwitnessed-outage alarm permanently and without a sound. Strict
+      // RFC 3339, the shape DES-01 requires of every timestamp.
+      if (!isTimestamp(e.since)) {
+        throw new Error(
+          `${this.queuePath} line ${i + 1} has since ${JSON.stringify(e?.since)}, which is not an `
+          + 'RFC 3339 timestamp. Refused rather than defaulted: a queue entry whose age cannot be '
+          + "computed is one the unwitnessed ceiling can never fire for, and that failure is silent.",
+        );
+      }
+      if (!Number.isSafeInteger(e.attempts) || e.attempts < 0) {
+        throw new Error(
+          `${this.queuePath} line ${i + 1} has attempts ${JSON.stringify(e?.attempts)}, which is `
+          + 'not a non-negative integer. Refused rather than defaulted, for the same reason: a '
+          + 'coerced attempt count resets the backoff silently.',
+        );
+      }
+      out.push({ checkpoint_seq: e.checkpoint_seq, since: e.since, attempts: e.attempts });
+    });
+    return out;
+  }
+
+  /**
+   * Truncate a torn trailing line. Called before an append, under the lock.
+   * @param {string} path
+   */
+  #repairTornLine(path) {
+    if (!existsSync(path)) return;
+    const raw = readFileSync(path, 'utf8');
+    if (raw.length === 0 || raw.endsWith('\n')) return;
+    truncateSync(path, Buffer.byteLength(raw.slice(0, raw.lastIndexOf('\n') + 1), 'utf8'));
+  }
+
+  /**
+   * Record the observation counter — FR-61.
+   *
+   * Written at each batch flush, atomically. Observations are spent on
+   * ATTEMPTS, written or not (DES-04 rule 2), so after a crash the collector
+   * resuming from the last WRITTEN source_seq would reuse the numbers that were
+   * spent — the hole would close up and a lossy run would read as a complete
+   * one. This file is what makes the loss nameable.
+   * @param {number} source_seq
+   */
+  writeObservationCounter(source_seq) {
+    this.lock.claim();
+    const tmp = `${this.counterPath}.${randomBytes(6).toString('hex')}.staging`;
+    try {
+      writeFileSync(tmp, JSON.stringify({
+        source_seq, at: new Date().toISOString(),
+      }) + '\n', { mode: 0o600 });
+      renameSync(tmp, this.counterPath);
+    } catch (e) {
+      try { unlinkSync(tmp); } catch { /* may not exist */ }
+      throw e;
+    }
+  }
+
+  /**
+   * @returns {number|null} null when the counter did not survive at all, which
+   *   is a different condition from zero and leads to FR-60's unknown-loss
+   *   interval rather than to an exact span.
+   */
+  readObservationCounter() {
+    if (!existsSync(this.counterPath)) return null;
+    try {
+      const d = JSON.parse(readFileSync(this.counterPath, 'utf8'));
+      return Number.isSafeInteger(d?.source_seq) && d.source_seq >= 0 ? d.source_seq : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** @returns {string|null} when the counter was last written */
+  readObservationCounterAt() {
+    if (!existsSync(this.counterPath)) return null;
+    try {
+      const d = JSON.parse(readFileSync(this.counterPath, 'utf8'));
+      return typeof d?.at === 'string' ? d.at : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Give up the reserved space so a gap declaration can be written — FR-58.
+   *
+   * Its ABSENCE afterwards is the signal that it was spent, which a reader can
+   * see without being told. Releasing it is irreversible by design: a store
+   * that quietly re-allocated the slot would be one that had already failed to
+   * record something and then hidden that it had.
+   * @returns {boolean} whether space was actually freed
+   */
+  releaseReserve() {
+    if (!existsSync(this.reservePath)) return false;
+    unlinkSync(this.reservePath);
+    return true;
+  }
+
+  /** @returns {boolean} FR-58 — is the reserve still intact? */
+  reserveIntact() { return existsSync(this.reservePath); }
 
   /** @param {number} seq @returns {string} */
   rollupPath(seq) { return join(this.rollupDir, `${seq}.json`); }

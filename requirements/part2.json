@@ -113,7 +113,9 @@
     "title": "Never degrade availability",
     "statement": "The collector must never be able to stop or block an agent run.",
     "source": "Operations — no audit layer that can take down production",
-    "verify": "Chaos test: witness outage, disk full, slow witness"
+    "verify": "Absolute: a whole run completes with every witness unreachable, and no configuration can make the collector block",
+    "status": "done",
+    "evidence": "packages/core/test/queue.test.mjs; SCOPE-16's on_unavailable admits one value and there is no fail-closed setting to choose"
   },
   {
     "id": "NFR-13",
@@ -122,7 +124,9 @@
     "title": "Durable local queue",
     "statement": "Unwitnessed batches survive process restart and are re-submitted.",
     "source": "Operations — marked unwitnessed, and queued",
-    "verify": "Kill -9 during outage, then recovery"
+    "verify": "The queue is a journal, read from disk on open; a drain is durable across restart; a torn tail is dropped AND repaired before the next append; damage in the middle is refused rather than skipped",
+    "status": "done",
+    "evidence": "Store.appendQueue/writeQueue/readQueue; an in-memory queue lost exactly the evidence an outage created, and an outage is when a restart is most likely. The append fast path then persisted the WRONG entry: the queue is kept ordered by checkpoint_seq, so an out-of-order enqueue landed mid-array while the append wrote the new entry at the end, leaving a disk order that no restart could reconcile with memory. A damaged entry is refused on read rather than coerced, because a queue that silently drops the unreadable loses the submission it was holding"
   },
   {
     "id": "SEC-01",

@@ -270,9 +270,9 @@
       "title": "Gap declarations with an exact span",
       "statement": "When the observation counter survived the failure, record a signed declaration naming the exact source_seq span that was observed but never written. It occupies one record position. Observation gaps are detected from consecutive persisted source_seq values, never by comparing source_seq with record_seq, which count different things.",
       "source": "Coverage attestation — signed gap declarations",
-      "verify": "A gap occupies exactly one record position whatever its span; a reversed, zero-bounded or non-integer span is refused and consumes no position",
+      "verify": "A gap occupies one record position whatever its span; a reversed, zero-bounded or non-integer span is refused and consumes no position. The verifier now READS the declaration: it accounts for exactly the span it names, must meet the sequence where it left off, does not carry forward, and a span wider or narrower than the jump is itself reported. A span already accounted for by an earlier declaration is refused at both ends — the collector will not propose it and the verifier will not accept it",
       "status": "done",
-      "evidence": "Collector.gap + record.mjs validation; packages/core/test/gaps.test.mjs asserts gaps are read from consecutive persisted source_seq and never by comparing counters"
+      "evidence": "record.mjs validation + recomputeChain declared-gap accounting + reconcileObservations accounting against prior declarations; M3a wrote the record and never taught the verifier to read it, so a log that disclosed its own loss was reported as SEQ_BROKEN. Then reading it was not enough: a SECOND declaration of the same span was accepted by both sides and verified ok, which is how an operator makes one loss look like two and hides the size of a third"
     },
     {
       "id": "FR-27",
@@ -390,7 +390,9 @@
       "title": "Fail-open with marked batch",
       "statement": "When no witness is reachable, chain and sign locally, mark the batch unwitnessed, and queue it.",
       "source": "Operations — fails open, loudly",
-      "verify": "Agent completes with all witnesses unreachable"
+      "verify": "A total witness outage leaves the run complete and the batch marked unwitnessed and queued; asserted over five checkpoints with every witness unreachable",
+      "status": "done",
+      "evidence": "Anchorer fail-open; the checkpoint is written locally and completely before any witness is asked anything"
     },
     {
       "id": "FR-39",
@@ -399,7 +401,9 @@
       "title": "Late countersignature records real time",
       "statement": "A retroactive countersignature records the witness's actual receipt time, not the batch's claimed time.",
       "source": "Operations — the witness's real time",
-      "verify": "Test asserts the witness receipt time differs from the batch timestamp and both appear in the record"
+      "verify": "The witness's own receipt time is carried in the envelope and reported with its BASIS — 'witness-asserted, unsigned' for a C2SP note, which has nowhere inside it to carry a time, versus signed for an RFC 3161 genTime. The gap to the batch's self-asserted ts is reported as the unwitnessed window; a receipt time earlier than the batch is reported and not preferred; an absent one is never assumed to be the batch time",
+      "status": "done",
+      "evidence": "receiptTime() in packages/verify/src/verify.mjs + StatefulWitness returning received_at; strict RFC 3339 because Date.parse reads '12345' as the year 12345"
     },
     {
       "id": "FR-40",

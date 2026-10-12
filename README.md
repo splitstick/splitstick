@@ -31,7 +31,7 @@ and the suite exits non-zero whenever an observation changes in either direction
 | Path | What |
 |---|---|
 | [`redteam/`](redteam/) | The tamper suite. Reproducible, runs offline, no API key. |
-| [`docs/`](docs/) | [Threat model](docs/threat-model.md) · [draft release notes](docs/splitstick-1.0-release-notes.md) — the scope commitment, rev. 8 |
+| [`docs/`](docs/) | [Threat model](docs/threat-model.md) · [draft release notes](docs/splitstick-1.0-release-notes.md) — the scope commitment, rev. 8 · [witness outages](docs/witness-outages.md) — what recovers on its own · [restore drill](docs/witness-restore-drill.md) |
 | [`design/`](design/) | One spec per design element — [index and traceability](requirements/DESIGN.md) |
 | [`requirements/`](requirements/) | [Backlog](requirements/MATRIX.md), [delivery plan](requirements/PLAN.md) and [design traceability](requirements/DESIGN.md) — gated by attack class. Counts live in the generated matrices, never in prose. |
 | [`packages/`](packages/) | Shipped code: [`core`](packages/core) (record, canonical encoding, leaf, chain, tree, signer, store), [`collect-oma`](packages/collect-oma) (OMA journal and approval store), [`verify`](packages/verify) (the verifier and its CLI) |

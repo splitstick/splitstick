@@ -38,6 +38,40 @@ import { CAPABILITY_CLASSES } from '@splitstick/core/anchor';
 import { verifyTimeStampToken } from '@splitstick/core/rfc3161';
 import { describeOtsProof } from '@splitstick/core/opentimestamps';
 import { parseEnvelope } from '@splitstick/core/envelope';
+import { createHash as nodeCreateHash } from 'node:crypto';
+
+/**
+ * @typedef {object} WitnessEntry
+ * @property {string} id
+ * @property {string} type
+ * @property {string} establishes
+ * @property {boolean} accepted
+ * @property {Verdict} verdict
+ * @property {string} detail
+ * @property {number} checkpoint_seq the checkpoint this proof sits on. Every
+ *   detail string already began "checkpoint N:", so the attribution was in the
+ *   prose and not in the data — and a caller asking "is THIS record anchored?"
+ *   had no way to tell which of these entries spoke to it.
+ * @property {number|null} tree_size the size that checkpoint committed to. A
+ *   proof on a checkpoint whose tree reaches record N is evidence about record
+ *   N; one on an earlier checkpoint is not, however well it verifies.
+ * @property {string} [received_at] FR-39 — the witness's own clock
+ * @property {'absent'|'witness-asserted, unsigned'|'signed by the TSA, inside the token'}
+ *   [received_at_basis] what that value rests on. A C2SP note has nowhere
+ *   inside it to carry a time, so the value sits beside the proof rather than
+ *   under it, and the report says which.
+ * @property {number} [unwitnessed_for_ms] how long the batch went unwitnessed
+ * @property {number} [clock_disagreement] by how much the witness's clock is
+ *   EARLIER than the batch's self-asserted ts
+ */
+
+/**
+ * RFC 3339 with milliseconds and a Z, the same shape DES-01 requires of every
+ * timestamp. Used for FR-39's receipt time because `Date.parse` is lenient: it
+ * reads "12345" as the year 12345, which would produce a receipt time ten
+ * thousand years out and an unwitnessed window to match.
+ */
+const RECEIPT_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 
 import { noteKeyId } from '@splitstick/core/note';
 
@@ -64,7 +98,9 @@ function combine(vs) {
  * @param {string} [opts.collector] the collector instance whose chain to read
  * @param {string} [opts.vkey] the pinned operator identity, as a note vkey
  * @param {{ quorum?: number, witnesses?: { id: string, public_key?: string,
- *   establishes?: string[], anchors?: string[] }[] }} [opts.policy] FR-30 — the ACCEPTANCE POLICY,
+ *   establishes?: string[], anchors?: string[],
+ *   key_history?: { keys?: { public_key?: string }[], note?: string } }[] }} [opts.policy]
+ *   FR-30 — the ACCEPTANCE POLICY,
  *   supplied by the reader. Not a hardcoded trust store: two readers with
  *   different trust must be able to reach different conclusions from one pack,
  *   and a verifier that only accepted witnesses we operate would make
@@ -77,8 +113,7 @@ function combine(vs) {
  *   summary: { passed: number, unanswered: number, failed: number },
  *   checks: { name: string, verdict: Verdict, detail?: string }[],
  *   findings: Finding[],
- *   witnesses: { id: string, type: string, establishes: string, accepted: boolean,
- *                verdict: Verdict, detail: string }[],
+ *   witnesses: WitnessEntry[],
  *   quorum: { required: number, observed: Record<string, number>, met: Record<string, boolean> },
  *   capability: { can: string[], cannot: string[] },
  *   trusting: string[],
@@ -453,8 +488,33 @@ export async function verifyStore(root, opts = {}) {
   check('OP-SIG', combine(sigVs));
 
   // 7 WITNESS — DES-08, DES-20, FR-19, FR-30, FR-31, INT-02.
+  // SEC-24 — declared key compromises, found by KIND rather than by sniffing
+  // for optional fields, which is what makes "never silently bridged"
+  // checkable. There is no cryptographic recovery from a compromised key:
+  // records it produced are suspect from that point and nothing here changes
+  // that. What the declaration buys is an honest discontinuity, and the
+  // verifier's job is to refuse to carry trust across it.
+  const discontinuities = entries
+    .map((e, i) => ({ e, i }))
+    .filter(({ e }) => /** @type {any} */ (e).record?.kind === 'discontinuity')
+    .map(({ e }) => /** @type {any} */ (e).record);
+  for (const d of discontinuities) {
+    findings.push({
+      code: 'DISCONTINUITY', verdict: 'inconclusive',
+      detail: `the operator declared a key compromise at record_seq ${d.record_seq}: `
+        + `"${d.reason}". They state epoch ${d.last_sound_epoch} was the last they believe sound, `
+        + 'and name a new root key. Records this log produced after the compromise are suspect and '
+        + 'no verification can change that — what this declaration establishes is that somebody '
+        + 'said so, at a time a countersignature over the checkpoint above it can corroborate',
+      record_seq: d.record_seq,
+    });
+  }
+
+  const latestBatchTs = entries.length === 0
+    ? null
+    : (/** @type {any} */ (entries[entries.length - 1]).record?.ts ?? null);
   const wit = await verifyWitnesses({
-    envelopes, policy: opts.policy, leaves, findings, anchored,
+    envelopes, policy: opts.policy, leaves, findings, anchored, latestBatchTs,
   });
   check('WITNESS', wit.verdict, wit.detail);
 
@@ -490,7 +550,8 @@ export async function verifyStore(root, opts = {}) {
     }
   }
 
-  return report(entries.length, anchored, checks, findings, notes, collector, opts.vkey, succession, wit, rollup);
+  return report(entries.length, anchored, checks, findings, notes, collector, opts.vkey,
+    succession, wit, rollup, discontinuities);
 }
 
 /**
@@ -505,7 +566,8 @@ export async function verifyStore(root, opts = {}) {
  * @param {Awaited<ReturnType<typeof verifyWitnesses>>} [wit]
  * @param {Awaited<ReturnType<typeof verifyRollups>>} [rollup]
  */
-function report(tree_size, anchored, checks, findings, notes, collector, vkey, succession = null, wit, rollup) {
+function report(tree_size, anchored, checks, findings, notes, collector, vkey, succession = null, wit, rollup,
+  /** @type {any[]} */ discontinuities = []) {
   const verdict = combine([...checks.map(c => c.verdict), ...findings.map(f => f.verdict)]);
 
   // DES-12's own shape: a verdict is reported with how many checks could and
@@ -550,7 +612,8 @@ function report(tree_size, anchored, checks, findings, notes, collector, vkey, s
     can.push('that no record was altered, inserted, removed or reordered within it');
     if (passed('CONTENT')) can.push('that every retained payload still reproduces the commitment in its record');
   }
-  if (summary.failed === 0 && notes.length && vkey && passed('OP-SIG') && passed('TREE')) {
+  if (summary.failed === 0 && notes.length && vkey && passed('OP-SIG') && passed('TREE')
+    && discontinuities.length === 0) {
     // The PINNED identity, not the collector id. They are different things —
     // the collector scopes a chain within a store, the identity is what the
     // reader pinned out of band — and naming the wrong one in the one sentence
@@ -572,6 +635,29 @@ function report(tree_size, anchored, checks, findings, notes, collector, vkey, s
       + `${rollup.covers === 1 ? 'is' : 'are'} covered by ${rollup.count} signed roll-up `
       + `summar${rollup.count === 1 ? 'y' : 'ies'}, so a single batch can be shown to be under one `
       + 'by an inclusion proof (FR-53)',
+    );
+  }
+
+  // SEC-24 — prominently, and never silently bridged.
+  if (discontinuities.length > 0) {
+    const first = discontinuities[0];
+    cannot.push(
+      `this log contains ${discontinuities.length} declared key compromise(s) — a DISCONTINUITY. `
+      + `Nothing this reader pinned reaches across it: the records after record_seq `
+      + `${first.record_seq} are signed under a key the pinned root no longer vouches for, and a `
+      + 'reader who wants to rely on them must re-pin the new root OUT OF BAND, from somewhere '
+      + 'the operator cannot quietly change',
+    );
+    cannot.push(
+      'the compromise declaration is signed by the key it disowns — the suspect key is the only '
+      + 'one that exists at that moment, so the statement rests on it. A fresh key cannot sign a '
+      + "statement about its predecessor's compromise without first being trusted, which is the "
+      + 'thing in question',
+    );
+    cannot.push(
+      `records written before the declaration are the ones in question: the operator states epoch `
+      + `${first.last_sound_epoch} was the last they believe sound, and that is their assessment `
+      + 'rather than anything this evidence establishes',
     );
   }
 
@@ -647,6 +733,42 @@ function report(tree_size, anchored, checks, findings, notes, collector, vkey, s
       ? `no witness in this set maintains sequence state, so truncation above record_seq ${anchored} is NOT detectable from this evidence alone`
       : 'no checkpoint commits to any height here, so truncation anywhere in this log is NOT detectable from this evidence alone');
   }
+  // FR-39 — the unwitnessed window, its size, and what the receipt time rests on.
+  for (const w of witnesses.filter(x => x.accepted)) {
+    if (w.clock_disagreement !== undefined) {
+      cannot.push(
+        `${w.id} says it received this root ${w.clock_disagreement} ms BEFORE the batch's own `
+        + 'timestamp, so the two clocks disagree. Either the witness\'s is wrong or the '
+        + "operator's is, and this verifier does not prefer one — the ts field is self-asserted "
+        + 'and the receipt time is the witness\'s claim',
+      );
+    } else if (w.unwitnessed_for_ms !== undefined && w.unwitnessed_for_ms > 0) {
+      const hours = w.unwitnessed_for_ms / 3_600_000;
+      can.push(
+        `that ${w.id} received this root at ${w.received_at}, which is `
+        + `${hours >= 1 ? `${hours.toFixed(2)} hours` : `${w.unwitnessed_for_ms} ms`} after the `
+        + 'batch claims to have been written',
+      );
+      cannot.push(
+        `the batch was unwitnessed for ${hours >= 1 ? `${hours.toFixed(2)} hours` : `${w.unwitnessed_for_ms} ms`} `
+        + `before ${w.id} saw it: anything that happened to the log inside that window is `
+        + 'outside what this countersignature reaches',
+      );
+    }
+    if (w.received_at_basis === 'absent') {
+      cannot.push(
+        `${w.id} supplied no receipt time, so WHEN it saw this root is not established — and it `
+        + "is not assumed to be the batch's own timestamp",
+      );
+    } else if (w.received_at_basis === 'witness-asserted, unsigned') {
+      cannot.push(
+        `${w.id}'s receipt time is witness-asserted and UNSIGNED: a C2SP note has nowhere inside `
+        + 'it to carry a time, so the value sits beside the proof rather than under it. It is '
+        + "exactly as good as that witness's word",
+      );
+    }
+  }
+
   if (witnesses.length > 0 && quorum.required > 0) {
     // Three numbers, never one. An aggregate figure would let an operator look
     // well-witnessed while being unable to detect truncation at all.
@@ -761,9 +883,12 @@ function commitments(record) {
  * @param {Buffer[]} o.leaves
  * @param {Finding[]} o.findings appended to
  * @param {number} o.anchored
+ * @param {string|null} [o.latestBatchTs] the newest record's self-asserted ts,
+ *   for FR-39's gap. Self-asserted is the point: the gap between it and the
+ *   witness's receipt time is the unwitnessed window.
  */
-async function verifyWitnesses({ envelopes, policy, leaves, findings, anchored }) {
-  /** @type {{ id: string, type: string, establishes: string, accepted: boolean, verdict: Verdict, detail: string }[]} */
+async function verifyWitnesses({ envelopes, policy, leaves, findings, anchored, latestBatchTs }) {
+  /** @type {WitnessEntry[]} */
   const witnesses = [];
   /** @type {Record<string, number>} */
   const observed = Object.fromEntries(CAPABILITY_CLASSES.map(c => [c, 0]));
@@ -775,13 +900,15 @@ async function verifyWitnesses({ envelopes, policy, leaves, findings, anchored }
   const credited = new Map();
 
   for (const { seq, env } of envelopes) {
+    /** @type {Omit<WitnessEntry, 'checkpoint_seq'|'tree_size'>[]} */
+    const local = [];
     for (const cs of env.countersignatures) {
       seen.add(cs.issuer);
       const spec = named.get(cs.issuer);
       if (!spec) {
         // Present, reported, counted for nothing. Dropping it would hide
         // evidence a reader with a different policy could use.
-        witnesses.push({
+        local.push({
           id: cs.issuer, type: cs.type, establishes: '(not accepted)', accepted: false,
           verdict: 'inconclusive',
           detail: `checkpoint ${seq}: this reader's acceptance policy does not name ${cs.issuer}, so `
@@ -792,12 +919,15 @@ async function verifyWitnesses({ envelopes, policy, leaves, findings, anchored }
       }
       const classes = spec.establishes ?? [];
       if (cs.verdict !== 'ok' || !cs.entry) {
-        witnesses.push({
+        local.push({
           id: cs.issuer, type: cs.type, establishes: classes.join('+'), accepted: false,
           verdict: 'inconclusive', detail: `checkpoint ${seq}: ${cs.detail ?? 'the entry is not usable'}`,
         });
         continue;
       }
+
+      // FR-39 — the witness's own clock, and how far it is from the batch's.
+      const time = receiptTime(cs, latestBatchTs ?? null);
 
       if (cs.type === 'c2sp-note') {
         // The only type checkable offline, and therefore the only one that can
@@ -805,20 +935,35 @@ async function verifyWitnesses({ envelopes, policy, leaves, findings, anchored }
         // the operator could rewrite the note but not forge the signature over
         // what the witness actually saw.
         const r = await checkNoteLine(env.note ?? '', cs.entry, spec);
-        if (r === 'ok') {
+        if (r === 'ok' || (typeof r === 'object' && 'via' in r)) {
           credit(credited, cs.issuer, classes);
-          witnesses.push({
+          local.push({
             id: cs.issuer, type: cs.type, establishes: classes.join('+'), accepted: true,
-            verdict: 'ok', detail: `checkpoint ${seq}: countersigned by ${cs.issuer}`,
+            verdict: 'ok',
+            detail: `checkpoint ${seq}: countersigned by ${cs.issuer}`
+              + `${r === 'ok' ? '' : ` using ${r.via}`}${time.detail}`,
+            ...time.fields,
           });
           continue;
         }
         if (r === 'no-key') {
-          witnesses.push({
+          local.push({
             id: cs.issuer, type: cs.type, establishes: classes.join('+'), accepted: false,
             verdict: 'inconclusive',
             detail: `checkpoint ${seq}: the acceptance policy names ${cs.issuer} but supplies no `
               + 'public key for it, so the signature was not checked against anything',
+          });
+          continue;
+        }
+        if (typeof r === 'object' && 'detail' in r) {
+          // FR-51 — the history was supplied and could not be used, or the key
+          // is not in it. Inconclusive either way: a witness this reader
+          // cannot attribute is a witness this reader does not know, and
+          // calling that tampering would make a rotation somebody forgot to
+          // publish look like an attack.
+          local.push({
+            id: cs.issuer, type: cs.type, establishes: classes.join('+'), accepted: false,
+            verdict: 'inconclusive', detail: `checkpoint ${seq}: ${r.detail}`,
           });
           continue;
         }
@@ -828,7 +973,7 @@ async function verifyWitnesses({ envelopes, policy, leaves, findings, anchored }
             + "checkpoint's note. A witness signs what it was shown; this is what it looks like when "
             + 'history was rewritten after the witness saw it, because the signature could not be forged',
         });
-        witnesses.push({
+        local.push({
           id: cs.issuer, type: cs.type, establishes: classes.join('+'), accepted: false,
           verdict: 'fail', detail: `checkpoint ${seq}: the countersignature does not verify`,
         });
@@ -847,7 +992,7 @@ async function verifyWitnesses({ envelopes, policy, leaves, findings, anchored }
         );
         if (r.ok) {
           credit(credited, cs.issuer, classes);
-          witnesses.push({
+          local.push({
             id: cs.issuer, type: cs.type, establishes: classes.join('+'), accepted: true,
             verdict: 'ok', detail: `checkpoint ${seq}: ${r.detail}`,
           });
@@ -865,7 +1010,7 @@ async function verifyWitnesses({ envelopes, policy, leaves, findings, anchored }
           // evidence any timestamp was obtained at all, and counting it would
           // let a quorum be met by submitting noise.
           if (!r.malformed) credit(credited, cs.issuer, classes);
-          witnesses.push({
+          local.push({
             id: cs.issuer, type: cs.type, establishes: classes.join('+'),
             accepted: !r.malformed,
             verdict: 'inconclusive', detail: `checkpoint ${seq}: ${r.detail}`,
@@ -876,7 +1021,7 @@ async function verifyWitnesses({ envelopes, policy, leaves, findings, anchored }
           code: 'WITNESS_MISMATCH', verdict: 'fail',
           detail: `checkpoint ${seq}: the RFC 3161 token from ${cs.issuer} does not verify — ${r.detail}`,
         });
-        witnesses.push({
+        local.push({
           id: cs.issuer, type: cs.type, establishes: classes.join('+'), accepted: false,
           verdict: 'fail', detail: `checkpoint ${seq}: ${r.detail}`,
         });
@@ -896,13 +1041,13 @@ async function verifyWitnesses({ envelopes, policy, leaves, findings, anchored }
           detail: `checkpoint ${seq}: the OpenTimestamps proof from ${cs.issuer} commits a different `
             + `digest — ${ots.detail}`,
         });
-        witnesses.push({
+        local.push({
           id: cs.issuer, type: cs.type, establishes: classes.join('+'), accepted: false,
           verdict: 'fail', detail: `checkpoint ${seq}: ${ots.detail}`,
         });
         continue;
       }
-      witnesses.push({
+      local.push({
         id: cs.issuer, type: cs.type, establishes: classes.join('+'),
         accepted: !ots.malformed,
         verdict: 'inconclusive', detail: `checkpoint ${seq}: ${ots.detail}`,
@@ -910,6 +1055,14 @@ async function verifyWitnesses({ envelopes, policy, leaves, findings, anchored }
       // A mangled proof is credited with nothing, for the same reason an
       // unparseable token is: there is no evidence anything was submitted.
       if (!ots.malformed) credit(credited, cs.issuer, classes);
+    }
+
+    // Attribute everything this envelope produced to the checkpoint it came
+    // from. Collected locally and stamped on the way out, rather than repeated
+    // at each of the push sites above, so a branch added later cannot omit it
+    // — the type will not let it.
+    for (const w of local) {
+      witnesses.push({ ...w, checkpoint_seq: seq, tree_size: env.tree_size });
     }
   }
 
@@ -945,9 +1098,18 @@ async function verifyWitnesses({ envelopes, policy, leaves, findings, anchored }
     };
   }
   if (CAPABILITY_CLASSES.every(c => (observed[c] ?? 0) === 0)) {
+    // Nothing counted. Whether that is a FAILURE depends on why: a proof this
+    // reader could not attribute — an unpublished rotation, a witness they do
+    // not know — is not evidence of tampering, and failing the whole check on
+    // it would be the same false accusation this project keeps having to
+    // design out. A proof that was REFUTED is already a finding of its own.
+    const refuted = witnesses.some(w => w.verdict === 'fail');
     return {
-      verdict: /** @type {Verdict} */ ('fail'),
-      detail: 'no proof in this pack is from a witness the acceptance policy accepts',
+      verdict: /** @type {Verdict} */ (refuted ? 'fail' : 'inconclusive'),
+      detail: refuted
+        ? 'a proof in this pack does not verify under the key the acceptance policy supplies'
+        : 'no proof in this pack could be attributed to a witness the acceptance policy accepts, '
+          + 'which is a statement about what this reader can check rather than about the evidence',
       witnesses, observed, met, quorum,
     };
   }
@@ -987,26 +1149,143 @@ function credit(credited, issuer, classes) {
 /**
  * @param {string} noteBlob
  * @param {import('@splitstick/core/envelope').Countersignature} cs
- * @param {{ id: string, public_key?: string }} spec
- * @returns {Promise<'ok'|'bad'|'no-key'>}
+ * @param {{ id: string, public_key?: string,
+ *           key_history?: { keys?: { public_key?: string }[], note?: string } }} spec
+ * @returns {Promise<'ok'|'bad'|'no-key'|{ via: string }|{ detail: string }>}
  */
 async function checkNoteLine(noteBlob, cs, spec) {
-  if (!spec.public_key) return 'no-key';
+  if (!spec.public_key && !spec.key_history) return 'no-key';
+  /** @type {string} */
+  let text;
+  /** @type {{ keyId: Buffer, signature: Buffer, name: string }|undefined} */
+  let line;
   try {
-    const text = parseNote(noteBlob).text;
-    const parsed = parseNote(`${text}\n${cs.line}\n`);
-    const line = parsed.signatures.find(s => s.name === cs.issuer);
-    if (!line) return 'bad';
-    const pub = Buffer.from(spec.public_key, 'base64');
-    // Synchronous shape check first: a key id that does not match cannot be a
-    // signature by this key, and saying "does not verify" would be vaguer.
-    if (!line.keyId.equals(noteKeyId(cs.issuer, pub))) return 'bad';
-    return await verifyNoteSignature(text, line, {
-      name: cs.issuer, publicKey: pub, keyId: noteKeyId(cs.issuer, pub),
-    }) ? 'ok' : 'bad';
+    text = parseNote(noteBlob).text;
+    line = parseNote(`${text}\n${cs.line}\n`).signatures.find(x => x.name === cs.issuer);
   } catch {
     return 'bad';
   }
+  if (!line) return 'bad';
+  const found = line;
+
+  /** @param {Buffer} pub */
+  const matches = async (pub) => {
+    // Shape check first: a key id that does not match cannot be a signature by
+    // this key, and saying "does not verify" would be vaguer.
+    if (!found.keyId.equals(noteKeyId(cs.issuer, pub))) return false;
+    return verifyNoteSignature(text, found, {
+      name: cs.issuer, publicKey: pub, keyId: noteKeyId(cs.issuer, pub),
+    });
+  };
+
+  // FR-51 — a published key history, if one was supplied. It is VALIDATED
+  // before any key in it is used: a history nobody signed is a list, and one
+  // signed by a key outside itself would let anybody assert whatever keys they
+  // liked.
+  if (spec.key_history) {
+    const h = await validateKeyHistory(cs.issuer, spec.key_history);
+    if (!h.ok) return { detail: h.detail };
+    for (const [i, pub] of h.keys.entries()) {
+      if (!await matches(pub)) continue;
+      return {
+        via: i === h.keys.length - 1
+          ? `the current key (key ${i + 1} of ${h.keys.length} in the signed history)`
+          : `a RETIRED key (key ${i + 1} of ${h.keys.length} in the signed history) — rotation is `
+            + 'not an amnesty for anything signed before it',
+      };
+    }
+    return {
+      detail: `${cs.issuer}'s countersignature is not any key in its signed key history, so this `
+        + 'reader cannot attribute it. That is a witness this reader does not know rather than '
+        + 'evidence of tampering: a rotation nobody published looks exactly like this',
+    };
+  }
+
+  if (!spec.public_key) return 'no-key';
+  return await matches(Buffer.from(spec.public_key, 'base64')) ? 'ok' : 'bad';
+}
+
+/**
+ * Validate a witness's published key history — FR-51.
+ *
+ * The current key signs a note over a digest of the whole list, so three
+ * things must hold before any key in it may attribute a countersignature: the
+ * note exists, its signature verifies under a key that is ITSELF in the list,
+ * and the digest signed is the digest of the list as presented.
+ *
+ * Without the third the signature covers nothing — a key could be appended
+ * after signing and the note would still check out.
+ *
+ * @param {string} issuer
+ * @param {{ keys?: { public_key?: string }[], note?: string }} history
+ * One shape rather than a discriminated union: TypeScript does not preserve a
+ * boolean literal discriminant written in JSDoc, so `if (!h.ok)` narrows
+ * nothing. `detail` is empty on success — the same lesson as trustpath.mjs.
+ * @returns {Promise<{ ok: boolean, keys: Buffer[], detail: string }>}
+ */
+async function validateKeyHistory(issuer, history) {
+  const keys = Array.isArray(history.keys) ? history.keys : [];
+  if (keys.length === 0) return { ok: false, keys: [], detail: `${issuer}'s key history is empty` };
+  if (typeof history.note !== 'string' || history.note === '') {
+    return {
+      ok: false, keys: [],
+      detail: `${issuer}'s key history is UNSIGNED. A key history nobody signed is a list, and a `
+        + 'list cannot say which keys a witness held',
+    };
+  }
+  /** @type {Buffer[]} */
+  const raw = [];
+  for (const k of keys) {
+    if (typeof k?.public_key !== 'string') {
+      return { ok: false, keys: [], detail: `${issuer}'s key history has an entry with no public_key` };
+    }
+    const b = Buffer.from(k.public_key, 'base64');
+    if (b.length !== 32) {
+      return { ok: false, keys: [], detail: `${issuer}'s key history has an entry that is not a 32-byte key` };
+    }
+    raw.push(b);
+  }
+
+  /** @type {ReturnType<typeof parseNote>} */
+  let note;
+  /** @type {ReturnType<typeof parseCheckpointText>} */
+  let cp;
+  try {
+    note = parseNote(history.note);
+    cp = parseCheckpointText(note.text);
+  } catch (e) {
+    return {
+      ok: false, keys: [],
+      detail: `${issuer}'s key history note does not parse: ${
+        e instanceof Error ? e.message : String(e)}`,
+    };
+  }
+  const expected = nodeCreateHash('sha256').update(JSON.stringify(keys)).digest();
+  if (!expected.equals(cp.root)) {
+    return {
+      ok: false, keys: [],
+      detail: `${issuer}'s key history note signs a digest that does not cover the key list as `
+        + 'presented, so a key could have been added after it was signed and the signature would '
+        + 'still check out',
+    };
+  }
+  const sig = note.signatures.find(x => x.name === issuer);
+  if (!sig) {
+    return { ok: false, keys: [], detail: `${issuer}'s key history note carries no signature for ${issuer}` };
+  }
+  for (const pub of raw) {
+    if (!sig.keyId.equals(noteKeyId(issuer, pub))) continue;
+    if (await verifyNoteSignature(note.text, sig, {
+      name: issuer, publicKey: pub, keyId: noteKeyId(issuer, pub),
+    })) {
+      return { ok: true, keys: raw, detail: '' };
+    }
+  }
+  return {
+    ok: false, keys: [],
+    detail: `${issuer}'s key history is signed by a key that is not in the history itself, so `
+      + 'anybody could publish a history asserting whatever keys they liked',
+  };
 }
 
 
@@ -1163,5 +1442,62 @@ async function verifyRollups({ store, notes, pinned, epochKeys, findings }) {
         : `${rollups.length} roll-up(s) present, but not checkable by this reader`,
     count: rollups.length,
     covers,
+  };
+}
+
+/**
+ * What the witness says about when it received the root — FR-39.
+ *
+ * A retroactive countersignature must record the witness's ACTUAL receipt time,
+ * not the batch's claimed time: backdating it to the batch would turn the one
+ * independent clock in the system into an echo of the operator's. The gap
+ * between the two IS the unwitnessed window, and a reader needs its size.
+ *
+ * The basis is reported, not just the value. A `c2sp-note` has nowhere inside
+ * it to put a time, so `received_at` is a bare claim sitting in the envelope;
+ * an `rfc3161` token carries its genTime under the signature. Reporting the
+ * first as though it were the second would be the most useful-looking lie
+ * available here.
+ *
+ * A receipt time EARLIER than the batch's is reported and not preferred. Either
+ * the witness's clock is wrong or the operator's is, and choosing between them
+ * is deciding whose account to believe — the one thing a verifier must not do.
+ *
+ * @param {import('@splitstick/core/envelope').ParsedCountersignature} cs
+ * @param {string|null} batchTs
+ */
+function receiptTime(cs, batchTs) {
+  const raw = cs.entry?.received_at;
+  // Strict RFC 3339, the same shape DES-01 requires of `ts`. Date.parse is
+  // lenient: it reads "12345" as the year 12345, which would have produced a
+  // receipt time ten thousand years out and an unwitnessed window to match.
+  const at = typeof raw === 'string' && RECEIPT_TIME.test(raw) ? Date.parse(raw) : NaN;
+  if (Number.isNaN(at)) {
+    return {
+      detail: '',
+      fields: { received_at_basis: /** @type {const} */ ('absent') },
+    };
+  }
+  const basis = cs.type === 'rfc3161'
+    ? /** @type {const} */ ('signed by the TSA, inside the token')
+    : /** @type {const} */ ('witness-asserted, unsigned');
+  const batch = batchTs === null ? NaN : Date.parse(batchTs);
+  if (Number.isNaN(batch)) {
+    return { detail: ` at ${raw}`, fields: { received_at: raw, received_at_basis: basis } };
+  }
+  const delta = at - batch;
+  if (delta < 0) {
+    return {
+      detail: ` at ${raw}, which is BEFORE the batch's own timestamp`,
+      fields: {
+        received_at: raw,
+        received_at_basis: basis,
+        clock_disagreement: Math.abs(delta),
+      },
+    };
+  }
+  return {
+    detail: ` at ${raw}, ${delta} ms after the batch`,
+    fields: { received_at: raw, received_at_basis: basis, unwitnessed_for_ms: delta },
   };
 }

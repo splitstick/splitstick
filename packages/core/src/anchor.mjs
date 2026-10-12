@@ -44,6 +44,10 @@ export const CAPABILITY_CLASSES = Object.freeze(['sequence', 'time', 'existence'
 /** Default bound on the unwitnessed queue. */
 export const QUEUE_CEILING = 1024;
 
+/** First retry delay, and the cap it grows to — OPS-02. */
+export const BACKOFF_BASE_MS = 30_000;
+export const BACKOFF_CEILING_MS = 3_600_000;
+
 /** Default per-witness wait. A witness is not on NFR-01's path, but it is on a wall clock. */
 export const TIMEOUT_MS = 10_000;
 
@@ -72,15 +76,41 @@ export class Anchorer {
    *   for the `c2sp-note` witnesses whose signatures can be checked locally
    * @param {number} [o.timeout_ms]
    * @param {number} [o.queue_ceiling]
+   * @param {() => number} [o.now] injected so backoff is testable
+   * @param {number} [o.unwitnessed_ceiling_ms] FR-68
+   * @param {number} [o.backoff_ceiling_ms]
+   * @param {(e: { oldest_checkpoint_seq: number, unwitnessed_for_ms: number,
+   *   since: string, queued: number }) => void} [o.onCeilingBreached] FR-68 —
+   *   raised OUT OF BAND. It must not write a record: an alert about the log's
+   *   integrity, written into that log, asks the suspect to carry the complaint.
    */
-  constructor({ store, witnesses = [], quorum = 1, acceptance = {}, timeout_ms = TIMEOUT_MS, queue_ceiling = QUEUE_CEILING }) {
+  constructor({
+    store, witnesses = [], quorum = 1, acceptance = {}, timeout_ms = TIMEOUT_MS,
+    queue_ceiling = QUEUE_CEILING, now, unwitnessed_ceiling_ms, backoff_ceiling_ms,
+    onCeilingBreached,
+  }) {
     this.store = store;
     this.quorum = quorum;
     this.acceptance = acceptance;
     this.timeout_ms = timeout_ms;
     this.queue_ceiling = queue_ceiling;
-    /** Checkpoints written but not yet witnessed. @type {number[]} */
-    this.queue = [];
+    this.now = now ?? (() => Date.now());
+    this.unwitnessed_ceiling_ms = unwitnessed_ceiling_ms ?? null;
+    this.backoff_ceiling_ms = backoff_ceiling_ms ?? BACKOFF_CEILING_MS;
+    this.onCeilingBreached = onCeilingBreached ?? null;
+    /**
+     * Breaches observed, kept after they clear. The window happened; a cleared
+     * alert must not erase it.
+     * @type {{ oldest_checkpoint_seq: number, unwitnessed_for_ms: number,
+     *          since: string, queued: number }[]}
+     */
+    this.breaches = [];
+    this.#breached = false;
+    /**
+     * Checkpoints written but not yet witnessed — NFR-13, read from disk.
+     * @type {{ checkpoint_seq: number, since: string, attempts: number }[]}
+     */
+    this.entries = store.readQueue();
     /** How many the ceiling has discarded. Reported, never silent. */
     this.dropped = 0;
 
@@ -106,8 +136,80 @@ export class Anchorer {
     this.witnesses = witnesses;
   }
 
+  /** @type {boolean} */
+  #breached;
+
   /** @returns {number[]} a copy, oldest first */
-  queued() { return [...this.queue]; }
+  queued() { return this.entries.map(e => e.checkpoint_seq).sort((a, b) => a - b); }
+
+  /**
+   * When checkpoint `seq` may next be attempted — OPS-02.
+   *
+   * Exponential from BACKOFF_BASE_MS and capped, because an unbounded doubling
+   * schedules the next attempt past the life of the deployment, and a witness
+   * that returns after a long outage should be used rather than waited for.
+   * @param {number} seq
+   */
+  nextAttemptAt(seq) {
+    const e = this.entries.find(x => x.checkpoint_seq === seq);
+    if (!e) return 0;
+    const since = Date.parse(e.since);
+    // An entry fresh from anchor() is eligible IMMEDIATELY. Its failure has
+    // already been counted — anchor() tried and the witness was down — and the
+    // caller choosing to flush is itself the cadence. A first version imposed
+    // the base delay on attempts 0, so a witness that came back in two seconds
+    // went unused for thirty, which is the opposite of what OPS-02 asks for.
+    //
+    // The delay applies after a failed RETRY, doubling each time and capped:
+    // an unbounded doubling schedules the next attempt past the life of the
+    // deployment.
+    const delay = e.attempts === 0
+      ? 0
+      : Math.min(BACKOFF_BASE_MS * 2 ** (e.attempts - 1), this.backoff_ceiling_ms);
+    return (Number.isNaN(since) ? this.now() : since) + delay;
+  }
+
+  /** FR-68 — is the oldest unwitnessed batch past the ceiling? */
+  ceilingBreached() { return this.#breached; }
+
+  /**
+   * Check the ceiling and raise the alert at most once per breach.
+   *
+   * Once per breach, not once per flush: an alert that repeats on every retry
+   * is an alert nobody reads, and the retry cadence is not information about
+   * the outage.
+   */
+  #checkCeiling() {
+    const ceiling = this.unwitnessed_ceiling_ms;
+    if (ceiling === null || this.entries.length === 0) {
+      this.#breached = false;
+      return;
+    }
+    const first = this.entries[0];
+    if (!first) { this.#breached = false; return; }
+    const oldest = this.entries.reduce(
+      (m, e) => (Date.parse(e.since) < Date.parse(m.since) ? e : m), first);
+    const age = this.now() - Date.parse(oldest.since);
+    // An unreadable age counts as OVER, not under. The store refuses such an
+    // entry on read, so this should be unreachable — and if it ever is
+    // reachable, the safe direction is to raise the alarm rather than to
+    // suppress it, which is how the previous version failed.
+    const over = !Number.isFinite(age) || age > ceiling;
+    if (over && !this.#breached) {
+      const event = {
+        oldest_checkpoint_seq: oldest.checkpoint_seq,
+        unwitnessed_for_ms: age,
+        since: oldest.since,
+        queued: this.entries.length,
+      };
+      this.breaches.push(event);
+      this.#breached = true;
+      // Out of band. Deliberately not a record: see the constructor's note.
+      if (this.onCeilingBreached) this.onCeilingBreached(event);
+      return;
+    }
+    if (!over) this.#breached = false;
+  }
 
   /**
    * Submit checkpoint `seq` to the `anchor`-tier witnesses — FR-20.
@@ -153,23 +255,47 @@ export class Anchorer {
     /** @type {number[]} */
     const superseded = [];
     /** @type {number[]} */
+    const waiting = [];
+    /** @type {typeof this.entries} */
     const still = [];
-    const descending = [...this.queue].sort((a, b) => b - a);
-    for (const seq of descending) {
-      if (anchored.length > 0) {
-        // Something higher is already countersigned, and it covers this one.
+    // Whether some HIGHER checkpoint got at least one issuer to sign in this
+    // flush. That issuer has now advanced past the lower heights, so they are
+    // unsubmittable to it (FR-43); and an issuer still outstanding wants the
+    // highest, not a lower one. Tracked separately from `anchored` because a
+    // partially witnessed checkpoint still advances a witness while remaining
+    // queued — reading `anchored` for this would resubmit heights the witness
+    // must refuse and report its refusals as outages.
+    let advanced = false;
+    const descending = [...this.entries].sort((a, b) => b.checkpoint_seq - a.checkpoint_seq);
+    for (const entry of descending) {
+      const seq = entry.checkpoint_seq;
+      if (advanced) {
+        // Something higher is countersigned, and it covers this one.
         superseded.push(seq);
         continue;
       }
+      if (this.now() < this.nextAttemptAt(seq)) {
+        // OPS-02 — still inside its backoff window. Reported rather than
+        // silently retried, so a caller can tell waiting from failing.
+        waiting.push(seq);
+        still.push(entry);
+        continue;
+      }
       const r = await this.#submit(seq, 'anchor', { requeue: false });
-      if (r.attached.length > 0) anchored.push(seq);
-      else still.push(seq);
+      if (r.attached.length > 0) advanced = true;
+      // Only a SUFFICIENTLY witnessed checkpoint leaves the queue. One answer
+      // out of a required two is progress, not completion.
+      if (r.sufficient) anchored.push(seq);
+      else still.push({ ...entry, attempts: entry.attempts + 1 });
     }
-    this.queue = still.sort((a, b) => a - b);
+    this.entries = still.sort((a, b) => a.checkpoint_seq - b.checkpoint_seq);
+    this.store.writeQueue(this.entries);
+    this.#checkCeiling();
     return {
       anchored,
       superseded: superseded.sort((a, b) => a - b),
-      queued: [...this.queue],
+      waiting: waiting.sort((a, b) => a - b),
+      queued: this.queued(),
     };
   }
 
@@ -194,15 +320,20 @@ export class Anchorer {
     const note = parsed.note;
     const due = this.witnesses.filter(w => w.tier === tier);
 
-    // What the witness needs to prove the submission extends what it holds.
-    // The highest previously witnessed size is the honest `old_size`: anything
-    // larger would be claiming a history the witness has not seen.
+    // What a witness needs to prove the submission extends what IT holds. The
+    // height that witness last signed is the honest `old_size`: anything
+    // larger claims a history it has not seen.
     // A roll-up's heights are its own ordinals, not the record log's, so the
     // record-log context would be a lie about what the witness is being asked
     // to extend.
-    const ctx = artefact === 'rollup'
-      ? { old_size: 0, consistency_proof: [] }
-      : this.#consistencyContext(seq, parsed.tree_size);
+    const heights = artefact === 'rollup' ? new Map() : this.#witnessedHeights(seq);
+
+    // Issuers whose countersignature is already on this envelope from an
+    // earlier attempt. Asking them again earns a duplicate-issuer refusal,
+    // which would read as a witness failure on every retry and would stop the
+    // quorum this entry is queued for from ever being reached.
+    const already = parsed.issuers;
+    const outstanding = due.filter(w => !already.has(w.id));
 
     /** @type {{ issuer: string, verified: boolean, establishes: string[] }[]} */
     const attached = [];
@@ -215,7 +346,10 @@ export class Anchorer {
     // case it never reached.
     let env = /** @type {import('./envelope.mjs').Envelope} */ (JSON.parse(raw));
 
-    for (const w of due) {
+    for (const w of outstanding) {
+      const ctx = artefact === 'rollup'
+        ? { old_size: 0, consistency_proof: [] }
+        : this.#consistencyContext(seq, parsed.tree_size, heights.get(w.id) ?? 0);
       /** @type {import('./envelope.mjs').Countersignature} */
       let cs;
       try {
@@ -256,25 +390,78 @@ export class Anchorer {
       else this.store.writeCheckpointEnvelope(seq, env);
     }
 
-    // Queue only when a witness was asked and none answered. An empty witness
-    // set is SCOPE-15's supported configuration, and queueing for witnesses
-    // that do not exist would report an outage that is not happening.
-    if (opts.requeue !== false && due.length > 0 && attached.length === 0) this.#enqueue(seq);
-    if (attached.length > 0) this.queue = this.queue.filter(q => q !== seq);
-
+    // The quorum counts ALL the evidence on the envelope, not just what this
+    // attempt added — otherwise a second witness answering on a retry would be
+    // counted alone, never reach two, and requeue forever.
+    const signed = new Set([...already, ...attached.map(a => a.issuer)]);
     /** @type {Record<string, number>} */
     const quorum = Object.fromEntries(CAPABILITY_CLASSES.map(c => [c, 0]));
-    const counted = new Set();
-    for (const a of attached) {
-      if (counted.has(a.issuer)) continue;      // one issuer, one vote
-      counted.add(a.issuer);
-      for (const cls of a.establishes) quorum[cls] = (quorum[cls] ?? 0) + 1;
+    for (const issuer of signed) {                        // one issuer, one vote
+      for (const cls of this.#establishes(issuer)) quorum[cls] = (quorum[cls] ?? 0) + 1;
     }
     const quorum_met = Object.fromEntries(
       CAPABILITY_CLASSES.map(c => [c, (quorum[c] ?? 0) >= this.quorum]),
     );
+    const target = this.#quorumTarget(due);
+    const sufficient = Object.entries(target).every(([c, n]) => (quorum[c] ?? 0) >= n);
+    /** @type {string[]} */
+    const missing = outstanding.filter(w => !signed.has(w.id)).map(w => w.id);
 
-    return { seq, attached, failed, quorum, quorum_met, unwitnessed: attached.length === 0 };
+    // The queue holds checkpoints that are INSUFFICIENTLY witnessed, not only
+    // those witnessed by nobody. One answer out of a required two left the
+    // entry dequeued and the second witness never retried, so a deployment
+    // that asked for two independent sequence witnesses silently kept running
+    // on one, permanently, with nothing reporting it. An empty witness set is
+    // still SCOPE-15's supported configuration: queueing for witnesses that do
+    // not exist would report an outage that is not happening.
+    const queued = this.entries.some(e => e.checkpoint_seq === seq);
+    if (!sufficient && due.length > 0) {
+      if (opts.requeue !== false && !queued) this.#enqueue(seq);
+    } else if (queued) {
+      this.entries = this.entries.filter(e => e.checkpoint_seq !== seq);
+      this.store.writeQueue(this.entries);
+    }
+    this.#checkCeiling();
+
+    return {
+      seq, attached, failed, quorum, quorum_met, sufficient, missing,
+      unwitnessed: signed.size === 0,
+    };
+  }
+
+  /**
+   * What class(es) an issuer establishes, per the CONFIGURED witness set.
+   *
+   * An issuer on the envelope that is not in the configuration counts towards
+   * no class: the operator never said what it is good for, and guessing would
+   * let an unknown party fill a quorum.
+   * @param {string} issuer
+   */
+  #establishes(issuer) {
+    return this.witnesses.find(w => w.id === issuer)?.establishes ?? [];
+  }
+
+  /**
+   * How many countersignatures each class actually needs here.
+   *
+   * The configured quorum, BOUNDED by how many witnesses could ever answer for
+   * that class. A quorum of two against a single witness is unreachable, and
+   * an unreachable target would keep every checkpoint queued and breach the
+   * FR-68 ceiling forever rather than ever clearing. `quorum_met` still reports
+   * the configured number unmet, and SEC-04 is what flags a set that small.
+   *
+   * A class no due witness establishes is not a target: it is a thing this
+   * witness set does not do, which FR-57 reports.
+   * @param {WitnessAdapter[]} due
+   */
+  #quorumTarget(due) {
+    /** @type {Record<string, number>} */
+    const target = {};
+    for (const cls of CAPABILITY_CLASSES) {
+      const n = due.filter(w => w.establishes.includes(cls)).length;
+      if (n > 0) target[cls] = Math.min(this.quorum, n);
+    }
+    return target;
   }
 
   /**
@@ -289,12 +476,27 @@ export class Anchorer {
    * @param {number} seq
    */
   #enqueue(seq) {
-    if (this.queue.includes(seq)) return;
-    this.queue.push(seq);
-    while (this.queue.length > this.queue_ceiling) {
-      this.queue.shift();
+    if (this.entries.some(e => e.checkpoint_seq === seq)) return;
+    const entry = {
+      checkpoint_seq: seq,
+      since: new Date(this.now()).toISOString(),
+      attempts: 0,
+    };
+    this.entries.push(entry);
+    this.entries.sort((a, b) => a.checkpoint_seq - b.checkpoint_seq);
+    let trimmed = false;
+    while (this.entries.length > this.queue_ceiling) {
+      this.entries.shift();
       this.dropped += 1;
+      trimmed = true;
     }
+    // THIS entry, not whatever sorted last. Appending `entries.at(-1)` meant
+    // that anchoring an older checkpoint appended the newest one a second time
+    // and never persisted the new entry at all — the disk held [2,3,3] while
+    // memory held [1,2,3], so checkpoint 1 was lost on restart. A batch that
+    // never gets witnessed is precisely what NFR-13 exists to prevent.
+    if (trimmed || !this.entries.includes(entry)) this.store.writeQueue(this.entries);
+    else this.store.appendQueue(entry);
   }
 
   /**
@@ -316,14 +518,39 @@ export class Anchorer {
    * @param {number|null} tree_size what this checkpoint commits to
    * @returns {{ old_size: number, consistency_proof: string[] }}
    */
-  #consistencyContext(seq, tree_size) {
-    let old_size = 0;
+  /**
+   * The highest tree_size each issuer has already countersigned, below `seq`.
+   *
+   * PER ISSUER, not per set. This used to take the highest size witnessed by
+   * ANYBODY and hand it to every witness as `old_size`. With one witness that
+   * is the same number. With two it is wrong for whichever one is behind: a
+   * witness returning from an outage would be asked to extend a tree it never
+   * signed, refuse, and go on refusing — so the queue could never clear by
+   * waiting, which is the only thing the queue does.
+   *
+   * @param {number} seq
+   * @returns {Map<string, number>}
+   */
+  #witnessedHeights(seq) {
+    /** @type {Map<string, number>} */
+    const heights = new Map();
     for (const { seq: s, blob } of this.store.readCheckpoints()) {
       if (s >= seq) continue;
       const p = parseEnvelope(blob);
       if (!p.ok || p.unwitnessed || p.tree_size === null) continue;
-      if (p.tree_size > old_size) old_size = p.tree_size;
+      for (const issuer of p.issuers) {
+        if ((heights.get(issuer) ?? 0) < p.tree_size) heights.set(issuer, p.tree_size);
+      }
     }
+    return heights;
+  }
+
+  /**
+   * @param {number} seq
+   * @param {number|null} tree_size
+   * @param {number} old_size the height THIS issuer last signed
+   */
+  #consistencyContext(seq, tree_size, old_size) {
     if (old_size === 0 || tree_size === null || tree_size <= old_size) {
       return { old_size, consistency_proof: [] };
     }
