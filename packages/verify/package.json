@@ -23,6 +23,8 @@
     "@splitstick/core": "0.1.0"
   },
   "bin": {
-    "splitstick-verify": "./src/cli.mjs"
+    "splitstick-verify": "./src/cli.mjs",
+    "splitstick-coverage": "./src/coverage-bin.mjs",
+    "splitstick-disclose": "./src/disclose-bin.mjs"
   }
 }

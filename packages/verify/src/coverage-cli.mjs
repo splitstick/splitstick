@@ -13,7 +13,7 @@ import { Store } from '@splitstick/core/store';
 import { coverageReport, CoverageError } from './coverage.mjs';
 import { renderCoverage } from './coverage-report.mjs';
 
-const USAGE = `splitstick coverage <store> --from <date> --to <date> [--collector <name>] [--policy <file>] [--json]
+const USAGE = `splitstick-coverage <store> --from <date> --to <date> [--collector <name>] [--policy <file>] [--json]
 
   --from, --to     the window, as a date (2027-01-01) or an RFC 3339 instant.
                    A bare date means the whole day in UTC.
@@ -28,7 +28,7 @@ const USAGE = `splitstick coverage <store> --from <date> --to <date> [--collecto
 
 /**
  * @param {string[]} argv
- * @returns {Promise<{ exit: number, out: string }>}
+ * @returns {Promise<{ exit: number, out: string, err?: string }>}
  */
 export async function runCoverage(argv) {
   const FLAGS = new Set(['from', 'to', 'collector', 'json', 'policy']);
@@ -43,21 +43,21 @@ export async function runCoverage(argv) {
     const name = a.slice(2);
     if (!FLAGS.has(name)) {
       return {
-        exit: 2,
-        out: `unknown flag ${a}. Refused rather than ignored: a misspelled flag that silently `
+        exit: 3, out: '',
+        err: `unknown flag ${a}. Refused rather than ignored: a misspelled flag that silently `
           + `reported on a different window would be read as a report on this one.\n\n${USAGE}`,
       };
     }
     if (name === 'json') { flags.json = true; continue; }
     const v = argv[i + 1];
     if (v === undefined || String(v).startsWith('--')) {
-      return { exit: 2, out: `${a} needs a value\n\n${USAGE}` };
+      return { exit: 3, out: '', err: `${a} needs a value\n\n${USAGE}` };
     }
     flags[name] = String(v);
     i += 1;
   }
   const root = positional[0];
-  if (root === undefined) return { exit: 2, out: `a store directory is required\n\n${USAGE}` };
+  if (root === undefined) return { exit: 3, out: '', err: `a store directory is required\n\n${USAGE}` };
 
   let store;
   /** @type {import('@splitstick/core/store').Store|undefined} */
@@ -76,8 +76,8 @@ export async function runCoverage(argv) {
       : String(flags.collector);
     if (flags.collector !== undefined && !available.includes(collector)) {
       return {
-        exit: 2,
-        out: `this store holds no chain for collector ${JSON.stringify(collector)}`
+        exit: 3, out: '',
+        err: `this store holds no chain for collector ${JSON.stringify(collector)}`
           + `${available.length === 0 ? '' : `; it holds ${available.join(', ')}`}\n`,
       };
     }
@@ -97,10 +97,16 @@ export async function runCoverage(argv) {
     // could be issued and not whether the operator is in trouble: 0 complete,
     // 1 incomplete, 2 inconclusive. An auditor reads the report; a pipeline
     // reads this.
+    //
+    // 3 is REFUSAL and is never a verdict. It used to be 2, which meant a
+    // pipeline could not tell `--form` from a genuinely inconclusive window:
+    // a typo and a finding produced the same status, so the typo read as the
+    // finding. `splitstick-verify` has always reserved 3 for this; the two
+    // now agree.
     const exit = report.verdict === 'complete' ? 0 : report.verdict === 'incomplete' ? 1 : 2;
     return { exit, out };
   } catch (e) {
-    if (e instanceof CoverageError) return { exit: 2, out: `${e.message}\n` };
+    if (e instanceof CoverageError) return { exit: 3, out: '', err: `${e.message}\n` };
     throw e;
   } finally {
     store?.close();

@@ -9,6 +9,7 @@ import { Collector } from '@splitstick/core/collector';
 import { parseConfig } from '@splitstick/core/config';
 import { generateDevSigner } from '@splitstick/core/signer-file';
 import { Pairing, stdioProxy, httpProxy } from '../src/index.mjs';
+import { tokenizeCommand, runProxy } from '../src/cli.mjs';
 
 const ORIGIN = 'splitstick.dev/proxy';
 
@@ -466,4 +467,56 @@ test('a tool call with no arguments commits to nothing rather than to an empty o
   assert.equal(rec?.tool, 'ping');
   assert.equal(rec?.args, undefined, 'no args commitment at all, rather than one over "{}"');
   r.store.close();
+});
+
+// ── FR-49: the CLI contract, at the seam the documentation names ───────────
+
+test('--upstream carries a command WITH its arguments', async () => {
+  // `--upstream "node ./server.mjs"` was handed to spawn() whole as the
+  // PROGRAM NAME, so every realistic upstream — `node x.mjs`, `uvx server`,
+  // `docker run ...` — failed with ENOENT. Every documented form was the
+  // broken form.
+  assert.deepEqual(tokenizeCommand('node ./server.mjs').argv, ['node', './server.mjs']);
+  assert.deepEqual(tokenizeCommand('uvx  some-mcp-server  --port 9').argv,
+    ['uvx', 'some-mcp-server', '--port', '9']);
+  assert.deepEqual(tokenizeCommand('node "/opt/my servers/a.mjs"').argv,
+    ['node', '/opt/my servers/a.mjs'], 'a path with a space is not an exotic case');
+  assert.deepEqual(tokenizeCommand("node '/opt/my servers/a.mjs'").argv,
+    ['node', '/opt/my servers/a.mjs']);
+  assert.deepEqual(tokenizeCommand('node /opt/my\\ servers/a.mjs').argv,
+    ['node', '/opt/my servers/a.mjs']);
+  assert.deepEqual(tokenizeCommand('server').argv, ['server'], 'and the bare case still works');
+});
+
+test('an unterminated quote in --upstream is refused, not closed for the caller', async () => {
+  // Guessing where the operator meant the argument to end is guessing which
+  // process to run.
+  const r = tokenizeCommand('node "/opt/a.mjs');
+  assert.match(r.err, /unterminated " quote/);
+  assert.deepEqual(r.argv, []);
+  assert.match(tokenizeCommand('   ').err, /--upstream is empty/);
+});
+
+test('an upstream that cannot start exits non-zero, not 0', async () => {
+  // Node throws an unhandled 'error' event out of the event loop as a raw
+  // stack trace, and the process still exited 0: a recorder that recorded
+  // nothing at all, reporting success to whatever started it.
+  const dir = mkdtempSync(join(tmpdir(), 'ss-mcp-cli-'));
+  const signer = await generateDevSigner(ORIGIN);
+  const r = await runProxy(['--upstream', './definitely-not-here', '--out', join(dir, 'ev')],
+    { signer, stdin: new PassThrough(), stdout: new PassThrough() });
+  assert.equal(r.exit, 0, 'the spawn failure is asynchronous, so it is not in the return');
+  await new Promise((res) => setTimeout(res, 150));
+  assert.equal(process.exitCode, 4, 'but the process is left failing');
+  process.exitCode = 0;
+});
+
+test('--help is an answer, so it goes to stdout', async () => {
+  // It was returned in the `err` field and written to stderr, so
+  // `splitstick-mcp-proxy --help > help.txt` wrote an empty file.
+  const signer = await generateDevSigner(ORIGIN);
+  const r = await runProxy(['--help'], { signer });
+  assert.equal(r.exit, 0);
+  assert.match(r.out, /^splitstick-mcp-proxy --upstream/);
+  assert.equal(r.err, '', 'and nothing at all on the error stream');
 });

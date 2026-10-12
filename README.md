@@ -38,6 +38,89 @@ and the suite exits non-zero whenever an observation changes in either direction
 | [`spec/vectors/`](spec/vectors/) | Conformance vectors — [RFC 8785](spec/vectors/jcs.json), [RFC 6962](spec/vectors/merkle.json), [C2SP note key ids](spec/vectors/note.json) |
 | [`bench/`](bench/) | The performance budgets, measured rather than asserted |
 
+## Getting started
+
+Five entry points. Everything below is executed verbatim by the CLI contract test
+(`test/cli-contract.test.mjs`), so a flag that is renamed, dropped or invented here is a
+failing test rather than a manual that lies.
+
+**Record.** `collect-oma` is a library, not a command: it is the journal and approval-store
+backend you hand to `@open-multi-agent/core` (tested against 1.21.x). Every action the agent
+takes is appended, salted and chained as it happens.
+
+```js
+import { Store } from '@splitstick/core/store';
+import { Collector } from '@splitstick/core/collector';
+import { parseConfig } from '@splitstick/core/config';
+import { generateDevSigner } from '@splitstick/core/signer-file';
+import { SplitstickRunJournal } from '@splitstick/collect-oma';
+
+const store = new Store('./evidence', 'host-1');
+const collector = new Collector({
+  store, config: parseConfig('version: 1\nstore: ./evidence\n', '.'),
+  signer: await generateDevSigner('splitstick.dev/host-1'),
+  collector: 'host-1', origin: 'splitstick.dev/host-1',
+});
+// `journal` is OMA's own, passed through: retention stays its job.
+const journal = new SplitstickRunJournal({ collector });
+```
+
+For an agent you do not control the source of, sit in front of its MCP server instead and
+record the tool calls as they cross the wire:
+
+```bash
+splitstick-mcp-proxy --upstream "node ./my-mcp-server.mjs" --out ./evidence
+```
+
+**Verify.** Offline — it opens files and does arithmetic. `--policy` is your acceptance
+policy, not ours: whose countersignature you accept and what each one establishes. Two
+readers with different policies get different, internally consistent answers from the same
+evidence, which is the point (FR-30). `$SPLITSTICK_KEY` is the operator identity you pin,
+printed by the collector when it starts.
+
+```bash
+splitstick-verify ./evidence --collector host-1 --key "$SPLITSTICK_KEY" --policy ./policy.json
+```
+
+**Coverage.** What fraction of a window is anchored, and to what. The window is explicit
+because a coverage number without one is a claim about nothing.
+
+```bash
+splitstick-coverage ./evidence --from 2026-10-01 --to 2026-10-31 --collector host-1 --policy ./policy.json
+```
+
+**Disclose.** One event, and nothing else — not the run, not the neighbouring records. The
+pack carries the inclusion proof and the signed root, so the recipient learns that this
+event is in the tree without learning what else is. This needs a checkpoint some witness
+has countersigned: an inclusion proof against a root only you signed establishes that you
+are consistent with your own arithmetic, so FR-33 refuses to build the pack rather than
+hand it over with a caveat somebody has to notice.
+
+```bash
+splitstick-disclose ./evidence --event 3 --collector host-1 --out ./disclosure.json
+```
+
+The recipient verifies it with no store, no network and no credential:
+
+```bash
+splitstick-disclose --verify ./disclosure.json --key "$SPLITSTICK_KEY" --policy ./policy.json
+```
+
+Working from a clone rather than an install, each command is also an npm script:
+`npm run verify -- ./evidence --collector host-1`, and likewise `coverage`, `disclose` and
+`mcp-proxy`.
+
+**Exit codes**, because a pipeline reads these and an auditor reads the report. `0`, `1` and
+`2` are always a *verdict* about evidence, and `3` is always a *refusal* of the invocation —
+never a verdict. Nothing you typed wrong can come back as a finding about your evidence.
+
+| | 0 | 1 | 2 | 3 | 4 |
+|---|---|---|---|---|---|
+| `verify` | ok | inconclusive | fail | refused | |
+| `coverage` | complete | incomplete | inconclusive | refused | |
+| `disclose --verify` | ok | fail | inconclusive | refused | |
+| `mcp-proxy` | — | | | refused | upstream would not start |
+
 ## Working on it
 
 ```bash

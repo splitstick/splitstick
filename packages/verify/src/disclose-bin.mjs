@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/** `npm run disclose -- <store> --record <seq>` — FR-32. */
+/** `npm run disclose -- <store> --event <seq>` — FR-32. */
 import { runDisclose } from './disclose-cli.mjs';
 
 const { exit, out, err } = await runDisclose(process.argv.slice(2));

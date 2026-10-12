@@ -3,3 +3,4 @@ out/
 *.bak
 .DS_Store
 requirements/backlog.resolved.json
+.contract-js-*

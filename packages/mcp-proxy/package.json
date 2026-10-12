@@ -21,5 +21,8 @@
   },
   "dependencies": {
     "@splitstick/core": "0.1.0"
+  },
+  "bin": {
+    "splitstick-mcp-proxy": "./src/bin.mjs"
   }
 }

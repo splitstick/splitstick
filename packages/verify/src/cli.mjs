@@ -17,12 +17,13 @@
  * capability block says which checks went unanswered.
  */
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, realpathSync } from 'node:fs';
+import { pathToFileURL } from 'node:url';
 import { verifyStore } from './verify.mjs';
 
 const EXIT = { ok: 0, inconclusive: 1, fail: 2 };
 
-const USAGE = `splitstick verify <store> [options]
+const USAGE = `splitstick-verify <store> [options]
 
   --collector <id>   the collector instance whose chain to read
   --key <vkey>       the operator identity you pin, as name+keyid+base64key
@@ -171,6 +172,20 @@ export async function main(argv) {
   return EXIT[report.verdict];
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+/**
+ * Run when this file IS the program, not when it is imported.
+ *
+ * `file://${process.argv[1]}` was wrong in the one case that matters: npm
+ * installs a bin as a symlink, so argv[1] is `.bin/splitstick-verify` while
+ * `import.meta.url` is the realpath of this file. They never matched, the
+ * guard never fired, and the only published entry point in this project
+ * printed nothing and exited 0 — the shape of failure a verifier is least
+ * allowed to have, since silence reads as "nothing wrong". Compare realpaths,
+ * and build the URL with pathToFileURL so a path containing a space or a `#`
+ * is not a second way to miss.
+ */
+const invokedAs = process.argv[1] === undefined
+  ? '' : pathToFileURL(realpathSync(process.argv[1])).href;
+if (import.meta.url === invokedAs) {
   process.exitCode = await main(process.argv);
 }
