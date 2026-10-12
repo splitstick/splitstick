@@ -9,15 +9,20 @@
  * make read-validate-write atomic.
  *
  * Invoked as:
- *   node submit.mjs <dir> <seedFile> <label> <startAtEpochMs>
+ *   node submit.mjs <dir> <seedFile> <label> <peerLabel>
  *
- * The start time is a barrier: both processes finish every bit of setup and
- * then enter the critical section at the same instant. Without it the first
- * process simply finishes before the second begins and the race never happens
- * — which is how this looked safe.
+ * The barrier is a READINESS HANDSHAKE, not a wall clock. Each process does
+ * every bit of setup, drops a `ready-<label>` file, and spins until its peer's
+ * file appears — so both enter the critical section together on any machine.
+ *
+ * The first version used a fixed `Date.now() + 700`. On a loaded runner — which
+ * is what CI is — node boot plus ESM loading can exceed that, so the barrier
+ * had already expired before either process reached it and the two ran
+ * sequentially. The test then passed WITHOUT EXERCISING THE RACE, which is
+ * worse than failing: a green result that means nothing.
  */
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { createPrivateKey, createPublicKey, sign } from 'node:crypto';
 import { StatefulWitness } from '../../src/witness.mjs';
@@ -25,7 +30,10 @@ import { checkpointText, encodeNote, noteKeyId } from '@splitstick/core/note';
 import { signNote } from '@splitstick/core/signer';
 import { treeRoot, leafHash, consistencyProof } from '@splitstick/core/merkle';
 
-const [dir, seedFile, label, startAt] = process.argv.slice(2);
+const [dir, seedFile, label, peer, readyAs] = process.argv.slice(2);
+// `readyAs` lets two processes share a HISTORY label (so they compute the same
+// root) while still handshaking under distinct names.
+const me = readyAs ?? label;
 const OPERATOR = 'splitstick.dev/host-1';
 
 /** @param {string} pem @param {string} name */
@@ -63,22 +71,38 @@ const text = checkpointText({
 });
 const note = encodeNote(text, [await signNote(text, operator)]);
 const proof = consistencyProof(history, prefix.length).map(b => b.toString('base64'));
+// Reported on every path. The caller asserts that the two processes really did
+// submit DIFFERENT roots before concluding anything from the acceptance count
+// — without it, "both accepted" and "both submitted the same thing" are
+// indistinguishable in a CI log.
+const root = treeRoot(history).toString('base64');
 
-if (startAt) {
-  const t = Number(startAt);
+if (peer) {
+  writeFileSync(join(String(dir), `ready-${me}`), '1');
+  const deadline = Date.now() + 20_000;
   // A spin, not a timer: the point is to enter the critical section at the
-  // same instant, and setTimeout's resolution is coarser than the window.
-  while (Date.now() < t) { /* wait */ }
+  // same instant, and a timer's resolution is coarser than the window.
+  while (!existsSync(join(String(dir), `ready-${peer}`))) {
+    if (Date.now() > deadline) {
+      process.stdout.write(JSON.stringify({
+        label, accepted: false, status: null, message: `peer ${peer} never became ready`,
+      }) + '\n');
+      // Deliberately without `root`, so a handshake failure is distinguishable
+      // in a CI log from a submission the witness refused.
+      process.exit(2);
+    }
+  }
 }
 
 try {
   const res = await w.addCheckpoint({ note, old_size: prefix.length, consistency_proof: proof });
-  process.stdout.write(JSON.stringify({ label, accepted: true, status: res.status }) + '\n');
+  process.stdout.write(JSON.stringify({ label, accepted: true, status: res.status, root }) + '\n');
 } catch (e) {
   process.stdout.write(JSON.stringify({
     label,
     accepted: false,
     status: /** @type {any} */ (e).status ?? null,
     message: e instanceof Error ? e.message : String(e),
+    root,
   }) + '\n');
 }

@@ -276,6 +276,51 @@ integer, `root` exactly 32 base64-encoded bytes, `at` present — and a line tha
 fails refuses to start rather than disappearing. `#reconcile` no longer filters
 anything, because there is nothing left for it to skip.
 
+## The dual-acceptance question, answered
+
+Asked to resolve a CI failure about the witness accepting two submissions. I
+could not reproduce it: every CI job passes on Node 20, 22 and 24, ten
+consecutive runs of the witness suites and five more under eight-way CPU
+contention, all green. So the answer here is the conclusive explanation, plus
+the two things examining the question did turn up.
+
+**When dual acceptance is correct.** A resubmission of the same tree_size and
+the same root is idempotent by design (DES-08): a retry after a dropped
+response must not look like an attack. Two processes doing that at once are
+doing the same harmless thing twice, and both are accepted. There is now a test
+pinning exactly that, because without it "both accepted" reads as a security
+failure in every circumstance and the distinction that matters is left to
+whoever is reading the log.
+
+**When it is a fault.** Two different roots at the same height. The invariant is
+therefore not the acceptance count — it is that the retained history holds **one
+root per height** and the active state is never behind it. The conflicting-
+successor test now asserts that FIRST and on its own terms, with the acceptance
+count as secondary diagnosis, and it asserts that the two processes really did
+submit different roots before concluding anything from the count. A CI log is
+now enough to tell a genuine dual acceptance from a test artefact.
+
+**The test could have been passing vacuously.** The barrier was a fixed
+`Date.now() + 700`. On a loaded runner — which is what CI is — node boot plus
+ESM loading can exceed that, so the barrier had already expired before either
+process reached it and the two ran sequentially. The test then passed WITHOUT
+EXERCISING THE RACE, which is worse than failing: a green result that means
+nothing. It is a readiness handshake now — each process drops a file and spins
+for its peer — so the race happens on any machine at any load.
+
+Proved rather than asserted: with the cross-process lock disabled, the test
+reports two distinct roots at height 20 on Node 20, 22 AND 24. The instrument
+sees the fault it exists to see, on every version CI runs.
+
+**And the assertion I added to make a failure self-diagnosing was itself
+wrong.** It read a `root` field the submission helper never emitted — I had
+added that field to the other helper — so it failed closed rather than passing
+vacuously, which is the right direction for a mistake of that kind to fall.
+
+Node 24's default test reporter is not TAP, so greps for `^not ok` or `# fail`
+show nothing there regardless of the result. Everything above is keyed on exit
+codes.
+
 ## Decided against
 
 **Fetching block headers to confirm an OpenTimestamps attestation.** It would

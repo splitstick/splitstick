@@ -52,14 +52,25 @@ async function seeded() {
   return { dir, seedFile };
 }
 
-/** @param {string} dir @param {string} seedFile */
+/**
+ * Two processes into the critical section together, synchronised by a
+ * readiness handshake rather than a wall clock.
+ *
+ * The fixed `Date.now() + 700` this replaces could expire before either
+ * process reached it on a loaded runner, so the two ran sequentially and the
+ * test passed without exercising the race at all. A green result that means
+ * nothing is worse than a red one.
+ * @param {string} dir @param {string} seedFile
+ */
 function race(dir, seedFile) {
-  const startAt = Date.now() + 700;
+  const peers = { A: 'B', B: 'A' };
   return Promise.all(['A', 'B'].map(label => new Promise((resolve) => {
-    execFile(process.execPath, [SUBMIT, dir, seedFile, label, String(startAt)],
-      { timeout: 30_000 }, (err, stdout, stderr) => {
+    execFile(process.execPath, [SUBMIT, dir, seedFile, label, peers[label]],
+      { timeout: 40_000 }, (err, stdout, stderr) => {
         const line = String(stdout).trim().split('\n').filter(Boolean).at(-1);
-        resolve(line ? JSON.parse(line) : { label, accepted: false, crashed: String(stderr).slice(0, 300) });
+        resolve(line ? JSON.parse(line) : {
+          label, accepted: false, crashed: String(stderr).slice(0, 300),
+        });
       });
   })));
 }
@@ -72,7 +83,7 @@ function rootsAt(dir, size) {
     .filter(r => r.tree_size === size).map(r => r.root);
 }
 
-test('two PROCESSES submitting conflicting successors: exactly one wins', async () => {
+test('two PROCESSES submitting CONFLICTING successors: one root survives', async () => {
   // The failure this exists for, which an in-process test cannot reach. With a
   // promise-chain lock and nothing else, BOTH processes were accepted and the
   // witness retained two distinct roots at the same height — it countersigned
@@ -83,18 +94,59 @@ test('two PROCESSES submitting conflicting successors: exactly one wins', async 
   const accepted = results.filter(r => r.accepted);
   const refused = results.filter(r => !r.accepted);
 
-  assert.equal(accepted.length, 1,
-    `exactly one submission may be accepted: ${JSON.stringify(results)}`);
-  assert.equal(refused.length, 1);
-  assert.ok(!refused[0].crashed, `the loser must be refused, not crash: ${refused[0].crashed}`);
-
+  // THE security invariant, asserted first and on its own terms: whatever the
+  // two processes were told, the retained history must hold one root at that
+  // height. Everything else below is diagnosis.
   const roots = rootsAt(dir, 20);
-  assert.equal(new Set(roots).size, 1,
-    `the witness must retain ONE root per height, found ${new Set(roots).size}: ${roots}`);
+  assert.equal(roots.length, 1,
+    `the witness must retain ONE root per height, found ${roots.length}: ${JSON.stringify(roots)}`
+    + ` — results were ${JSON.stringify(results)}`);
   const state = JSON.parse(readFileSync(join(dir, 'state.json'), 'utf8'));
   assert.equal(state.seq[OPERATOR].last_size, 20);
   assert.equal(state.seq[OPERATOR].last_root, roots[0],
     'the state and the retained root must agree');
+
+  // And since the two submissions were for DIFFERENT roots, exactly one of
+  // them can have been accepted. The failure message carries both roots, so a
+  // CI log is enough to tell a genuine dual acceptance from a test artefact.
+  assert.equal(new Set(results.map(r => r.root)).size, 2,
+    'the fixture must submit two different roots, or this proves nothing');
+  assert.equal(accepted.length, 1,
+    `two different roots were submitted and ${accepted.length} were accepted: `
+    + JSON.stringify(results));
+  assert.equal(refused.length, 1);
+  assert.ok(!refused[0].crashed, `the loser must be refused, not crash: ${refused[0].crashed}`);
+});
+
+test('two PROCESSES submitting the SAME successor: both accepted, and that is correct', async () => {
+  // The dual acceptance that is NOT a fault, pinned so it can never be
+  // mistaken for one. A resubmission of the same size and root is idempotent
+  // by design (DES-08): a retry after a dropped response must not look like an
+  // attack. Two processes doing it at once is the same thing twice.
+  //
+  // Without this test, "both accepted" reads as a security failure in every
+  // circumstance, and the distinction that actually matters — whether the
+  // retained history forked — is left to whoever is reading the log.
+  const { dir, seedFile } = await seeded();
+  const peers = { A: 'B', B: 'A' };
+  const results = await Promise.all(['A', 'B'].map(label => new Promise((resolve) => {
+    // The same label for the history, so both compute the SAME root.
+    execFile(process.execPath, [SUBMIT, dir, seedFile, 'same', peers[label], label],
+      { timeout: 40_000 }, (_err, stdout) => {
+        const line = String(stdout).trim().split('\n').filter(Boolean).at(-1);
+        resolve(line ? JSON.parse(line) : { accepted: false });
+      });
+  })));
+  assert.equal(new Set(results.map(r => r.root)).size, 1, 'both submitted the same root');
+  // One root retained, however many were accepted. That is the invariant; the
+  // acceptance count is not.
+  assert.equal(rootsAt(dir, 20).length, 1,
+    `one root per height: ${JSON.stringify(rootsAt(dir, 20))}`);
+  assert.ok(results.some(r => r.accepted), JSON.stringify(results));
+  for (const r of results) {
+    assert.ok(r.accepted || [409, 503].includes(Number(r.status)),
+      `an identical resubmission must be accepted or merely contended: ${JSON.stringify(r)}`);
+  }
 });
 
 test('the loser is told it lost, in protocol terms', async () => {
