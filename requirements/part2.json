@@ -378,7 +378,9 @@
     "title": "Erasure via crypto-shredding",
     "statement": "Support a documented erasure procedure satisfying a data-subject deletion request, over payloads, content salts, leaf salts, the reference index, the agent label and any approval reviewer. The claim is scoped to that enumerated set, not to all personal information everywhere.",
     "source": "Erasure — GDPR-compatible",
-    "verify": "Procedure executed; the enumerated set is unrecoverable; an independent privacy assessment of the residue is deferred to a funded release and recorded as such"
+    "verify": "Procedure executed; the enumerated set is unrecoverable; an independent privacy assessment of the residue is deferred to a funded release and recorded as such",
+    "status": "done",
+    "evidence": "residue.mjs scanResidue over the five erasable payloads — the agent label, both payloads, the approval reviewer and the reviewed request — each asserted unretrievable afterwards, with an unrelated record's payloads untouched. The independent privacy assessment of the residue remains deferred to a funded release, as the requirement says"
   },
   {
     "id": "PRIV-04",
@@ -387,7 +389,9 @@
     "title": "Chain survives erasure",
     "statement": "The chain still verifies after content deletion.",
     "source": "Erasure — the chain still verifies",
-    "verify": "Verify passes post-deletion"
+    "verify": "Verify passes post-deletion",
+    "status": "done",
+    "evidence": "verifyStore after shredRecord: failed is 0, and every finding is inconclusive — CONTENT_ABSENT and LEAF_INCONCLUSIVE — never fail"
   },
   {
     "id": "PRIV-05",
@@ -396,7 +400,9 @@
     "title": "Minimal retained artefacts",
     "statement": "After erasure the chain retains only the version-1 permanent set: v, collector, run, record_seq, source_seq, ts, kind, consequential, tool, outcome, attempt, correlation, approval.decision, result.ok, args.bytes, result.bytes, a padding record pad nonce, gap spans, unknown-loss intervals, and salted digests, leaf digests and chain heads. Every other field is erasable: payloads, the agent label, the approval reviewer, the reviewed request, content salts, leaf salts and the reference index. The byte lengths and the correlation relationship are documented residual leaks with no mitigation in 1.0.",
     "source": "Erasure — what survives is a salted hash and a timestamp",
-    "verify": "Automated scan after crypto-shredding asserts the residue matches the enumerated permanent set exactly, field for field, across every record kind including padding; the list is derived from the version-1 schema so a schema change fails the test rather than silently passing"
+    "verify": "Automated scan after crypto-shredding asserts the residue matches the enumerated permanent set exactly, field for field, across every record kind including padding; the list is derived from the version-1 schema so a schema change fails the test rather than silently passing",
+    "status": "done",
+    "evidence": "residue.mjs CLASSIFIED + classifySchema + scanResidue, with four codes in the shared vocabulary. The classification is checked against ALLOWED so extending the record format fails the scan rather than letting a new field survive a deletion request by default; classifySchema takes the schema as a parameter so a test can prove it CAN fail, since ALLOWED is frozen and a check nothing can fail proves nothing. It found agent.bytes retained on its first run, which DES-13's inventory does not list — the collector no longer writes label lengths. A first version of the table listed approval.reviewer and approval.request as erasable SUB-KEYS and reported a correctly shredded record as retaining them: they are commitments whose VALUES are erasable, and the dead RESIDUE_ERASABLE_RETAINED code that mistake needed was removed"
   },
   {
     "id": "PRIV-06",
@@ -434,6 +440,8 @@
     "title": "Operator-controlled retention",
     "statement": "Retention is a setting on operator-controlled storage, not a vendor policy.",
     "source": "Erasure — policy settings on your storage",
-    "verify": "Configuration test"
+    "verify": "Configuration test",
+    "status": "done",
+    "evidence": "Retention is a setting on the operator's own config applied to the operator's own storage by Store.applyRetention; nothing about it is a vendor policy and nothing about it is recorded in the chain, because a retention sweep is not an agent action"
   }
 ]

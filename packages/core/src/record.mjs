@@ -33,7 +33,8 @@ const OBSERVATION_KINDS = new Set(['tool_call', 'approval']);
 const FORBIDDEN = Object.freeze(['leaf', 'prev', 'head', 'salt']);
 
 /** Fields every record carries. */
-const ENVELOPE = ['v', 'collector', 'run', 'record_seq', 'source_seq', 'ts', 'kind'];
+export const ENVELOPE = Object.freeze(
+  ['v', 'collector', 'run', 'record_seq', 'source_seq', 'ts', 'kind']);
 
 /**
  * The exhaustive set of fields each kind may carry — PRIV-02.
@@ -45,7 +46,7 @@ const ENVELOPE = ['v', 'collector', 'run', 'record_seq', 'source_seq', 'ts', 'ki
  * excludes payloads" is a property of the format rather than of our own
  * discipline in writing it.
  */
-const ALLOWED = Object.freeze({
+export const ALLOWED = Object.freeze({
   tool_call: [...ENVELOPE, 'tool', 'consequential', 'agent', 'args', 'result', 'approval',
     'outcome', 'attempt', 'correlation'],
   approval: [...ENVELOPE, 'tool', 'consequential', 'agent', 'args', 'result', 'approval',

@@ -115,6 +115,7 @@ function positive(key, ms) {
  * @property {string} [collector]
  * @property {{ upstreams?: string[], interfaces?: string[] }} [capture] FR-64
  * @property {{ to_multiple: number }|null} padding FR-34 — off by default
+ * @property {number|null} retention_ms FR-37, PRIV-09 — off by default
  */
 
 /**
@@ -263,6 +264,14 @@ export function parseConfig(text, baseDir = process.cwd()) {
     quorum: /** @type {number} */ (quorum),
     ...(o.capture === undefined ? {} : { capture: /** @type {any} */ (o.capture) }),
     padding: parsePadding(o.padding),
+    // FR-37, PRIV-09 — a STORAGE setting, so it is parsed here and applied by
+    // Store.applyRetention, never by anything that touches the chain. The key
+    // was in the known-key list and never parsed, so `retention: 30d` was
+    // accepted and silently meant "keep forever" — the third instance of this
+    // shape in the project, after `padding` and the verifier's `--vkey`.
+    retention_ms: o.retention === undefined || o.retention === null
+      ? null
+      : positive('retention', parseDuration(o.retention)),
     ...(typeof o.origin === 'string' ? { origin: o.origin } : {}),
     ...(typeof o.collector === 'string' ? { collector: o.collector } : {}),
   };

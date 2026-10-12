@@ -427,6 +427,56 @@ export class Store {
   }
 
   /**
+   * Apply a retention window — FR-37, PRIV-09.
+   *
+   * Crypto-shreds every record whose `ts` is older than the window. A STORAGE
+   * operation: it deletes payloads, keys, content salts and leaf salts, and it
+   * never touches the chain. That independence is the requirement — a
+   * retention setting that changed what the chain committed to would make the
+   * cryptography and the policy inseparable, and the chain is the thing that
+   * must survive every lawful deletion.
+   *
+   * Returns what it shredded, so an operator can record the act and a residue
+   * scan can be pointed at exactly those records. Nothing is logged into the
+   * chain about it: a retention sweep is not an agent action, and writing one
+   * there would mean the chain grew every time the operator deleted something.
+   *
+   * @param {object} o
+   * @param {number} o.retention_ms the window, from config; null disables it
+   * @param {number} [o.now] injected so a sweep is testable without waiting
+   * @returns {{ shredded: number[], kept: number, undated: number[] }}
+   */
+  applyRetention({ retention_ms, now = Date.now() }) {
+    /** @type {number[]} */
+    const shredded = [];
+    /** @type {number[]} */
+    const undated = [];
+    let kept = 0;
+    if (!Number.isSafeInteger(retention_ms) || retention_ms <= 0) {
+      throw new TypeError(
+        `retention_ms is ${JSON.stringify(retention_ms)}; a sweep needs a positive window. `
+        + 'Absent retention means keep everything, which is the caller\'s decision to skip this '
+        + 'entirely rather than to call it with nothing',
+      );
+    }
+    const cutoff = now - retention_ms;
+    for (const e of this.readChain()) {
+      const seq = Number(e.record.record_seq);
+      const ts = e.record.ts;
+      if (!isTimestamp(ts)) {
+        // A record that cannot be placed in time is NOT swept. Guessing would
+        // mean deleting evidence on the strength of a field we just refused to
+        // read, and the residue scan reports it instead.
+        undated.push(seq);
+        continue;
+      }
+      if (Date.parse(String(ts)) < cutoff) { this.shredRecord(seq); shredded.push(seq); }
+      else kept += 1;
+    }
+    return { shredded, kept, undated };
+  }
+
+  /**
    * Crypto-shred one record — FR-36, DES-13. Deletes the leaf salt and every
    * content object the record commits to. The chain line stays, because the
    * chain is never deleted; what is left is a salted commitment to a plaintext

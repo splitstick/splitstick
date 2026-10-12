@@ -382,7 +382,9 @@
       "title": "Crypto-shredding",
       "statement": "Deleting content and its key leaves the chain verifiable and the commitment permanently unlinkable.",
       "source": "Erasure — crypto-shredding",
-      "verify": "Verify passes after content+key deletion"
+      "verify": "Verify passes after content+key deletion",
+      "status": "done",
+      "evidence": "content.mjs shredAll + Store.shredRecord; a shredded record verifies as inconclusive and never as fail, because reporting a lawful deletion as tampering would make compliance look like an attack"
     },
     {
       "id": "FR-37",
@@ -391,7 +393,9 @@
       "title": "Retention policy on storage",
       "statement": "Retention and erasure are configurable at the storage layer, independent of the cryptography.",
       "source": "Erasure — policy settings on your storage",
-      "verify": "Retention config honoured; chain unaffected"
+      "verify": "Retention config honoured; chain unaffected",
+      "status": "done",
+      "evidence": "config retention_ms + Store.applyRetention; the sweep crypto-shreds what is older than the window and a test asserts the leaves and heads are BYTE-IDENTICAL across it — a retention setting that reached the chain would make the cryptography and the policy inseparable. An undated record is not swept, because guessing would delete evidence on the strength of a field just refused. The `retention` key was in the known-key list and never parsed, so `retention: 30d` was accepted and silently meant keep-forever"
     },
     {
       "id": "FR-38",

@@ -11,6 +11,8 @@ import { formatVkey, checkpointText, encodeNote, parseNote } from '@splitstick/c
 import { signNote } from '@splitstick/core/signer';
 import { treeRoot } from '@splitstick/core/merkle';
 import { coverageReport } from '../src/coverage.mjs';
+import { scanResidue, classifySchema } from '@splitstick/core/residue';
+import { ALLOWED } from '@splitstick/core/record';
 import { verifyStore } from '../src/verify.mjs';
 
 /**
@@ -77,6 +79,38 @@ async function writeCheckpoint(ctx, seq, tree_size, root, suite = 'SS1') {
  * emit is a failure mode nobody has seen occur. Each returns the window to
  * report on.
  */
+/**
+ * Codes produced by the ERASURE RESIDUE SCAN — PRIV-05, PRIV-03.
+ *
+ * A third entry point, driven the same way: a code nobody has seen a real run
+ * emit is a failure mode nobody has seen occur. Each returns the record_seqs a
+ * deletion request is taken to cover.
+ */
+const RESIDUE_SCENARIOS = {
+  /** A field the schema permits and the inventory does not classify. */
+  async RESIDUE_UNCLASSIFIED_FIELD() {
+    // Driven through classifySchema's injectable schema, because ALLOWED is
+    // frozen — correctly — and the scan reads the real one.
+    const extended = { ...ALLOWED, tool_call: [...ALLOWED.tool_call, 'subject_email'] };
+    return { shredded: [], unclassified: classifySchema(extended) };
+  },
+  /** A field present in the chain that is not in the permanent set. */
+  async RESIDUE_UNEXPECTED_FIELD(ctx) {
+    const ls = lines(ctx.root);
+    ls[1].record.subject_email = 'alice@example.com';
+    write(ctx.root, ls);
+    return { shredded: [] };
+  },
+  /** A shredded record whose leaf salt survived. */
+  async RESIDUE_SALT_RETAINED(ctx) {
+    return { shredded: [1] };          // nothing was shredded, so the salt is there
+  },
+  /** A shredded record whose payload is still retrievable. */
+  async RESIDUE_CONTENT_RETAINED(ctx) {
+    return { shredded: [1] };
+  },
+};
+
 const COVERAGE_SCENARIOS = {
   /** A window with no record of any kind and no declaration. */
   async COVERAGE_GAP(ctx) {
@@ -340,11 +374,34 @@ const delivered = SPEC.codes
   .map((/** @type {any} */ c) => c.code);
 
 test('the scenario table covers exactly the delivered codes', () => {
-  const covered = [...Object.keys(SCENARIOS), ...Object.keys(COVERAGE_SCENARIOS)].sort();
+  const covered = [...Object.keys(SCENARIOS), ...Object.keys(COVERAGE_SCENARIOS),
+    ...Object.keys(RESIDUE_SCENARIOS)].sort();
   assert.deepEqual(covered, [...delivered].sort(),
     'a delivered code with no scenario here is a failure mode nobody has seen occur, '
     + 'and a scenario for an undelivered code means the spec is stale');
 });
+
+for (const code of delivered.filter(c => c in RESIDUE_SCENARIOS)) {
+  test(`${code} is produced by a real residue scan`, async () => {
+    const ctx = await build({ records: 2, checkpoint: true });
+    ctx.store.close();
+    const scenario = await RESIDUE_SCENARIOS[code](ctx);
+    const store = new Store(ctx.root, 'host-1');
+    // The unclassified-field case is about the SCHEMA rather than a store, so
+    // the scenario computes it directly; the others are read off the store.
+    const findings = scenario.unclassified
+      ? scenario.unclassified.map((/** @type {any} */ u) => ({
+        code: 'RESIDUE_UNCLASSIFIED_FIELD', verdict: 'fail', detail: String(u.field) }))
+      : scanResidue(store, { shredded: scenario.shredded }).findings;
+    store.close();
+    const codes = findings.map((/** @type {any} */ f) => f.code);
+    assert.ok(codes.includes(code),
+      `${code} was not emitted; got ${JSON.stringify(codes)}`);
+    const promised = SPEC.codes.find(c => c.code === code)?.verdict;
+    assert.equal(findings.find((/** @type {any} */ f) => f.code === code)?.verdict, promised,
+      `${code} was emitted with a verdict the specification does not promise`);
+  });
+}
 
 for (const code of delivered.filter(c => c in COVERAGE_SCENARIOS)) {
   test(`${code} is produced by a real coverage run`, async () => {
@@ -372,7 +429,7 @@ for (const code of delivered.filter(c => c in COVERAGE_SCENARIOS)) {
   });
 }
 
-for (const code of delivered.filter(c => !(c in COVERAGE_SCENARIOS))) {
+for (const code of delivered.filter(c => !(c in COVERAGE_SCENARIOS) && !(c in RESIDUE_SCENARIOS))) {
   test(`${code} is produced by a real verifier run`, async () => {
     const scenario = SCENARIOS[code];
     assert.ok(scenario, `no scenario for ${code}`);

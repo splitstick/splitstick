@@ -26,6 +26,15 @@ import { signNote } from './signer.mjs';
 import { extractRefs } from './content.mjs';
 import { captureAttestation, UNATTESTED_BUILD } from './capture.mjs';
 import { effectivePolicy, policyDigest, GENESIS_POLICY } from './policy.mjs';
+
+/**
+ * The only commitments whose byte LENGTH is retained — PRIV-05, DES-13.
+ *
+ * A payload's length is a documented, unmitigated leak that a verifier needs in
+ * order to detect a truncated content store. A label's length is neither needed
+ * nor read, and is more identifying per byte.
+ */
+const LENGTH_RETAINED = new Set(['args', 'result']);
 import { SCHEMA_VERSION, SUITE } from './record.mjs';
 
 /** @param {unknown} v @returns {v is Uint8Array} */
@@ -472,7 +481,8 @@ export class Collector {
    *
    * @param {Record<string, Uint8Array|undefined>} fields
    * @param {string} [indexField] the field to scan for counterparty references
-   * @returns {Record<string, { cid: string, bytes: number }>}
+   * @returns {Record<string, { cid: string, bytes?: number }>} `bytes` only where
+   *   PRIV-05 retains a length — see LENGTH_RETAINED
    */
   #commitAll(fields, indexField) {
     /** @type {string[]} */
@@ -490,9 +500,31 @@ export class Collector {
       payloads.push(name === indexField ? { bytes, refs: extractRefs(bytes) } : { bytes });
     }
     const commitments = this.store.content.putGroup(payloads);
-    /** @type {Record<string, { cid: string, bytes: number }>} */
+    /** @type {Record<string, { cid: string, bytes?: number }>} */
     const out = {};
-    names.forEach((name, i) => { out[name] = /** @type {{cid: string, bytes: number}} */ (commitments[i]); });
+    names.forEach((name, i) => {
+      const c = /** @type {{cid: string, bytes: number}} */ (commitments[i]);
+      // PRIV-05 — the LENGTH of a label is not retained, only of a payload.
+      //
+      // `args.bytes` and `result.bytes` survive erasure as a documented,
+      // unmitigated leak, and DES-13 states the trade: a verifier needs them to
+      // detect a truncated content store. Nothing needs the length of an agent
+      // label or of an approval reviewer, and nothing reads it — and a label's
+      // length is far more identifying per byte than a payload's, because an
+      // address or a name is short and its length narrows a guess at a person.
+      //
+      // The residue scan found this: `agent.bytes` was retained and DES-13's
+      // table, which an external review established as the whole inventory
+      // rather than a sample, does not list it. Either the table was wrong or
+      // the field should not be there; it should not be there.
+      //
+      // Tightened at EMISSION only. validateRecord still accepts `bytes` on any
+      // commitment, because it is also the read path: refusing it there would
+      // turn every record already written into MALFORMED_RECORD, which the
+      // verifier reports as `fail` — a false tampering signal over evidence
+      // that was correct when written.
+      out[name] = LENGTH_RETAINED.has(name) ? c : { cid: c.cid };
+    });
     return out;
   }
 
