@@ -344,7 +344,7 @@
       "source": "Disclosure — splitstick disclose",
       "verify": "Recipient verifies one event without the rest",
       "status": "done",
-      "evidence": "disclose.mjs buildDisclosure/verifyDisclosure + the disclose CLI; a recipient verifies one event holding the pack and nothing else — no store, no network, no credential"
+      "evidence": "disclose.mjs buildDisclosure/verifyDisclosure + the disclose CLI; a recipient verifies one event holding the pack and nothing else — no store, no network, no credential The pack carries the CONTENT SALT for the disclosed record's payloads, without which a recipient cannot check the plaintext against its commitment at all: substituting the payload entirely once produced a verdict of ok with no findings, because the content check compared an unsalted digest to the salted cid. A shredded record carries its committed leaf so inclusion stays provable, with the limit stated precisely — the leaf's presence in the tree is provable, its binding to the record shown is not. The manifest must name the record the pack holds."
     },
     {
       "id": "FR-33",

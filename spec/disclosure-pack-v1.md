@@ -46,11 +46,12 @@ exists.
     "tree_size": 3,                       // the size the checkpoint commits to
     "path": ["<base64 node digest>", …],  // RFC 6962 audit path
     "root": "<64 hex chars>",             // the root the path must reach
-    "checkpoint_seq": 1                   // which checkpoint, for the operator
+    "checkpoint_seq": 1,                  // which checkpoint, for the operator
+    "leaf": "<64 hex chars>"              // ONLY when the salt is gone — below
   },
   "checkpoint": { /* a DES-20 envelope: the note plus EVERY countersignature */ },
   "content": {
-    "args":   { "cid": "sha256:…", "present": true, "base64": "…" },
+    "args":   { "cid": "sha256:…", "present": true, "base64": "…", "salt": "<32 hex chars>" },
     "result": { "cid": "sha256:…", "present": false }
   }
 }
@@ -63,9 +64,19 @@ leaf salt as 32 hex characters. **A second entry would make a second record's
 content recomputable** by anybody who can guess at it, and you cannot
 un-disclose: this is checked when the pack is built, not when it is read.
 
-The object is **empty** when the record has been crypto-shredded. Its inclusion
-is still provable, and its content is not reproducible — erasure must not become
-a way to make history unprovable.
+The object is **empty** when the record has been crypto-shredded, and
+`proof.leaf` is then present instead: the committed leaf digest, as 64 hex
+characters. That is what keeps a shredded record's inclusion **provable** —
+erasure must not become a way to make history unprovable — and it is precise
+about the limit. A recipient can prove that leaf is in the countersigned tree;
+they cannot prove the leaf is the record shown, because that binding needs the
+salt and the salt was destroyed with the content. A verifier must report both
+halves, because an inconclusive that did not distinguish them would read as the
+proof having failed.
+
+`proof.leaf` is present **only** when the salt is absent. A pack carrying both
+would let a recipient check the cheap one and skip recomputing the leaf from
+the record, which is the step that binds the two together.
 
 ### `proof` — RFC 6962, over the tree the checkpoint committed to
 
@@ -125,12 +136,46 @@ and it is what makes a separate acceptance policy meaningful: a reader who
 accepts only one authority verifies the same pack, ignoring the rest, without
 asking the operator to regenerate anything.
 
-### `content` — this record's payloads only
+### `content` — this record's payloads, with the salts that make them checkable
 
 Keyed by where the commitment sits on the record: `agent`, `args`, `result`,
-`approval.reviewer`, `approval.request`. `present: false` means the payload was
-erased; the commitment is still carried, so the recipient can tell *erased* from
-*not included*.
+`approval.reviewer`, `approval.request`.
+
+| Field | |
+|---|---|
+| `cid` | the commitment the record holds, `sha256:` and 64 hex characters |
+| `present` | whether the bytes are carried |
+| `base64` | the plaintext, when `present` |
+| `salt` | the **content salt**, 32 hex characters, when `present` |
+
+**`salt` is not optional when `present` is true, and a pack without it proves
+nothing about the payload.** A content cid is
+`SHA-256(0x05 ‖ salt ‖ plaintext)`, so a recipient handed the plaintext and the
+cid and no salt cannot check one against the other. The first version of this
+format omitted it: substituting the payload entirely produced a verdict of `ok`
+with no findings, because the implementation's "content check" compared an
+unsalted digest against the salted cid — a comparison that can never be true.
+
+Revealing this salt costs nothing. Its job is to stop a guess at an
+**undisclosed** plaintext being confirmed, and this plaintext is being
+disclosed. A **sibling's** content salt must never appear: that would let a
+recipient confirm a guess at a payload nobody disclosed, which is the whole of
+PRIV-06.
+
+`present: false` means the payload was erased; the commitment is still carried,
+so the recipient can tell *erased* from *not included*. `present: false`
+**with** `base64` is a contradiction and must be refused: accepting it means the
+bytes are silently ignored, so a pack could hand over a payload nothing would
+ever check.
+
+### The manifest must agree with the record
+
+`manifest.disclosed[0]`, `manifest.covers.from_seq`, `manifest.covers.to_seq`
+and `record.record_seq` are all the same number for a single-event pack. A
+verifier checks this **before** anything else, or it ends up reasoning about two
+records at once: the salts map is keyed by `record_seq`, so a manifest naming a
+record the pack does not hold simply finds no salt, and a report that trusted
+the manifest would tell the reader they are looking at a record they are not.
 
 ## How to verify, in order
 
@@ -145,13 +190,19 @@ erased; the commitment is still carried, so the recipient can tell *erased* from
    never a failure either.
 5. **Check the operator signature** over the note against the identity you
    pinned. Pinning nothing is reported as pinning nothing, not as a pass.
-6. **Recompute the leaf** from `record` and its salt. Do not take the pack's
-   word for which leaf this is.
-7. **Verify the audit path** reaches `proof.root`, then check that
+6. **Check the manifest against the record.** `disclosed[0]`, both `covers`
+   bounds and `record.record_seq` are one number.
+7. **Recompute the leaf** from `record` and its salt. Do not take the pack's
+   word for which leaf this is. Where the salt is absent, use `proof.leaf` and
+   report that the leaf-to-record binding is unchecked.
+8. **Recompute each present payload's commitment** as
+   `SHA-256(0x05 ‖ salt ‖ plaintext)` and compare it to `cid`. Refuse a payload
+   flagged absent that carries bytes anyway.
+9. **Verify the audit path** reaches `proof.root`, then check that
    `proof.root` is the root **the checkpoint commits to**. Stopping after the
    first half would let an operator prove inclusion in a tree nobody
    countersigned.
-8. **Report absent content as absent**, not as a failure. Erasure is lawful.
+10. **Report absent content as absent**, not as a failure. Erasure is lawful.
 
 ## Verdicts
 

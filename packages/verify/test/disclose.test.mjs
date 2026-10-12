@@ -295,6 +295,12 @@ test('a SHREDDED record is still disclosable: its inclusion is provable, its con
   assert.equal(p.content.result.present, false);
   assert.ok(p.content.args.cid, 'the commitment is still carried');
 
+  // The committed leaf is carried, so inclusion stays PROVABLE. This test
+  // asserted only that LEAF_INCONCLUSIVE appeared, which it did — while the
+  // pack carried no leaf at all and the proof was never checked. It encoded
+  // half the requirement and passed.
+  assert.match(p.proof.leaf, /^[0-9a-f]{64}$/, 'the committed leaf digest is carried');
+
   const r = await verifyDisclosure(p, { vkey, policy });
   // Inconclusive, never fail: erasure is lawful, and reporting it as tampering
   // would make compliance look like an attack.
@@ -302,6 +308,19 @@ test('a SHREDDED record is still disclosable: its inclusion is provable, its con
   assert.ok(!r.findings.some(f => f.verdict === 'fail'), JSON.stringify(r.findings));
   assert.ok(r.findings.some(f => f.code === 'CONTENT_ABSENT'));
   assert.ok(r.findings.some(f => f.code === 'LEAF_INCONCLUSIVE'));
+  // And the path DID verify: no TREE_MISMATCH. The precise limit is that the
+  // leaf cannot be bound to the record shown, not that inclusion failed.
+  assert.ok(!r.findings.some(f => f.code === 'TREE_MISMATCH'),
+    'inclusion of the committed leaf is still provable after erasure');
+  const limit = r.findings.find(f => f.code === 'LEAF_INCONCLUSIVE');
+  assert.match(String(limit?.detail), /still\s+provable/);
+  assert.match(String(limit?.detail), /binding needs the salt/);
+
+  // A forged leaf is still caught: carrying the leaf is not carrying a licence.
+  const forged = await verifyDisclosure(
+    { ...p, proof: { ...p.proof, leaf: 'ab'.repeat(32) } }, { vkey, policy });
+  assert.equal(forged.verdict, 'fail');
+  assert.ok(forged.findings.some(f => f.code === 'TREE_MISMATCH'));
 
   // And an unshredded sibling is still fully disclosable.
   const other = await verifyDisclosure(pack(root, 1), { vkey, policy });
@@ -413,4 +432,123 @@ test('a tampered record in the pack fails the inclusion proof', async () => {
   const r = await verifyDisclosure(tampered, { vkey, policy });
   assert.equal(r.verdict, 'fail');
   assert.ok(r.findings.some(f => f.code === 'TREE_MISMATCH'));
+});
+
+// ── The independent review of M5. Four findings, each reproduced first ──────
+
+test('M5 review 1: a substituted payload is CAUGHT, not accepted', async () => {
+  // The worst finding in M5. The pack carried the payload bytes and the cid
+  // but not the CONTENT SALT, and a content cid is
+  // SHA-256(0x05 ‖ salt ‖ plaintext) — so the commitment could not be
+  // recomputed and the payload was taken on the operator's word, on the one
+  // surface built for an adversarial operator.
+  //
+  // Worse, verifyDisclosure had a block that LOOKED like a content check: it
+  // computed an unsalted digest and compared it to the salted cid, which can
+  // never be equal. Substituting `{"amount":200}` with `{"amount":999999999}`
+  // produced a verdict of ok with no findings at all.
+  const { root, vkey, policy } = await rig();
+  const p = pack(root, 2);
+
+  assert.match(p.content.args.salt, /^[0-9a-f]{32}$/, 'the content salt is carried');
+  const clean = await verifyDisclosure(p, { vkey, policy });
+  assert.equal(clean.verdict, 'ok', JSON.stringify(clean.findings));
+
+  const swapped = {
+    ...p,
+    content: {
+      ...p.content,
+      args: {
+        ...p.content.args,
+        base64: Buffer.from('{"amount":999999999}').toString('base64'),
+      },
+    },
+  };
+  const r = await verifyDisclosure(swapped, { vkey, policy });
+  assert.equal(r.verdict, 'fail');
+  assert.ok(r.findings.some(f => f.code === 'CONTENT_MISMATCH' && f.verdict === 'fail'),
+    `expected CONTENT_MISMATCH, got ${JSON.stringify(r.findings.map(f => f.code))}`);
+
+  // A substituted SALT is caught too — otherwise an operator could choose a
+  // salt that makes any bytes hash to the cid, which is not possible, but a
+  // verifier that trusted the salt without recomputing would not know that.
+  const resalted = {
+    ...p, content: { ...p.content, args: { ...p.content.args, salt: 'ab'.repeat(16) } },
+  };
+  const r2 = await verifyDisclosure(resalted, { vkey, policy });
+  assert.equal(r2.verdict, 'fail');
+  assert.ok(r2.findings.some(f => f.code === 'CONTENT_MISMATCH'));
+
+  // And a pack that simply omits the salt cannot claim the payload verified.
+  const { salt, ...noSalt } = p.content.args;
+  const r3 = await verifyDisclosure({ ...p, content: { ...p.content, args: noSalt } },
+    { vkey, policy });
+  assert.notEqual(r3.verdict, 'ok');
+  assert.ok(r3.findings.some(f => /cannot be verified against its commitment/.test(f.detail)));
+});
+
+test('M5 review 2: only the disclosed record\'s content salts are carried', async () => {
+  // Adding the salt closed one hole and could have opened a worse one. A
+  // sibling's content salt in the pack would let a recipient confirm a guess
+  // at a payload that was never disclosed, which is the whole of PRIV-06.
+  const { root } = await rig({ records: 5 });
+  const s = new Store(root, 'host-1');
+  const chain = s.readChain();
+  const siblingSalts = chain
+    .filter(e => Number(e.record.record_seq) !== 2)
+    .flatMap(e => ['args', 'result']
+      .map(f => /** @type {any} */ (e.record)[f]?.cid)
+      .filter(Boolean)
+      .map(cid => s.content.contentSalt(cid).toString('hex')));
+  s.close();
+  assert.ok(siblingSalts.length >= 8, 'there are siblings to leak');
+
+  const blob = JSON.stringify(pack(root, 2));
+  for (const hex of siblingSalts) {
+    assert.ok(!blob.includes(hex), 'a sibling content salt is in the pack');
+  }
+});
+
+test('M5 review 3: a manifest naming a record the pack does not hold is refused', async () => {
+  // The salts map is keyed by record_seq, so a manifest naming another record
+  // simply found no salt — and the verifier reported `disclosed: [3]` with a
+  // verdict of inconclusive while the pack held record 1. A reader is told, in
+  // the report's own words, that they are looking at a record they are not.
+  const { root, vkey, policy } = await rig();
+  const p = pack(root, 1);
+
+  const lying = {
+    ...p,
+    manifest: { ...p.manifest, disclosed: [3], covers: { from_seq: 3, to_seq: 3, complete: false } },
+  };
+  const r = await verifyDisclosure(lying, { vkey, policy });
+  assert.equal(r.verdict, 'fail');
+  assert.ok(r.findings.some(f => /the record carried is 1/.test(f.detail)),
+    JSON.stringify(r.findings.map(f => f.detail)));
+
+  // And `covers` must name the same record as `disclosed`.
+  const inconsistent = {
+    ...p, manifest: { ...p.manifest, covers: { from_seq: 1, to_seq: 9, complete: false } },
+  };
+  const r2 = await verifyDisclosure(inconsistent, { vkey, policy });
+  assert.equal(r2.verdict, 'fail');
+  assert.ok(r2.findings.some(f => /states the same record in both/.test(f.detail)));
+});
+
+test('M5 review 4: content flagged absent while carrying bytes is a contradiction', async () => {
+  // Accepting it meant the bytes were silently ignored, so a pack could hand
+  // over a payload nothing would ever check — the reverse of finding 1 and
+  // reachable even after it was fixed.
+  const { root, vkey, policy } = await rig();
+  const p = pack(root, 1);
+  const sneaky = {
+    ...p,
+    content: {
+      ...p.content,
+      args: { cid: p.content.args.cid, present: false, base64: p.content.args.base64 },
+    },
+  };
+  const r = await verifyDisclosure(sneaky, { vkey, policy });
+  assert.equal(r.verdict, 'fail');
+  assert.ok(r.findings.some(f => /cannot both be true/.test(f.detail)));
 });

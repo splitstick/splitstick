@@ -134,3 +134,96 @@ deleted something.
    merges in total, not *n log n*; the first bound overestimated by a factor of
    twelve and the assertion failed against a function that was five times
    faster.
+
+## Defects found by the independent review of M5
+
+Six findings, each reproduced by a probe before being fixed and each regression
+run against the pre-fix code to confirm it fails. All 822 tests passed before
+the review, so none of the six was covered.
+
+Five are in the disclosure pack — the one surface in M5 built for an
+adversarial operator, and the one the failure-mode inventory and the risk
+assessment both named as the highest-risk thing in the milestone. Naming it did
+not stop me putting five defects in it.
+
+8. **A substituted payload was accepted, with a verdict of `ok` and no
+   findings.** The worst finding in M5. The pack carried the payload bytes and
+   the commitment but **not the content salt** — a content cid is
+   `SHA-256(0x05 ‖ salt ‖ plaintext)`, so the commitment could not be
+   recomputed and the payload was taken on the operator's word. Replacing
+   `{"amount":200}` with `{"amount":999999999}` changed nothing about the
+   report.
+
+   And `verifyDisclosure` had a block that *looked* like a content check: it
+   computed an **unsalted** digest and compared it to the salted cid, which can
+   never be equal. A check that cannot fire is worse than no check, because the
+   report reads as though the payload had been verified. That is the fourth
+   time in this project that a check has been written against a value it could
+   never match.
+
+   The pack now carries the content salt for the disclosed record's payloads
+   only, and `ContentStore.contentSalt` is the one way to read it. Revealing it
+   costs nothing — a salt stops a guess at an *undisclosed* plaintext being
+   confirmed, and this plaintext is being disclosed — while a **sibling's**
+   would be the whole of PRIV-06's failure, so there is a test asserting none
+   appears.
+
+9. **A shredded record's inclusion was not provable, contradicting the
+   inventory row that required it.** Row 7 says the proof must still verify.
+   The pack omitted the committed leaf, so the verifier had nothing to check
+   the path against and emitted `LEAF_INCONCLUSIVE` twice while verifying
+   nothing. The test asserted that `LEAF_INCONCLUSIVE` appeared — which it did
+   — and so encoded half the requirement and passed.
+
+   The committed leaf digest is now carried when the salt is gone. It is
+   permanent under PRIV-05 and already in the chain, so it reveals nothing
+   erasure removed. The limit is stated precisely, because it is narrower than
+   "inclusion cannot be proved" and wider than "everything checks out": the
+   recipient can prove that leaf is in the countersigned tree, and cannot prove
+   the leaf is the record shown, because that binding needs the salt.
+
+10. **The manifest could name a record the pack does not hold.** The salts map
+    is keyed by `record_seq`, so a manifest claiming record 3 over a pack
+    holding record 1 simply found no salt — and the verifier reported
+    `disclosed: [3]` with a verdict of `inconclusive`. A reader is told, in the
+    report's own words, that they are looking at a record they are not.
+    `disclosed[0]`, both `covers` bounds and `record.record_seq` must now be one
+    number, checked before anything else is read.
+
+11. **Content flagged absent while carrying bytes was accepted**, and the bytes
+    silently ignored — so a pack could hand over a payload nothing would ever
+    check. Refused as the contradiction it is.
+
+12. **The conformance test did not catch the format gaining two fields.** It
+    checked the top level and `proof`'s keys against a list written in the
+    test, so `content[].salt` and `proof.leaf` — two fields that change what a
+    recipient can verify — crossed the published boundary unnoticed. That is
+    this test's own opening sentence failing: *a published format nothing checks
+    is a format that drifts.*
+
+    It now walks the pack and requires every key at every level to appear in
+    the document, which is the only version that cannot rot. Three containers
+    are excluded and the reason is stated: `record` and `checkpoint` are
+    specified in DES-01 and DES-20, and `salts` is keyed by record numbers
+    rather than by field names. Proved by adding an undocumented field and
+    watching it fail.
+
+13. **The residue scan silently skipped what it could not parse.** A chain line
+    carrying `subject_email` inside unreadable JSON was invisible to it and the
+    store was reported clean, because `readChainDetailed` returns only
+    parseable entries. The data is still on disk and PRIV-05's claim is an
+    *exact* residue. The scan cannot classify what it cannot parse, so it now
+    reports the limit instead — `MALFORMED_RECORD` as fail, a torn tail as
+    inconclusive — which is the same answer every other instrument here gives
+    when it cannot see something.
+
+**And one in the review's own fixes.** Teaching the spec-only verifier to check
+content put the manifest check after the leaf recomputation, so a lying manifest
+*threw* instead of being refused. The spec's own step order says manifest first,
+and the conformance test caught the disagreement — which is the second time that
+second implementation has earned its place.
+
+**The shape, again.** Findings 8, 10, 11 and 13 are all one thing: an instrument
+reporting a conclusion it had not established. A payload it never checked, a
+record it never held, bytes it ignored, lines it never read. M3b's review ended
+with the same sentence and so did M4's.

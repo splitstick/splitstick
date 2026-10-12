@@ -75,12 +75,45 @@ async function rig() {
 test('INT-03: the emitted pack has exactly the structure the spec documents', async () => {
   const { pack } = await rig();
 
-  // Top-level keys, named in the spec's structure block.
+  // EVERY key at EVERY level, derived from the pack rather than from a list
+  // written here.
+  //
+  // This check used to look at the top level and at `proof`'s keys only, so
+  // when the format gained `content[].salt` and `proof.leaf` — two fields that
+  // change what a recipient can verify — it passed without noticing. A
+  // published format nothing checks is a format that drifts, which is this
+  // file's own opening sentence, and it drifted.
+  //
+  // Walking the pack means a new field anywhere fails until the document
+  // mentions it, which is the only version of this that cannot rot.
+  //
+  // Three containers are not walked, and the distinction is between a key that
+  // is a FIELD NAME and a key that is DATA:
+  //
+  //   record, checkpoint — the ActionRecord and the DES-20 envelope, specified
+  //                        in DES-01 and DES-20 rather than here.
+  //   salts              — keyed by record_seq, so its keys are record numbers.
+  //                        Its shape is documented in prose above, and the
+  //                        test below asserts there is exactly one of them.
+  //
+  // `content`'s keys ARE field names — args, result, approval.reviewer — so it
+  // is walked, which is how the missing `salt` would have been caught.
+  const DATA_KEYED = new Set(['record', 'checkpoint', 'salts']);
+  /** @param {any} v @param {string} path */
+  const walk = (v, path) => {
+    if (v === null || typeof v !== 'object' || Array.isArray(v)) return;
+    for (const k of Object.keys(v)) {
+      assert.ok(SPEC.includes(`"${k}"`) || SPEC.includes(`\`${k}\``),
+        `${path}${k} is in the pack and nowhere in spec/disclosure-pack-v1.md`);
+      walk(v[k], `${path}${k}.`);
+    }
+  };
+  for (const [k, v] of Object.entries(pack)) {
+    assert.ok(SPEC.includes(`"${k}"`), `the spec does not document the top-level key ${k}`);
+    if (!DATA_KEYED.has(k)) walk(v, `${k}.`);
+  }
   assert.deepEqual(Object.keys(pack).sort(),
     ['checkpoint', 'content', 'manifest', 'proof', 'record', 'salts']);
-  for (const k of Object.keys(pack)) {
-    assert.ok(SPEC.includes(`"${k}"`), `the spec does not document the top-level key ${k}`);
-  }
 
   assert.deepEqual(Object.keys(pack.manifest).sort(),
     ['collector', 'covers', 'disclosed', 'note', 'origin', 'suite', 'version']);
@@ -90,6 +123,9 @@ test('INT-03: the emitted pack has exactly the structure the spec documents', as
   assert.deepEqual(pack.manifest.covers, { from_seq: 3, to_seq: 3, complete: false });
   assert.deepEqual(pack.manifest.disclosed, [3]);
 
+  // `leaf` is absent here BY DESIGN: this fixture's record is not shredded, and
+  // a pack carrying both a salt and a leaf would let a recipient check the
+  // cheap one and skip the recomputation that binds the leaf to the record.
   assert.deepEqual(Object.keys(pack.proof).sort(),
     ['checkpoint_seq', 'index', 'path', 'root', 'tree_size']);
   assert.equal(pack.proof.index, 2, '0-based leaf index, as the spec says');
@@ -108,12 +144,16 @@ test('INT-03: the emitted pack has exactly the structure the spec documents', as
     ['countersignatures', 'note', 'note_digest']);
   assert.equal(pack.checkpoint.countersignatures.length, 1);
 
-  for (const [, c] of Object.entries(pack.content)) {
+  for (const [where, c] of Object.entries(pack.content)) {
     const held = /** @type {any} */ (c);
+    assert.deepEqual(Object.keys(held).sort(), ['base64', 'cid', 'present', 'salt'],
+      `${where} must carry exactly what the spec's table lists`);
     assert.match(held.cid, /^sha256:[0-9a-f]{64}$/);
-    assert.equal(typeof held.present, 'boolean');
-    if (held.present) assert.equal(typeof held.base64, 'string');
-    else assert.equal(held.base64, undefined);
+    assert.equal(held.present, true);
+    assert.equal(typeof held.base64, 'string');
+    // The content salt, without which the payload cannot be checked against
+    // its commitment at all.
+    assert.match(held.salt, /^[0-9a-f]{32}$/, `${where} carries no content salt`);
   }
 });
 
@@ -200,13 +240,26 @@ async function independentVerify(pack, o) {
   }
   if (!operatorOk) return { ok: false, why: 'operator signature does not verify' };
 
-  // Step 6 — recompute the leaf. DES-03: leaf_digest over the salt and the
+  // Step 6 — the manifest agrees with the record it carries. BEFORE the leaf,
+  // as the spec's step order says: the salts map is keyed by record_seq, so a
+  // manifest naming another record finds no salt and the leaf recomputation
+  // throws instead of refusing. This verifier had the check at the end and did
+  // exactly that, which the conformance test caught.
+  if (Number(pack.record.record_seq) !== Number(pack.manifest.disclosed[0])) {
+    return { ok: false, why: 'the manifest names a record the pack does not hold' };
+  }
+
+  // Step 7 — recompute the leaf. DES-03: leaf_digest over the salt and the
   // canonical record; the tree leaf is SHA-256(0x00 ‖ leaf_digest).
-  const salt = Buffer.from(String(pack.salts[String(pack.manifest.disclosed[0])]), 'hex');
+  const saltHex = pack.salts[String(pack.manifest.disclosed[0])];
+  if (typeof saltHex !== 'string' || !/^[0-9a-f]{32}$/.test(saltHex)) {
+    return { ok: false, why: 'no usable leaf salt for the disclosed record' };
+  }
+  const salt = Buffer.from(saltHex, 'hex');
   const digest = leafDigest(salt, pack.record);
   let computed = createHash('sha256').update(Buffer.concat([Buffer.from([0x00]), digest])).digest();
 
-  // Step 7 — RFC 6962 §2.1.1, written out rather than called.
+  // Step 9 — RFC 6962 §2.1.1, written out rather than called.
   let fn = pack.proof.index;
   let sn = pack.proof.tree_size - 1;
   for (const p of pack.proof.path.map((/** @type {string} */ x) => Buffer.from(x, 'base64'))) {
@@ -229,6 +282,24 @@ async function independentVerify(pack, o) {
   if (!computed.equals(root)) return { ok: false, why: 'the root is not the checkpoint\'s' };
   if (size !== pack.proof.tree_size) return { ok: false, why: 'tree size disagrees with the note' };
   if (origin !== pack.manifest.origin) return { ok: false, why: 'origin disagrees' };
+
+  // Step 8 — each present payload against its commitment, as
+  // SHA-256(0x05 ‖ salt ‖ plaintext). Written out here rather than calling
+  // contentCid, so the spec's formula is what is being checked.
+  for (const [where, c] of Object.entries(pack.content ?? {})) {
+    const held = /** @type {any} */ (c);
+    if (held.present !== true) {
+      if (held.base64 !== undefined) return { ok: false, why: `${where}: absent with bytes` };
+      continue;
+    }
+    if (typeof held.salt !== 'string') return { ok: false, why: `${where}: no content salt` };
+    const recomputed = `sha256:${createHash('sha256')
+      .update(Buffer.from([0x05]))
+      .update(Buffer.from(held.salt, 'hex'))
+      .update(Buffer.from(held.base64, 'base64'))
+      .digest('hex')}`;
+    if (recomputed !== held.cid) return { ok: false, why: `${where}: bytes do not match the cid` };
+  }
   return { ok: true, why: 'verified from the spec alone' };
 }
 
@@ -246,6 +317,27 @@ test('INT-03: the independent verifier rejects what the spec says it must', asyn
 
   const broken = [
     ['unsupported version', { ...pack, manifest: { ...pack.manifest, version: 2 } }],
+    ['substituted payload', {
+      ...pack,
+      content: {
+        ...pack.content,
+        args: {
+          ...pack.content.args,
+          base64: Buffer.from('{"amount":999999999}').toString('base64'),
+        },
+      },
+    }],
+    ['missing content salt', {
+      ...pack,
+      content: { ...pack.content, args: { ...pack.content.args, salt: undefined } },
+    }],
+    ['absent with bytes', {
+      ...pack,
+      content: { ...pack.content, args: { ...pack.content.args, present: false } },
+    }],
+    ['manifest names another record', {
+      ...pack, manifest: { ...pack.manifest, disclosed: [1] },
+    }],
     ['no countersignature', {
       ...pack, checkpoint: { ...pack.checkpoint, countersignatures: [] },
     }],
@@ -281,6 +373,16 @@ test('INT-03: the two implementations agree, pack for pack', async () => {
     (/** @type {any} */ p) => ({ ...p, proof: { ...p.proof, root: 'ff'.repeat(32) } }),
     (/** @type {any} */ p) => ({ ...p, salts: { 3: 'b'.repeat(32) } }),
     (/** @type {any} */ p) => ({ ...p, manifest: { ...p.manifest, version: 99 } }),
+    // The review's own findings, checked against BOTH implementations: a
+    // substituted payload and a lying manifest must be refused by each.
+    (/** @type {any} */ p) => ({
+      ...p,
+      content: {
+        ...p.content,
+        args: { ...p.content.args, base64: Buffer.from('tampered').toString('base64') },
+      },
+    }),
+    (/** @type {any} */ p) => ({ ...p, manifest: { ...p.manifest, disclosed: [1] } }),
   ]) {
     const p = mutate(pack);
     const a = await verifyDisclosure(p, { vkey, policy });

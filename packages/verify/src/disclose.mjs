@@ -31,7 +31,7 @@
  * twice, in M3b's anchoring command and again in M4's coverage report.
  */
 
-import { createHash } from 'node:crypto';
+import { contentCid } from '@splitstick/core/content';
 import { inclusionProof, verifyInclusion, treeRoot, leafHash } from '@splitstick/core/merkle';
 import { parseEnvelope } from '@splitstick/core/envelope';
 import { parseNote, parseCheckpointText, parseVkey } from '@splitstick/core/note';
@@ -115,6 +115,8 @@ export function buildDisclosure(store, o) {
   }
   const path = inclusionProof(leaves, index);
   const root = treeRoot(leaves);
+  /** @type {string|null} */
+  let shreddedLeaf = null;
 
   // ── the leaf must actually be this record's ───────────────────────────────
   //
@@ -128,6 +130,13 @@ export function buildDisclosure(store, o) {
     if (!verifyInclusion(entry.leaf, index, leaves.length, path, root)) {
       throw new DiscloseError(`record ${seq}'s committed leaf is not in the tree it should be in`);
     }
+    // The committed leaf digest, so a SHREDDED record's inclusion stays
+    // provable. Without it the recipient has no leaf to verify the path
+    // against and the proof establishes nothing — which is the opposite of
+    // what row 7 of the M5 inventory says must happen, and what the first
+    // version of this did. The leaf digest is permanent under PRIV-05 and is
+    // already in the chain, so carrying it reveals nothing erasure removed.
+    shreddedLeaf = Buffer.from(entry.leaf).toString('hex');
   } else {
     // leafDigest(salt, record) — the salt is FIRST. Reversed, it computes a
     // different digest that would never match, and the pack would be refused
@@ -179,6 +188,10 @@ export function buildDisclosure(store, o) {
       path: path.map(p => Buffer.from(p).toString('base64')),
       root: Buffer.from(root).toString('hex'),
       checkpoint_seq: witnessed.seq,
+      // Present only when the leaf salt is gone, and it is then the ONLY way
+      // to check the path. A pack carrying both would let a recipient check
+      // the easy one and skip the recomputation.
+      ...(shreddedLeaf === null ? {} : { leaf: shreddedLeaf }),
     },
     // Every countersignature collected, never only a preferred one — FR-31.
     // Filtering would force the recipient to trust whoever we chose, which is
@@ -212,16 +225,39 @@ function originOf(blob) {
  * @param {Record<string, any>} record
  */
 function collectContent(store, record) {
-  /** @type {Record<string, { cid: string, present: boolean, base64?: string }>} */
+  /** @type {Record<string, { cid: string, present: boolean, base64?: string, salt?: string }>} */
   const out = {};
   /** @param {string} where @param {any} c */
   const one = (where, c) => {
     if (!c?.cid) return;
     let bytes = null;
-    try { bytes = store.content.get(c.cid); } catch { bytes = null; }
-    out[where] = bytes === null
+    /** @type {Buffer|null} */
+    let salt = null;
+    try {
+      bytes = store.content.get(c.cid);
+      // THE CONTENT SALT, without which the payload cannot be checked against
+      // its commitment at all. A content cid is SHA-256(0x05 ‖ salt ‖
+      // plaintext), so a recipient handed the plaintext and the cid and no salt
+      // can verify nothing about it — they take the operator's word for what
+      // the payload was, on the one surface built for an adversarial operator.
+      //
+      // The first version of this pack omitted it, and the "content check" in
+      // verifyDisclosure compared an UNSALTED digest against the salted cid: a
+      // comparison that can never be true, so substituting the payload
+      // entirely produced a verdict of ok with no findings.
+      //
+      // Revealing this salt costs nothing: its job is to stop a guess at an
+      // UNDISCLOSED plaintext being confirmed, and this plaintext is being
+      // disclosed. Only the disclosed record's salts are read.
+      salt = store.content.contentSalt(c.cid);
+    } catch { bytes = null; salt = null; }
+    out[where] = bytes === null || salt === null
       ? { cid: c.cid, present: false }
-      : { cid: c.cid, present: true, base64: Buffer.from(bytes).toString('base64') };
+      : {
+        cid: c.cid, present: true,
+        base64: Buffer.from(bytes).toString('base64'),
+        salt: salt.toString('hex'),
+      };
   };
   for (const f of ['agent', 'args', 'result']) one(f, record[f]);
   if (record.approval) {
@@ -268,6 +304,27 @@ export async function verifyDisclosure(pack, o = {}) {
     findings.push(finding('FORMAT_UNSUPPORTED', 'fail',
       'the pack names no disclosed record, or carries none'));
     return done(findings, witnesses, []);
+  }
+  // THE MANIFEST MUST AGREE WITH THE RECORD IT CARRIES.
+  //
+  // The salts map is keyed by record_seq, so a manifest naming a record the
+  // pack does not hold simply found no salt — and the verifier reported
+  // `disclosed: [3]` with a verdict of inconclusive while the pack held
+  // record 1. A reader is then told, in the report's own words, that they are
+  // looking at a record they are not. Checked before anything else is read, so
+  // nothing downstream is reasoning about two different records at once.
+  if (Number(/** @type {any} */ (record).record_seq) !== seq) {
+    findings.push(finding('FORMAT_UNSUPPORTED', 'fail',
+      `the manifest discloses record ${seq} and the record carried is `
+      + `${JSON.stringify(/** @type {any} */ (record).record_seq)}`));
+    return done(findings, witnesses, [seq]);
+  }
+  const covers = pack.manifest?.covers ?? {};
+  if (Number(covers.from_seq) !== seq || Number(covers.to_seq) !== seq) {
+    findings.push(finding('FORMAT_UNSUPPORTED', 'fail',
+      `the manifest covers ${JSON.stringify(covers.from_seq)}..${JSON.stringify(covers.to_seq)} `
+      + `and discloses ${seq}; a single-event pack states the same record in both`));
+    return done(findings, witnesses, [seq]);
   }
 
   // ── the checkpoint note, and FR-33's countersignature ─────────────────────
@@ -353,10 +410,21 @@ export async function verifyDisclosure(pack, o = {}) {
     // operator's word for which leaf this is.
     leaf = leafDigest(Buffer.from(salt, 'hex'), record);
   } else {
+    // The precise limit, which is narrower than "inclusion cannot be proved"
+    // and wider than "everything checks out". The pack carries the committed
+    // leaf, so the recipient CAN prove that leaf is in the countersigned tree.
+    // What they cannot do is bind that leaf to the record they are looking at,
+    // because binding needs the salt and the salt was destroyed with the
+    // content. Both halves have to be said: an inconclusive that did not
+    // distinguish them would read as the proof having failed.
     findings.push(finding('LEAF_INCONCLUSIVE', 'inconclusive',
       'this pack carries no salt for the disclosed record, which is what a shredded record looks '
-      + 'like: its inclusion can still be proved, and its content cannot be reproduced'));
-    leaf = typeof proof.leaf === 'string' ? Buffer.from(proof.leaf, 'hex') : null;
+      + 'like. The committed leaf is carried, so its presence in the countersigned tree is still '
+      + 'provable; what cannot be checked is that this leaf is the record shown, because that '
+      + 'binding needs the salt and the salt was destroyed with the content'));
+    leaf = typeof proof.leaf === 'string' && /^[0-9a-f]{64}$/.test(proof.leaf)
+      ? Buffer.from(proof.leaf, 'hex')
+      : null;
   }
 
   if (leaf === null) {
@@ -375,22 +443,48 @@ export async function verifyDisclosure(pack, o = {}) {
       'the proof reaches a root the countersigned checkpoint does not commit to'));
   }
 
-  // ── the record's own payloads ─────────────────────────────────────────────
+  // ── the record's own payloads, CHECKED against their commitments ─────────
+  //
+  // A content cid is SHA-256(0x05 ‖ salt ‖ plaintext) — CONTENT_DOMAIN. The
+  // first version of this block computed an UNSALTED digest and compared it to
+  // the salted cid, a comparison that can never be true, so substituting the
+  // payload entirely produced a verdict of ok with no findings. A check that
+  // cannot fire is worse than no check, because the report reads as though the
+  // payload had been verified.
   for (const [where, c] of Object.entries(pack.content ?? {})) {
     const held = /** @type {any} */ (c);
-    if (!held.present) {
+    if (typeof held?.cid !== 'string') {
+      findings.push(finding('FORMAT_UNSUPPORTED', 'fail',
+        `${where} carries no commitment to check anything against`));
+      continue;
+    }
+    if (held.present !== true) {
+      // Erased. The commitment is carried and the bytes are not, which is what
+      // a shredded payload looks like and is not a failure.
+      if (held.base64 !== undefined) {
+        // A contradiction: flagged absent and carrying bytes anyway. Accepting
+        // it meant the bytes were silently ignored, so a pack could hand over
+        // a payload nothing would ever check.
+        findings.push(finding('FORMAT_UNSUPPORTED', 'fail',
+          `${where} is flagged absent and carries bytes anyway; the two cannot both be true`));
+        continue;
+      }
       findings.push(finding('CONTENT_ABSENT', 'inconclusive',
         `${where} was erased: the pack carries its commitment and not its bytes`));
       continue;
     }
-    const digest = `sha256:${createHash('sha256').update(Buffer.from(held.base64, 'base64')).digest('hex')}`;
-    // The cid is a SALTED digest of the plaintext, so a bare digest will not
-    // match it; what is checkable here is that the bytes are the ones the pack
-    // claims, which the content store's own commitment covers. Reported as
-    // carried rather than asserted as verified.
-    if (digest === held.cid) {
+    if (typeof held.base64 !== 'string' || typeof held.salt !== 'string'
+      || !/^[0-9a-f]{32}$/.test(held.salt)) {
       findings.push(finding('CONTENT_ABSENT', 'inconclusive',
-        `${where} is carried as an unsalted digest, which is not the commitment the record holds`));
+        `${where} is flagged present and the pack carries no bytes and salt to check, so the `
+        + 'payload cannot be verified against its commitment'));
+      continue;
+    }
+    const recomputed = contentCid(Buffer.from(held.salt, 'hex'), Buffer.from(held.base64, 'base64'));
+    if (recomputed !== held.cid) {
+      findings.push(finding('CONTENT_MISMATCH', 'fail',
+        `${where}'s bytes do not match the commitment the record holds: the record commits to `
+        + `${held.cid} and these bytes salt to ${recomputed}`));
     }
   }
 

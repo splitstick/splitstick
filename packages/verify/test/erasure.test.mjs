@@ -326,3 +326,53 @@ test('FR-37: a sweep with no window is refused rather than treated as "delete no
     }
     s.close();
   });
+
+test('M5 review 6: a line the scan cannot read is reported, not skipped', async () => {
+  // readChainDetailed returns only PARSEABLE entries, so a chain line carrying
+  // a field like `subject_email` inside unreadable JSON was invisible to the
+  // scan and the store was reported clean. The data is still on disk, and
+  // PRIV-05's claim is an EXACT residue: a scan that silently skips what it
+  // cannot parse is claiming exactness about bytes it never looked at.
+  const { readFileSync, writeFileSync } = await import('node:fs');
+  const { root, store, c } = await rig();
+  await c.checkpoint();
+  store.close();
+
+  const path = join(root, 'chain', 'host-1.jsonl');
+  const ls = readFileSync(path, 'utf8').trim().split('\n');
+  const clean = new Store(root, 'host-1');
+  assert.deepEqual(scanResidue(clean, { shredded: [] }).findings, [], 'clean to begin with');
+  clean.close();
+
+  ls.splice(1, 0, '{"record":{"v":1,"kind":"tool_call","subject_email":"alice@example.com"}');
+  writeFileSync(path, `${ls.join('\n')}\n`);
+
+  const s = new Store(root, 'host-1');
+  const r = scanResidue(s, { shredded: [] });
+  s.close();
+  assert.ok(r.findings.some(f => f.code === 'MALFORMED_RECORD'),
+    `expected the unreadable line to be reported, got ${JSON.stringify(r.findings)}`);
+  assert.ok(r.findings.some(f => /does not cover these bytes/.test(f.detail)),
+    'and the scan says what it could not cover, rather than concluding');
+});
+
+test('M5 review 6: a torn tail limits the scan rather than failing it', async () => {
+  // A crash during an append is not tampering, and the complete records before
+  // it are still covered. The distinction matters: MALFORMED_RECORD is fail
+  // and a torn tail is inconclusive, which is the same split the verifier draws.
+  const { readFileSync, writeFileSync } = await import('node:fs');
+  const { root, store, c } = await rig();
+  await c.checkpoint();
+  store.close();
+  const path = join(root, 'chain', 'host-1.jsonl');
+  const text = readFileSync(path, 'utf8');
+  writeFileSync(path, `${text}{"record":{"v":1,"kind":"heart`);
+
+  const s = new Store(root, 'host-1');
+  const r = scanResidue(s, { shredded: [] });
+  s.close();
+  const torn = r.findings.find(f => f.code === 'TORN_WRITE');
+  assert.notEqual(torn, undefined, JSON.stringify(r.findings));
+  assert.equal(torn?.verdict, 'inconclusive', 'a crash is not tampering');
+  assert.ok(!r.findings.some(f => f.verdict === 'fail'));
+});

@@ -209,7 +209,32 @@ export function scanResidue(store, o) {
   // beside it, so those files never existed and every check passed vacuously.
   // A scan written against a document rather than against the code is a scan
   // that reports a clean residue for a store it has not looked at.
-  const { entries } = store.readChainDetailed();
+  const { entries, torn, malformed } = store.readChainDetailed();
+
+  // A LINE THE SCAN CANNOT READ IS RESIDUE THE SCAN CANNOT SPEAK TO.
+  //
+  // readChainDetailed returns only parseable entries, so a chain line carrying
+  // a field like `subject_email` inside unreadable JSON was invisible here and
+  // the scan reported the store clean. The data is still on disk; PRIV-05
+  // claims an EXACT residue, and a scan that silently skips what it cannot
+  // parse is claiming exactness about bytes it never looked at.
+  //
+  // It cannot classify what it cannot parse, so it does not pretend to. It
+  // reports the limit instead, in the shared vocabulary, which is the same
+  // answer every other instrument in this project gives when it cannot see
+  // something: say so rather than conclude.
+  for (const m of malformed) {
+    findings.push(finding('MALFORMED_RECORD', 'fail',
+      `chain line ${m.line} is not a readable record, so the residue scan cannot say what fields `
+      + `it carries: ${m.reason}. PRIV-05's claim is an exact residue and this scan does not `
+      + 'cover these bytes'));
+  }
+  if (torn) {
+    findings.push(finding('TORN_WRITE', 'inconclusive',
+      'the last line of the chain is incomplete, which is what a crash during an append leaves '
+      + 'behind. The residue scan cannot say what fields it carries; the complete records before '
+      + 'it are covered normally'));
+  }
 
   for (const e of entries) {
     const r = /** @type {Record<string, unknown>} */ (e.record ?? {});
