@@ -39,7 +39,7 @@ export const REPORTED_ONLY = 'every count here is of what the COLLECTOR REPORTED
   + 'numbers — it was never in them';
 
 /**
- * @param {ReturnType<typeof import('./coverage.mjs').coverageReport>} r
+ * @param {Awaited<ReturnType<typeof import('./coverage.mjs').coverageReport>>} r
  * @returns {string}
  */
 export function renderCoverage(r) {
@@ -108,7 +108,13 @@ export function renderCoverage(r) {
   L.push('');
   const a = r.anchoring;
   L.push(`anchoring       ${a.anchored} of ${a.in_window} record(s) in window fall under a `
-    + 'countersigned checkpoint');
+    + 'VERIFIED countersigned checkpoint');
+  if (a.countersigned_unverified > 0) {
+    L.push(`                ${a.countersigned_unverified} fall under a checkpoint carrying a `
+      + 'countersignature this reader did');
+    L.push('                NOT verify — no acceptance policy names the issuer, or the signature');
+    L.push('                did not check out. Presence is not proof');
+  }
   if (a.checkpointed_only > 0) {
     L.push(`                ${a.checkpointed_only} fall under a checkpoint NOBODY countersigned: the`);
     L.push('                operator signed a root committing to them, and nothing independent');

@@ -110,6 +110,19 @@ they can read a code:
 | `COVERAGE_UNKNOWN` | inconclusive | a `gap_unknown` is declared, the heartbeat resolution is not established by the records, or the window holds no record at all |
 | `UNDATED_RECORD` | inconclusive | a record carries no usable `ts`, so it cannot be placed in a window; excluded from the counts and reported rather than silently dropped |
 
+**Anchoring means VERIFIED anchoring, and the report lives in `@splitstick/verify` because of
+it.** Four categories, not three: a record is *anchored* when a covering checkpoint carries a proof
+the reader's acceptance policy accepts and that verifies; *countersigned_unverified* when a proof is
+present and nothing validated it; *checkpointed_only* when no proof is present; *unanchored* when no
+checkpoint covers it. The witness results come from `verifyStore`, never from the envelope's issuer
+list — counting issuers meant a countersignature from an unrelated key over different bytes produced
+a COMPLETE verdict, which is presence read as proof.
+
+**Every covering checkpoint is considered, not the earliest.** A proof is evidence about a record
+when the tree its checkpoint committed to *reaches* that record, so an unwitnessed checkpoint cannot
+mask a validly witnessed later one. Lateness is measured from the earliest *verified* receipt, since
+an unverified one is an unchecked party's unchecked claim about when.
+
 **Liveness is evidenced by ANY record, not by heartbeats alone.** The first implementation measured
 heartbeat-to-heartbeat and reported a two-minute outage over an interval in which three actions had
 been written — signed, chained records proving the collector was running. Overstating a stop on the

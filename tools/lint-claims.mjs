@@ -106,7 +106,7 @@ const ATTESTATION = /remote attestation/i;
 /** @type {{ file: string, missing: string }[]} */
 const disclosures = [];
 for (const rel of ['docs/threat-model.md', 'design/DES-10-coverage-model.md',
-  'packages/core/src/coverage-report.mjs']) {
+  'packages/verify/src/coverage-report.mjs']) {
   const text = readFileSync(join(ROOT, rel), 'utf8');
   if (!PATCHED.test(text)) disclosures.push({ file: rel, missing: 'that a patched collector is NOT detectable' });
   else if (!ATTESTATION.test(text)) disclosures.push({ file: rel, missing: 'that remote attestation is what would change it, and is not provided' });

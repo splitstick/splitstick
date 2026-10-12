@@ -10,7 +10,7 @@ import { generateDevSigner } from '@splitstick/core/signer-file';
 import { formatVkey, checkpointText, encodeNote, parseNote } from '@splitstick/core/note';
 import { signNote } from '@splitstick/core/signer';
 import { treeRoot } from '@splitstick/core/merkle';
-import { coverageReport } from '@splitstick/core/coverage';
+import { coverageReport } from '../src/coverage.mjs';
 import { verifyStore } from '../src/verify.mjs';
 
 /**
@@ -361,7 +361,7 @@ for (const code of delivered.filter(c => c in COVERAGE_SCENARIOS)) {
     ctx.store.close();
 
     const store = new Store(ctx.root, 'host-1');
-    const report = coverageReport(store, { ...window, collectors: store.collectors() });
+    const report = await coverageReport(store, { ...window, collectors: store.collectors() });
     store.close();
     const codes = report.findings.map(f => f.code);
     assert.ok(codes.includes(code),

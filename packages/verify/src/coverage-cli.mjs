@@ -8,11 +8,12 @@
  * the flag is `--key`.
  */
 
-import { Store } from './store.mjs';
+import { readFileSync } from 'node:fs';
+import { Store } from '@splitstick/core/store';
 import { coverageReport, CoverageError } from './coverage.mjs';
 import { renderCoverage } from './coverage-report.mjs';
 
-const USAGE = `splitstick coverage <store> --from <date> --to <date> [--collector <name>] [--json]
+const USAGE = `splitstick coverage <store> --from <date> --to <date> [--collector <name>] [--policy <file>] [--json]
 
   --from, --to     the window, as a date (2027-01-01) or an RFC 3339 instant.
                    A bare date means the whole day in UTC.
@@ -20,14 +21,17 @@ const USAGE = `splitstick coverage <store> --from <date> --to <date> [--collecto
                    several; without this the first is used and the others are
                    named in the output rather than passed over in silence.
   --json           the structured report instead of the rendered one.
+  --policy         your acceptance policy (DES-09): whose countersignature you
+                   accept. WITHOUT IT nothing can be verified, so anchoring is
+                   reported as present-but-unverified rather than established.
 `;
 
 /**
  * @param {string[]} argv
- * @returns {{ exit: number, out: string }}
+ * @returns {Promise<{ exit: number, out: string }>}
  */
-export function runCoverage(argv) {
-  const FLAGS = new Set(['from', 'to', 'collector', 'json']);
+export async function runCoverage(argv) {
+  const FLAGS = new Set(['from', 'to', 'collector', 'json', 'policy']);
   /** @type {Record<string, string|boolean>} */
   const flags = {};
   /** @type {string[]} */
@@ -56,7 +60,7 @@ export function runCoverage(argv) {
   if (root === undefined) return { exit: 2, out: `a store directory is required\n\n${USAGE}` };
 
   let store;
-  /** @type {import('./store.mjs').Store|undefined} */
+  /** @type {import('@splitstick/core/store').Store|undefined} */
   let probe;
   try {
     // Opened with a placeholder first only to ask which collectors exist. A
@@ -78,10 +82,11 @@ export function runCoverage(argv) {
       };
     }
     store = flags.collector === undefined ? new Store(root, collector) : probe;
-    const report = coverageReport(store, {
+    const report = await coverageReport(store, {
       from: String(flags.from ?? ''),
       to: String(flags.to ?? ''),
       collectors: available,
+      ...(flags.policy ? { policy: JSON.parse(readFileSync(String(flags.policy), 'utf8')) } : {}),
     });
     const out = flags.json ? `${JSON.stringify(report, null, 1)}\n` : renderCoverage(report);
     // Named `exit`, not `code`: in this project `code` is a DES-12 failure

@@ -193,3 +193,58 @@ generous lateness threshold) and twice too harsh (an invented outage, a doubled
 change). The remaining two are a comparison against the wrong thing and a
 resource never released. The pattern from M3b holds exactly: the defects are
 not in the mechanisms, they are in what gets claimed about them.
+
+## Defects found by the external review of PR #9
+
+Two findings, both reproduced before being fixed, and the reviewer's own
+summary of them is the right one: *opposite errors in the same attribution
+path — counting untrusted evidence as anchoring, and failing to count valid
+later evidence.*
+
+15. **Countersignature presence counted as anchoring.** The report read
+    `parseEnvelope(blob).issuers` — the proofs *present* on a checkpoint — and
+    called the records beneath them anchored. A countersignature from an
+    unrelated key, over entirely different bytes, therefore produced a
+    **COMPLETE verdict with no findings at all**.
+
+    This is the same defect as finding 15 of the previous milestone, where the
+    practice-statement command read issuer presence as proof. Same shape, a
+    different module, by the same author, after writing the risk assessment
+    that names it as shape 2 and says in terms: *prefer deriving the verdict
+    from the verifier over computing it locally — a second implementation of a
+    check is a second thing that can be wrong, and it will be the one that is
+    wrong.* I wrote that sentence and then counted issuers.
+
+    So the fix is structural rather than local. The coverage report now lives in
+    `@splitstick/verify` and takes its per-checkpoint witness results from
+    `verifyStore`, because `core` cannot import `verify` and the alternative was
+    a second verification path inside `core`. Four categories replace three:
+    verified anchoring, a present-but-unvalidated proof, a checkpoint nobody
+    countersigned, and no checkpoint at all — each with its own sentence,
+    because "nobody signed it" and "somebody signed it and the signature is
+    wrong" are different facts and the second is the more serious.
+
+    `coverageReport` is now async and takes the acceptance policy (DES-09).
+    Without one nothing can be verified, so anchoring is reported as
+    present-but-unverified rather than as established — the same rule the
+    practice-statement command settled on.
+
+16. **A later witnessed checkpoint was ignored for an earlier record.**
+    `checkpoints.find(c => c.tree_size >= seq)` took the *earliest* covering
+    checkpoint, witnessed or not, so an unwitnessed checkpoint 1 masked a
+    validly witnessed checkpoint 2 whose committed tree included the same
+    record. Real evidence discarded, in the direction of reporting the operator
+    as unwitnessed and downgrading a supportable verdict.
+
+    Every covering checkpoint is now considered, and the earliest *verified* one
+    is used — earliest because a later one establishes a later time and the
+    honest delay is the smallest the evidence supports. This is the same rule
+    the practice-statement command arrived at in PR #8 for exactly the same
+    reason, which is the second time in two milestones that attribution by
+    "first match" has been wrong in this codebase.
+
+**Both of these are in code the M4 self-review read and passed.** That review
+found six defects in this file and did not find these two, which says something
+about the limits of reviewing one's own work against a checklist one wrote: the
+shapes were named, the module was identified as the riskiest in the project,
+and the defects were still there.

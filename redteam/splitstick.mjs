@@ -45,7 +45,7 @@ import { Anchorer } from '@splitstick/core/anchor';
 import { StatefulWitness } from '@splitstick/witness-self/witness';
 import { SplitstickRunJournal } from '@splitstick/collect-oma';
 import { verifyStore } from '@splitstick/verify';
-import { coverageReport } from '@splitstick/core/coverage';
+import { coverageReport } from '@splitstick/verify/coverage';
 import { evaluateGates, formatGates } from './gates.mjs';
 import { JOURNAL_PATH } from './generate.mjs';
 
@@ -601,11 +601,11 @@ const codesOf = (/** @type {any} */ report) =>
  * and credited the gate anyway, which is worse than not having the gate.
  * @param {any} attack @param {any} ctx @param {any} report
  */
-function detected(attack, ctx, report) {
+async function detected(attack, ctx, report) {
   if (attack.detect !== 'coverage') return report.summary.failed > 0;
   const store = new Store(ctx.root, COLLECTOR);
   try {
-    const cov = coverageReport(store, { ...ctx.window, collectors: store.collectors() });
+    const cov = await coverageReport(store, { ...ctx.window, collectors: store.collectors() });
     return cov.findings.some((/** @type {any} */ f) => f.verdict === 'fail');
   } finally { store.close(); }
 }
@@ -615,7 +615,7 @@ for (const attack of attacks) {
   const ctx = await (attack.build ?? build)();
   await attack.apply(ctx);
   const report = await verifyStore(ctx.root, { collector: COLLECTOR, vkey: ctx.vkey });
-  const observed = detected(attack, ctx, report) ? 'detected' : 'undetected';
+  const observed = (await detected(attack, ctx, report)) ? 'detected' : 'undetected';
   const label = observed === 'detected' ? 'DETECTED    ' : 'UNDETECTED >>';
   const drift = observed === attack.expect ? '' : '   <-- CHANGED from expected: ' + attack.expect;
   if (observed !== attack.expect) mismatches += 1;
@@ -647,7 +647,7 @@ for (const attack of attacks) {
   console.log(`               ${attack.note}`);
   if (attack.detect === 'coverage') {
     const store = new Store(ctx.root, COLLECTOR);
-    const cov = coverageReport(store, { ...ctx.window, collectors: store.collectors() });
+    const cov = await coverageReport(store, { ...ctx.window, collectors: store.collectors() });
     store.close();
     console.log(`               coverage verdict:  ${cov.verdict.toUpperCase()}`
       + `${codesOf(cov) ? '   ' + codesOf(cov) : ''}`);

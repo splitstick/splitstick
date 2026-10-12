@@ -3,14 +3,14 @@ import assert from 'node:assert/strict';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { Store } from '../src/store.mjs';
-import { Collector } from '../src/collector.mjs';
-import { parseConfig } from '../src/config.mjs';
-import { generateDevSigner } from '../src/signer-file.mjs';
+import { Store } from '@splitstick/core/store';
+import { Collector } from '@splitstick/core/collector';
+import { parseConfig } from '@splitstick/core/config';
+import { generateDevSigner } from '@splitstick/core/signer-file';
 import { coverageReport, parseWindow, CoverageError } from '../src/coverage.mjs';
 import { renderCoverage, PATCH_LIMIT, REPORTED_ONLY } from '../src/coverage-report.mjs';
 import { runCoverage } from '../src/coverage-cli.mjs';
-import { UNATTESTED_BUILD } from '../src/capture.mjs';
+import { UNATTESTED_BUILD } from '@splitstick/core/capture';
 
 const ORIGIN = 'splitstick.dev/host-1';
 const CFG = 'version: 1\nstore: ./s\nheartbeat_interval: 5s\n';
@@ -41,13 +41,14 @@ const tx = (/** @type {string} */ corr, attempt = 1) => ({
 });
 
 /** @param {string} root @param {object} [o] */
-function report(root, o = {}) {
+async function report(root, o = {}) {
   const s = new Store(root, /** @type {any} */ (o).collector ?? 'host-1');
   try {
-    return coverageReport(s, {
+    return await coverageReport(s, {
       from: /** @type {any} */ (o).from ?? T0,
       to: /** @type {any} */ (o).to ?? T5,
       collectors: s.collectors(),
+      .../** @type {any} */ (o).policy ? { policy: /** @type {any} */ (o).policy } : {},
     });
   } finally { s.close(); }
 }
@@ -70,7 +71,7 @@ test('FR-28 row 24: an empty window is inconclusive, never complete', async () =
   const { root, store, c } = await rig();
   c.heartbeat();
   store.close();
-  const r = report(root, { from: '2027-01-01', to: '2027-01-02' });
+  const r = await report(root, { from: '2027-01-01', to: '2027-01-02' });
   assert.equal(r.verdict, 'inconclusive');
   assert.equal(r.anchoring.in_window, 0);
   const text = renderCoverage(r);
@@ -84,7 +85,7 @@ test('FR-28 row 25: a window opening before the chain does not claim that interv
   c.heartbeat();
   c.action(tx('c-1'));
   store.close();
-  const text = renderCoverage(report(root, { from: '2020-01-01', to: T5 }));
+  const text = renderCoverage(await report(root, { from: '2020-01-01', to: T5 }));
   assert.match(text, /the chain begins 2026-10-12T10:00:00\.000Z, AFTER the window opens/);
 });
 
@@ -92,7 +93,7 @@ test('FR-28 row 27: the window is applied by ts, and the report says ts is self-
   const { root, store, c } = await rig();
   c.heartbeat();
   store.close();
-  assert.match(renderCoverage(report(root)), /applied by the record's own ts, which is SELF-ASSERTED/);
+  assert.match(renderCoverage(await report(root)), /applied by the record's own ts, which is SELF-ASSERTED/);
 });
 
 test('FR-28 row 29: a second collector in the store is named, never silently passed over', async () => {
@@ -106,7 +107,7 @@ test('FR-28 row 29: a second collector in the store is named, never silently pas
   });
   c2.heartbeat();
   other.close();
-  const r = report(root);
+  const r = await report(root);
   assert.ok(r.findings.some(f => f.code === 'MULTIPLE_COLLECTORS' && /host-2/.test(f.detail)));
   assert.match(renderCoverage(r), /says nothing about the others/);
 });
@@ -123,7 +124,7 @@ test('FR-28 row 20: attempts and logical actions are counted separately and diff
   c.action(tx('c-1', 3)); clock.t += 1000;
   c.action(tx('c-2', 1));
   store.close();
-  const r = report(root);
+  const r = await report(root);
   assert.equal(r.actions.reported_attempts, 4);
   assert.equal(r.actions.reported_logical, 2);
   const text = renderCoverage(r);
@@ -139,7 +140,7 @@ test('FR-28 row 21: the report never implies completeness about what it never sa
   c.heartbeat();
   c.action(tx('c-1'));
   store.close();
-  const text = renderCoverage(report(root));
+  const text = renderCoverage(await report(root));
   assert.ok(text.includes(REPORTED_ONLY), 'the sentence is in the output, not a footnote');
   assert.match(text, /reported by the collector/);
   // Never a bare proportion of actions, and never the word "all".
@@ -155,7 +156,7 @@ test('SEC-11 rows 1 and 2: a stopped collector leaves an undeclared gap, run or 
   clock.t += 120_000;                       // stopped, with no run active
   for (let i = 0; i < 6; i += 1) { c.heartbeat(); clock.t += 5_000; }
   store.close();
-  const r = report(root);
+  const r = await report(root);
   assert.equal(r.heartbeat.discontinuities.length >= 1, true);
   const two = r.heartbeat.discontinuities.find(d => d.ms >= 120_000);
   assert.notEqual(two, undefined, 'the two-minute stop is located');
@@ -180,7 +181,7 @@ test('a gap is measured against every record, not heartbeats alone', async () =>
   clock.t += 8_000;
   c.heartbeat();
   store.close();
-  const r = report(root, { from: T0, to: '2026-10-12T10:00:32.000Z' });
+  const r = await report(root, { from: T0, to: '2026-10-12T10:00:32.000Z' });
   assert.deepEqual(r.heartbeat.discontinuities, [],
     'no gap: a record exists at every point a heartbeat is missing from');
   assert.equal(r.heartbeat.count, 2, 'and the heartbeats really are 32s apart');
@@ -192,7 +193,7 @@ test('a gap is measured against every record, not heartbeats alone', async () =>
   bare.clock.t += 32_000;
   bare.c.heartbeat();
   bare.store.close();
-  assert.equal(report(bare.root, { from: T0, to: '2026-10-12T10:00:32.000Z' })
+  assert.equal((await report(bare.root, { from: T0, to: '2026-10-12T10:00:32.000Z' }))
     .heartbeat.discontinuities.length, 1);
 });
 
@@ -221,7 +222,7 @@ test('SEC-11 row 9: a forged build digest is NOT flagged — and the mechanism i
   c.heartbeat();                            // the suppressed action is simply absent
   store.close();
 
-  let r = report(root);
+  let r = await report(root);
   assert.deepEqual(r.heartbeat.builds.map(b => b.build), [forged],
     'one build throughout: the patch is invisible, which is the claim');
   assert.equal(r.heartbeat.builds[0]?.attested, true, 'and it looks like a perfectly good digest');
@@ -232,7 +233,7 @@ test('SEC-11 row 9: a forged build digest is NOT flagged — and the mechanism i
   clock.t = Date.parse('2026-10-12T10:00:20.000Z');
   c.heartbeat();
   store.close();
-  r = report(root);
+  r = await report(root);
   assert.equal(r.heartbeat.builds.length, 2,
     'so the silence above was a real silence and not an absent mechanism');
   assert.match(renderCoverage(r), /more than one build ran in this window/);
@@ -245,7 +246,7 @@ test('DOC-10 row 11: the patch limit is in the OUTPUT for every window, includin
   c.heartbeat();
   store.close();
   for (const w of [{}, { from: '2020-01-01', to: '2020-01-02' }]) {
-    assert.ok(renderCoverage(report(root, w)).includes(PATCH_LIMIT), JSON.stringify(w));
+    assert.ok(renderCoverage(await report(root, w)).includes(PATCH_LIMIT), JSON.stringify(w));
   }
 });
 
@@ -256,7 +257,7 @@ test('an unattested build is reported as NOT ATTESTED, never as a digest', async
   const { root, store, c } = await rig();
   c.heartbeat();
   store.close();
-  const r = report(root);
+  const r = await report(root);
   assert.equal(r.heartbeat.builds[0]?.build, UNATTESTED_BUILD);
   assert.equal(r.heartbeat.builds[0]?.attested, false);
   const text = renderCoverage(r);
@@ -272,7 +273,7 @@ test('FR-28 rows 5 and 30: the report states its resolution and never implies fi
   });
   for (let i = 0; i < 4; i += 1) { c.heartbeat(); clock.t += 60_000; }
   store.close();
-  const r = report(root);
+  const r = await report(root);
   assert.equal(r.heartbeat.resolution_ms, 60_000);
   assert.equal(r.heartbeat.resolution_known, true);
   const text = renderCoverage(r);
@@ -290,7 +291,7 @@ test('the coarsest declared interval is the resolution, and a window missing one
   clock.t = Date.parse('2026-10-12T10:00:05.000Z');
   c.heartbeat();
   store.close();
-  assert.equal(report(root).heartbeat.resolution_ms, 60_000, 'the coarsest, not the finest');
+  assert.equal((await report(root)).heartbeat.resolution_ms, 60_000, 'the coarsest, not the finest');
 
   // A heartbeat predating the field cannot support a resolution claim, and the
   // report says unknown rather than assuming the one it would like.
@@ -299,7 +300,7 @@ test('the coarsest declared interval is the resolution, and a window missing one
   const raw = s.readChain();
   s.close();
   assert.ok(raw.length >= 1);
-  const r2 = report(root);
+  const r2 = await report(root);
   assert.equal(r2.heartbeat.resolution_known, true, 'both carry it here');
 });
 
@@ -310,7 +311,7 @@ test('FR-28 row 22: a declared gap appears exactly, with its span and reason', a
   c.heartbeat();
   c.gap({ from_source_seq: 4790, to_source_seq: 4795, reason: 'queue_lost_on_disk_full' });
   store.close();
-  const r = report(root);
+  const r = await report(root);
   assert.deepEqual(r.loss.declared.map(g => [g.from_source_seq, g.to_source_seq, g.reason]),
     [[4790, 4795, 'queue_lost_on_disk_full']]);
   assert.match(renderCoverage(r), /DECLARED 4790-4795, queue_lost_on_disk_full/);
@@ -327,7 +328,7 @@ test('an unknown-loss interval is reported as bounded, never as an exact span', 
   store.close();
   // The window must not run past the last record, or the tail is itself an
   // undeclared liveness gap — correctly, and it would mask what is under test.
-  const r = report(root, { to: '2026-10-12T10:00:05.000Z' });
+  const r = await report(root, { to: '2026-10-12T10:00:05.000Z' });
   assert.equal(r.loss.unknown.length, 1);
   assert.ok(r.findings.some(f => f.code === 'COVERAGE_UNKNOWN' && f.verdict === 'inconclusive'));
   assert.equal(r.verdict, 'inconclusive',
@@ -349,7 +350,7 @@ test('a policy change in the window is reported, with its content when the docum
   ({ store, c } = await rig(root, { cfg: ONE, signer }));
   c.heartbeat();
   store.close();
-  const r = report(root);
+  const r = await report(root);
   assert.equal(r.policy_events.length, 1);
   assert.notEqual(r.policy_events[0]?.before, null, 'the document is held, so the content is known');
   assert.notEqual(r.policy_events[0]?.after, null);
@@ -364,7 +365,7 @@ test('a practice-statement version is not reported as an effective-policy change
     subject: 'practice-statement',
   });
   store.close();
-  assert.deepEqual(report(root).policy_events, []);
+  assert.deepEqual((await report(root)).policy_events, []);
 });
 
 test('FR-28 row 28: an undeclared sequence break refuses a completeness claim', async () => {
@@ -376,7 +377,7 @@ test('FR-28 row 28: an undeclared sequence break refuses a completeness claim', 
   const path = join(root, 'chain', 'host-1.jsonl');
   const lines = readFileSync(path, 'utf8').trim().split('\n');
   writeFileSync(path, `${[lines[0], lines[2]].join('\n')}\n`);
-  const r = report(root);
+  const r = await report(root);
   assert.equal(r.verdict, 'incomplete');
   assert.ok(r.findings.some(f => f.code === 'SEQ_BROKEN' && f.verdict === 'fail'),
     'and the break itself is named, in the shared vocabulary');
@@ -389,15 +390,15 @@ test('the coverage CLI refuses an unknown flag rather than ignoring it', async (
   const { root, store, c } = await rig();
   c.heartbeat();
   store.close();
-  const bad = runCoverage([root, '--form', T0, '--to', T5]);
+  const bad = await runCoverage([root, '--form', T0, '--to', T5]);
   assert.equal(bad.exit, 2);
   assert.match(bad.out, /unknown flag --form/);
   assert.match(bad.out, /Refused rather than ignored/);
 
-  const noValue = runCoverage([root, '--from', '--to', T5]);
+  const noValue = await runCoverage([root, '--from', '--to', T5]);
   assert.equal(noValue.exit, 2);
 
-  const ok = runCoverage([root, '--from', T0, '--to', T5]);
+  const ok = await runCoverage([root, '--from', T0, '--to', T5]);
   assert.ok(ok.out.includes(PATCH_LIMIT));
   // 0 complete, 1 incomplete, 2 inconclusive — a report is not a pass/fail gate.
   assert.ok([0, 1, 2].includes(ok.exit));
@@ -407,7 +408,7 @@ test('the CLI refuses a collector the store does not hold', async () => {
   const { root, store, c } = await rig();
   c.heartbeat();
   store.close();
-  const r = runCoverage([root, '--from', T0, '--to', T5, '--collector', 'nope']);
+  const r = await runCoverage([root, '--from', T0, '--to', T5, '--collector', 'nope']);
   assert.equal(r.exit, 2);
   assert.match(r.out, /holds no chain for collector "nope"/);
   assert.match(r.out, /it holds host-1/);
@@ -419,7 +420,7 @@ test('--json carries the same numbers the rendering shows', async () => {
   c.action(tx('c-1', 1)); clock.t += 1000;
   c.action(tx('c-1', 2));
   store.close();
-  const r = runCoverage([root, '--from', T0, '--to', T5, '--json']);
+  const r = await runCoverage([root, '--from', T0, '--to', T5, '--json']);
   const parsed = JSON.parse(r.out);
   assert.equal(parsed.actions.reported_attempts, 2);
   assert.equal(parsed.actions.reported_logical, 1);
@@ -435,7 +436,7 @@ test('every verdict is explained by a finding', async () => {
   c.heartbeat(); clock.t += 5_000;
   c.action(tx('c-1'));
   store.close();
-  const r = report(root, { to: '2026-10-12T10:00:10.000Z' });
+  const r = await report(root, { to: '2026-10-12T10:00:10.000Z' });
   assert.notEqual(r.verdict, 'complete');
   assert.ok(r.findings.length > 0, 'the verdict is not complete, so something must say why');
   if (r.verdict === 'incomplete') {
@@ -462,9 +463,9 @@ test('a complete verdict is reachable, and a declared gap does not prevent it', 
   const { store, c, clock, signer } = await rig(root, {
     cfg: 'version: 1\nstore: ./s\nheartbeat_interval: 5s\nanchor_interval: 1m\n',
   });
-  const { Anchorer } = await import('../src/anchor.mjs');
-  const { parseNote, encodeNote } = await import('../src/note.mjs');
-  const { signNote } = await import('../src/signer.mjs');
+  const { Anchorer } = await import('@splitstick/core/anchor');
+  const { parseNote, encodeNote } = await import('@splitstick/core/note');
+  const { signNote } = await import('@splitstick/core/signer');
   const wk = await generateDevSigner('audit.example');
   const witness = {
     id: 'audit.example', proof_type: /** @type {const} */ ('c2sp-note'),
@@ -491,16 +492,37 @@ test('a complete verdict is reachable, and a declared gap does not prevent it', 
   assert.equal(anchored.attached.length, 1);
   store.close();
 
-  const r = report(root, { to: '2026-10-12T10:00:20.000Z' });
+  // The acceptance policy is required for a COMPLETE verdict now, and that is
+  // the point: without it the countersignature is present and unverified, and
+  // the report says so rather than counting it as anchoring.
+  const policy = {
+    quorum: 1,
+    witnesses: [{
+      id: 'audit.example',
+      public_key: Buffer.from(wk.publicKey).toString('base64'),
+      establishes: ['sequence'],
+    }],
+  };
+  const r = await report(root, { to: '2026-10-12T10:00:20.000Z', policy });
   assert.deepEqual(r.findings, [], `expected no findings, got ${JSON.stringify(r.findings)}`);
   assert.equal(r.verdict, 'complete');
+
+  // And WITHOUT the policy the same evidence is not anchoring.
+  const bare = await report(root, { to: '2026-10-12T10:00:20.000Z' });
+  assert.equal(bare.verdict, 'inconclusive');
+  assert.equal(bare.anchoring.anchored, 0);
+  assert.ok(bare.anchoring.countersigned_unverified > 0);
   assert.equal(r.loss.declared.length, 1);
   // DES-10's own example: a DISCLOSED loss is what this project converts an
   // undeclared absence into. Penalising the disclosure would penalise the
   // honesty it exists to produce.
   assert.match(renderCoverage(r), /verdict         COMPLETE with 1 declared gap\(s\)/);
   assert.match(renderCoverage(r), /DECLARED 1-3, queue_lost_on_disk_full/);
-  assert.equal(runCoverage([root, '--from', T0, '--to', '2026-10-12T10:00:20.000Z']).exit, 0);
+  const { writeFileSync } = await import('node:fs');
+  const policyPath = join(root, 'acceptance.json');
+  writeFileSync(policyPath, JSON.stringify(policy));
+  assert.equal((await runCoverage([root, '--from', T0, '--to', '2026-10-12T10:00:20.000Z',
+    '--policy', policyPath])).exit, 0);
 });
 
 // ── The independent review of M4. Six findings, each reproduced first ────────
@@ -516,9 +538,9 @@ test('M4 review 1: no heartbeat at all is never a COMPLETE verdict', async () =>
   const { store, c, clock, signer } = await rig(root, {
     cfg: 'version: 1\nstore: ./s\nheartbeat_interval: 5s\nanchor_interval: 1m\n',
   });
-  const { Anchorer } = await import('../src/anchor.mjs');
-  const { parseNote, encodeNote } = await import('../src/note.mjs');
-  const { signNote } = await import('../src/signer.mjs');
+  const { Anchorer } = await import('@splitstick/core/anchor');
+  const { parseNote, encodeNote } = await import('@splitstick/core/note');
+  const { signNote } = await import('@splitstick/core/signer');
   const wk = await generateDevSigner('audit.example');
   for (let i = 0; i < 3; i += 1) { c.action(tx(`c-${i}`)); clock.t += 1000; }
   const cp = await c.checkpoint();
@@ -541,7 +563,7 @@ test('M4 review 1: no heartbeat at all is never a COMPLETE verdict', async () =>
   assert.equal((await a.anchor(cp.checkpoint_seq)).attached.length, 1);
   store.close();
 
-  const r = report(root, { to: '2026-10-12T10:00:04.000Z' });
+  const r = await report(root, { to: '2026-10-12T10:00:04.000Z' });
   assert.equal(r.heartbeat.count, 0);
   assert.notEqual(r.verdict, 'complete', 'liveness is not established, so the claim is not issued');
   assert.equal(r.verdict, 'inconclusive');
@@ -562,7 +584,7 @@ test('M4 review 2: a window outside the chain is unknown, not an outage', async 
   for (let i = 0; i < 4; i += 1) { c.heartbeat(); clock.t += 5_000; }
   store.close();
 
-  const before = report(root, { from: '2020-01-01', to: '2026-10-12T10:00:15.000Z' });
+  const before = await report(root, { from: '2020-01-01', to: '2026-10-12T10:00:15.000Z' });
   assert.deepEqual(before.heartbeat.discontinuities, [], 'no gap is claimed before the chain began');
   assert.equal(before.verdict, 'inconclusive');
   assert.ok(before.findings.some(f => /nothing here\s+speaks to the interval before that|speaks to the interval before that/.test(f.detail)));
@@ -570,7 +592,7 @@ test('M4 review 2: a window outside the chain is unknown, not an outage', async 
 
   // The same at the other end: a log that ends where it ends has not
   // necessarily stopped, and from the files alone those are indistinguishable.
-  const after = report(root, { to: '2026-11-01T00:00:00.000Z' });
+  const after = await report(root, { to: '2026-11-01T00:00:00.000Z' });
   assert.deepEqual(after.heartbeat.discontinuities, []);
   assert.ok(after.findings.some(f => /has not necessarily stopped/.test(f.detail)));
 
@@ -581,7 +603,7 @@ test('M4 review 2: a window outside the chain is unknown, not an outage', async 
   inner.clock.t += 120_000;
   for (let i = 0; i < 3; i += 1) { inner.c.heartbeat(); inner.clock.t += 5_000; }
   inner.store.close();
-  const r = report(inner.root, { to: '2026-10-12T10:02:30.000Z' });
+  const r = await report(inner.root, { to: '2026-10-12T10:02:30.000Z' });
   assert.ok(r.findings.some(f => f.code === 'COVERAGE_GAP' && f.verdict === 'fail'));
 });
 
@@ -595,7 +617,7 @@ test('M4 review 3: a policy record naming no subject is counted as neither', asy
   c.heartbeat();
   c.policy({ previous: `sha256:${'1'.repeat(64)}`, next: `sha256:${'2'.repeat(64)}` });
   store.close();
-  const r = report(root, { to: '2026-10-12T10:00:10.000Z' });
+  const r = await report(root, { to: '2026-10-12T10:00:10.000Z' });
   assert.deepEqual(r.policy_events, [], 'not counted as an effective-policy change');
   assert.ok(
     r.findings.some(f => f.code === 'COVERAGE_UNKNOWN' && /naming no subject/.test(f.detail)),
@@ -613,9 +635,9 @@ test('M4 review 6: lateness is measured against the ATTESTED anchor interval', a
     const { store, c, clock } = await rig(root, {
       cfg: `version: 1\nstore: ./s\nheartbeat_interval: 5s\nanchor_interval: ${interval}\n`,
     });
-    const { Anchorer } = await import('../src/anchor.mjs');
-    const { parseNote, encodeNote } = await import('../src/note.mjs');
-    const { signNote } = await import('../src/signer.mjs');
+    const { Anchorer } = await import('@splitstick/core/anchor');
+    const { parseNote, encodeNote } = await import('@splitstick/core/note');
+    const { signNote } = await import('@splitstick/core/signer');
     const wk = await generateDevSigner('audit.example');
     for (let i = 0; i < 4; i += 1) { c.heartbeat(); clock.t += 5_000; }
     const cp = await c.checkpoint();
@@ -637,7 +659,20 @@ test('M4 review 6: lateness is measured against the ATTESTED anchor interval', a
     });
     await a.anchor(cp.checkpoint_seq);
     store.close();
-    return report(root, { to: '2026-10-12T10:00:20.000Z' });
+    // Lateness is measured from a receipt on a proof that VERIFIES, so the
+    // acceptance policy is part of the fixture: an unverified receipt is an
+    // unchecked party's unchecked claim about when.
+    return await report(root, {
+      to: '2026-10-12T10:00:20.000Z',
+      policy: {
+        quorum: 1,
+        witnesses: [{
+          id: 'audit.example',
+          public_key: Buffer.from(wk.publicKey).toString('base64'),
+          establishes: ['sequence'],
+        }],
+      },
+    });
   };
 
   // Ten seconds declared: a twenty-second delay is late by the operator's own
@@ -685,8 +720,150 @@ test('M4 review 5: the coverage CLI closes every store it opens', async () => {
   store.close();
   for (let i = 0; i < 3; i += 1) {
     for (const args of [[], ['--collector', 'host-1']]) {
-      const r = runCoverage([root, '--from', T0, '--to', '2026-10-12T10:00:05.000Z', ...args]);
+      const r = await runCoverage([root, '--from', T0, '--to', '2026-10-12T10:00:05.000Z', ...args]);
       assert.ok([0, 1, 2].includes(r.exit), `run ${i} ${args.join(' ')}: ${r.out.slice(0, 80)}`);
     }
   }
+});
+
+// ── PR #9 review: presence is not proof, and later evidence still counts ────
+
+/**
+ * Put a countersignature on a checkpoint. `over` chooses the bytes it signs —
+ * the checkpoint's own note, or something else entirely.
+ * @param {string} root @param {number} seq
+ * @param {{ key: any, issuer: string, over?: string, at?: string }} o
+ */
+async function countersign(root, seq, o) {
+  const { Store: S } = await import('@splitstick/core/store');
+  const { parseNote, encodeNote } = await import('@splitstick/core/note');
+  const { signNote } = await import('@splitstick/core/signer');
+  const { parseEnvelope, addCountersignature } = await import('@splitstick/core/envelope');
+  const s = new S(root, 'host-1');
+  const raw = /** @type {string} */ (s.readCheckpointEnvelope(seq));
+  const text = o.over ?? parseNote(/** @type {string} */ (parseEnvelope(raw).note)).text;
+  const line = encodeNote(text, [await signNote(text, o.key)]).trim().split('\n').at(-1);
+  s.writeCheckpointEnvelope(seq, addCountersignature(JSON.parse(raw), {
+    type: 'c2sp-note', issuer: o.issuer, covers: 'note', line: /** @type {string} */ (line),
+    ...(o.at ? { received_at: o.at } : {}),
+  }));
+  s.close();
+}
+
+/** @param {any} key @param {string} id */
+const accepting = (key, id) => ({
+  quorum: 1,
+  witnesses: [{ id, public_key: Buffer.from(key.publicKey).toString('base64'), establishes: ['sequence'] }],
+});
+
+test('PR9 review P1: a countersignature that does not verify is NOT anchoring', async () => {
+  // The report counted `parseEnvelope(blob).issuers` — the proofs PRESENT on a
+  // checkpoint — and called the records beneath them anchored. A
+  // countersignature from an unrelated key over entirely different bytes
+  // therefore produced a COMPLETE verdict with no findings at all.
+  //
+  // This is the same defect as the practice-statement command's in the previous
+  // milestone — presence read as proof — in a different module, by the same
+  // author, after writing the risk assessment that names it. Deriving the
+  // answer from the verifier instead of recomputing it is the only version of
+  // this fix that stays fixed.
+  const { root, store, c, clock } = await rig(undefined, {
+    cfg: 'version: 1\nstore: ./s\nheartbeat_interval: 5s\nanchor_interval: 1m\n',
+  });
+  for (let i = 0; i < 4; i += 1) { c.heartbeat(); clock.t += 5_000; }
+  const cp = await c.checkpoint();
+  store.close();
+
+  const impostor = await generateDevSigner('impostor.example');
+  // Signed by an unrelated key, over bytes that are not this checkpoint's note.
+  await countersign(root, cp.checkpoint_seq, {
+    key: impostor, issuer: 'impostor.example', over: 'splitstick.dev/host-1\n999\nZm9v\n',
+  });
+  const win = { to: '2026-10-12T10:00:20.000Z' };
+
+  // With a policy that names the impostor, the signature still fails.
+  const named = await report(root, { ...win, policy: accepting(impostor, 'impostor.example') });
+  assert.equal(named.anchoring.anchored, 0, 'a signature that does not check out is not anchoring');
+  assert.ok(named.anchoring.countersigned_unverified > 0);
+  assert.notEqual(named.verdict, 'complete');
+
+  // With no policy at all, it is present and unverified — not anchoring either.
+  const bare = await report(root, win);
+  assert.equal(bare.anchoring.anchored, 0);
+  assert.ok(bare.anchoring.countersigned_unverified > 0);
+  assert.notEqual(bare.verdict, 'complete');
+  assert.ok(
+    bare.findings.some(f => /did NOT verify/.test(f.detail)),
+    'and the report says the proof was not validated, rather than counting it',
+  );
+  assert.match(renderCoverage(bare), /countersignature this reader did/);
+
+  // THE PAIRED HALF: a proof that DOES verify, over the same store shape, is
+  // anchoring. Without it this test would pass against a report that never
+  // counts anything as anchored.
+  const honest = await rig(undefined, {
+    cfg: 'version: 1\nstore: ./s\nheartbeat_interval: 5s\nanchor_interval: 1m\n',
+  });
+  for (let i = 0; i < 4; i += 1) { honest.c.heartbeat(); honest.clock.t += 5_000; }
+  const hcp = await honest.c.checkpoint();
+  honest.store.close();
+  const wk = await generateDevSigner('audit.example');
+  await countersign(honest.root, hcp.checkpoint_seq, { key: wk, issuer: 'audit.example' });
+  const good = await report(honest.root, { ...win, policy: accepting(wk, 'audit.example') });
+  assert.equal(good.anchoring.anchored, good.anchoring.in_window);
+  assert.equal(good.anchoring.countersigned_unverified, 0);
+});
+
+test('PR9 review P2: a later witnessed checkpoint anchors an earlier record', async () => {
+  // The first version took `checkpoints.find(c => c.tree_size >= seq)` — the
+  // EARLIEST covering checkpoint, witnessed or not — so an unwitnessed
+  // checkpoint 1 masked a validly witnessed checkpoint 2 whose committed tree
+  // included the same record. Real evidence discarded, in the direction of
+  // reporting the operator as unwitnessed.
+  const { root, store, c, clock } = await rig(undefined, {
+    cfg: 'version: 1\nstore: ./s\nheartbeat_interval: 5s\nanchor_interval: 1m\n',
+  });
+  c.heartbeat(); clock.t += 5_000;
+  await c.checkpoint();                       // checkpoint 1, left unwitnessed
+  c.heartbeat(); clock.t += 5_000;
+  const cp2 = await c.checkpoint();           // checkpoint 2, tree includes record 1
+  store.close();
+
+  const wk = await generateDevSigner('audit.example');
+  await countersign(root, cp2.checkpoint_seq, {
+    key: wk, issuer: 'audit.example', at: new Date(clock.t).toISOString(),
+  });
+
+  // The window ends at the last record: any later and it extends past the
+  // evidence, which is its own (correct) inconclusive finding and would mask
+  // what is under test here.
+  const r = await report(root, {
+    to: '2026-10-12T10:00:05.000Z', policy: accepting(wk, 'audit.example'),
+  });
+  assert.equal(r.anchoring.anchored, 2,
+    'both records are anchored: checkpoint 2\'s committed tree reaches record 1');
+  assert.equal(r.anchoring.checkpointed_only, 0, 'the unwitnessed checkpoint 1 masks nothing');
+  assert.equal(r.anchoring.countersigned_unverified, 0);
+  assert.equal(r.verdict, 'complete');
+
+  // And the delay for record 1 is measured from the verified receipt on the
+  // checkpoint that actually witnessed it.
+  assert.deepEqual(r.anchoring.late, [], 'within the attested interval');
+});
+
+test('PR9 review: a checkpoint nobody signed is still distinct from one that failed', async () => {
+  // Three states, not two collapsed into one. "Nobody countersigned this" and
+  // "somebody did and it does not check out" are different facts, and the
+  // second is the more serious.
+  const { root, store, c, clock } = await rig(undefined, {
+    cfg: 'version: 1\nstore: ./s\nheartbeat_interval: 5s\nanchor_interval: 1m\n',
+  });
+  for (let i = 0; i < 2; i += 1) { c.heartbeat(); clock.t += 5_000; }
+  await c.checkpoint();
+  store.close();
+  const r = await report(root, { to: '2026-10-12T10:00:10.000Z' });
+  assert.equal(r.anchoring.checkpointed_only, 2);
+  assert.equal(r.anchoring.countersigned_unverified, 0);
+  assert.equal(r.anchoring.unanchored, 0);
+  assert.match(renderCoverage(r), /checkpoint NOBODY countersigned/);
 });

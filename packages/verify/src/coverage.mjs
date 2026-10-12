@@ -30,11 +30,12 @@
  * asserts it is there.
  */
 
-import { recomputeChain } from './chain.mjs';
-import { parseEnvelope } from './envelope.mjs';
-import { isTimestamp } from './record.mjs';
-import { verdictFor, finding, validateFindings } from './findings.mjs';
-import { UNATTESTED_BUILD } from './capture.mjs';
+import { recomputeChain } from '@splitstick/core/chain';
+import { parseEnvelope } from '@splitstick/core/envelope';
+import { isTimestamp } from '@splitstick/core/record';
+import { verdictFor, finding, validateFindings } from '@splitstick/core/findings';
+import { UNATTESTED_BUILD } from '@splitstick/core/capture';
+import { verifyStore } from './verify.mjs';
 
 export class CoverageError extends Error {
   /** @param {string} m */
@@ -96,12 +97,15 @@ const unattested = d => typeof d !== 'string' || d === UNATTESTED_BUILD
 /**
  * Build the coverage report.
  *
- * @param {import('./store.mjs').Store} store
+ * @param {import('@splitstick/core/store').Store} store
  * @param {object} o
  * @param {string} o.from @param {string} o.to
  * @param {string[]} [o.collectors] every collector the store holds, for row 29
+ * @param {any} [o.policy] FR-30's ACCEPTANCE POLICY — whose countersignature
+ *   this reader accepts. Without it nothing can be verified, so anchoring is
+ *   reported as present-but-unverified rather than as established.
  */
-export function coverageReport(store, o) {
+export async function coverageReport(store, o) {
   const window = parseWindow(o.from, o.to);
   const { entries, torn, malformed } = store.readChainDetailed();
   const chain = recomputeChain(entries);
@@ -112,7 +116,7 @@ export function coverageReport(store, o) {
   // the lint that caught the invention was right to: a second vocabulary means
   // a reader has to learn which tool is talking before they can read a code,
   // and nothing proves the two agree.
-  /** @type {import('./findings.mjs').Finding[]} */
+  /** @type {import('@splitstick/core/findings').Finding[]} */
   const findings = [];
   if (torn) {
     findings.push(finding('TORN_WRITE', 'inconclusive',
@@ -310,13 +314,8 @@ export function coverageReport(store, o) {
   // FR-40's "late" is measured against the interval the operator ATTESTED, not
   // against a number chosen here. It was a hardcoded sixty seconds, so an
   // operator anchoring every ten minutes by declared policy had nine of those
-  // minutes reported as lateness, and one anchoring every second had a
-  // 59-second delay reported as on time. The threshold has to come from the
-  // same place the claim does.
-  //
-  // Read from the policy document the chain commits to, for the policy the
-  // heartbeats in this window attest. Absent, the interval is unknown and
-  // lateness is not asserted at all — rather than asserted against a guess.
+  // minutes reported as lateness. The threshold has to come from the same
+  // place the claim does.
   /** @type {number|null} */
   let attestedAnchorMs = null;
   for (const digest of policies) {
@@ -328,7 +327,23 @@ export function coverageReport(store, o) {
       attestedAnchorMs = Math.max(attestedAnchorMs ?? 0, Number(v));
     }
   }
-  const anchoring = anchorCoverage(store, inWindow, window, attestedAnchorMs);
+
+  // THE WITNESS RESULTS COME FROM THE VERIFIER. This is why the coverage
+  // report lives in @splitstick/verify and not in core.
+  //
+  // It used to count `parseEnvelope(blob).issuers` — the countersignatures
+  // PRESENT on a checkpoint — and call the records beneath them anchored. A
+  // countersignature from an unrelated key, over entirely different bytes,
+  // therefore produced a COMPLETE verdict with no findings: presence read as
+  // proof. That is the same defect as the practice-statement command's in the
+  // previous milestone, in a different module, three weeks later, by the same
+  // author. Deriving the answer from the verifier rather than recomputing it
+  // is the only version of this that stays fixed.
+  const verified = await verifyStore(store.root, {
+    collector: store.collector,
+    ...(o.policy ? { policy: o.policy } : {}),
+  });
+  const anchoring = anchorCoverage(store, inWindow, window, attestedAnchorMs, verified.witnesses);
 
   // ── sequence integrity across the window ─────────────────────────────────
   //
@@ -415,10 +430,26 @@ export function coverageReport(store, o) {
   // emitting anything, so a report could say "inconclusive" and list nothing —
   // a conclusion with no stated reason, which is worse than useless to the
   // person acting on it.
-  if (anchoring.unwitnessed > 0) {
+  // Each category says a different thing, so each gets its own sentence. One
+  // lumped count would make "nobody signed it" and "somebody signed it and the
+  // signature is wrong" read the same, and the second is the more serious.
+  if (anchoring.countersigned_unverified > 0) {
     findings.push(finding('COVERAGE_UNKNOWN', 'inconclusive',
-      `${anchoring.unwitnessed} of ${inWindow.length} record(s) in this window fall under no `
-      + 'countersigned checkpoint, so nothing independent establishes WHEN they were written'));
+      `${anchoring.countersigned_unverified} of ${inWindow.length} record(s) fall under a `
+      + 'checkpoint carrying a countersignature that this reader did NOT verify — no acceptance '
+      + 'policy names the issuer, or the signature did not check out. A proof nobody validated '
+      + 'establishes nothing about WHEN, and counting it as anchoring would state as established '
+      + 'exactly what has not been'));
+  }
+  if (anchoring.checkpointed_only > 0) {
+    findings.push(finding('COVERAGE_UNKNOWN', 'inconclusive',
+      `${anchoring.checkpointed_only} of ${inWindow.length} record(s) fall under a checkpoint `
+      + 'nobody countersigned: the operator signed a root committing to them, and nothing '
+      + 'independent establishes WHEN they were written'));
+  }
+  if (anchoring.unanchored > 0) {
+    findings.push(finding('COVERAGE_UNKNOWN', 'inconclusive',
+      `${anchoring.unanchored} of ${inWindow.length} record(s) fall under no checkpoint at all`));
   }
   if (anchoring.late.length > 0) {
     findings.push(finding('COVERAGE_UNKNOWN', 'inconclusive',
@@ -489,70 +520,122 @@ export function coverageReport(store, o) {
 }
 
 /**
- * Which records in the window fall under a checkpoint, and how late it came.
+ * Which records in the window fall under VERIFIED anchoring, and how late it
+ * came — FR-40, and the two findings the M4 review raised here.
  *
- * FR-40 — a window anchored eleven minutes after the fact had an eleven-minute
- * mutability window, and that is honestly weaker evidence rather than silently
- * absent. Reported as a coverage gap with its delay.
+ * FOUR CATEGORIES, not three, and the line between the first two is the whole
+ * point. A countersignature that is present is not a countersignature that
+ * verifies: the collector deliberately keeps a proof it could not check,
+ * because discarding evidence a reader with the right policy could use would
+ * be worse — but a report that counts it as anchoring states as established
+ * precisely what has not been.
  *
- * @param {import('./store.mjs').Store} store
+ *   anchored                  a covering checkpoint carries a proof this
+ *                             reader's policy accepts and that verifies.
+ *   countersigned_unverified  a covering checkpoint carries a proof, and
+ *                             nothing here validated it — no acceptance
+ *                             policy, an issuer it does not name, or a
+ *                             signature that failed.
+ *   checkpointed_only         covered by a checkpoint nobody countersigned.
+ *   unanchored                covered by no checkpoint at all.
+ *
+ * AND EVERY COVERING CHECKPOINT IS CONSIDERED, not just the earliest. The
+ * first version took `checkpoints.find(c => c.tree_size >= seq)` — the
+ * earliest checkpoint covering the record, witnessed or not — so an unwitnessed
+ * checkpoint 1 masked a validly witnessed checkpoint 2 whose committed tree
+ * included the same record, and real evidence was discarded in the direction of
+ * reporting the operator as unwitnessed. A proof is evidence about a record
+ * when the tree its checkpoint committed to REACHES that record, which is the
+ * same rule the practice-statement command settled on.
+ *
+ * @param {import('@splitstick/core/store').Store} store
  * @param {Record<string, unknown>[]} inWindow
  * @param {{ from_ms: number, to_ms: number }} window
  * @param {number|null} onTimeMs the anchor interval the operator attested; null
  *   when no attested policy document is held, in which case lateness is not
  *   asserted rather than asserted against a number chosen here
+ * @param {import('./verify.mjs').WitnessEntry[]} witnesses the VERIFIER's
+ *   per-checkpoint results, never the envelope's issuer list
  */
-function anchorCoverage(store, inWindow, window, onTimeMs) {
-  /** @type {{ seq: number, tree_size: number, witnessed_at: string|null, issuers: string[] }[]} */
+function anchorCoverage(store, inWindow, window, onTimeMs, witnesses) {
+  /**
+   * Per checkpoint: what verifies, what is merely present, and the earliest
+   * receipt time among the proofs that verify.
+   * @type {Map<number, { verified: boolean, present: boolean, received_at: string|null }>}
+   */
+  const byCheckpoint = new Map();
+  for (const w of witnesses) {
+    const at = byCheckpoint.get(w.checkpoint_seq)
+      ?? { verified: false, present: false, received_at: null };
+    at.present = true;
+    if (w.accepted && w.verdict === 'ok') {
+      at.verified = true;
+      // The witness's own clock, and UNSIGNED for a C2SP note — there is
+      // nowhere inside the note to put a time. Only a receipt from a proof
+      // that VERIFIES is used to measure a delay; an unverified one would be
+      // an unchecked party's unchecked claim about when.
+      const t = w.received_at;
+      if (typeof t === 'string' && isTimestamp(t) && (at.received_at === null || t < at.received_at)) {
+        at.received_at = t;
+      }
+    }
+    byCheckpoint.set(w.checkpoint_seq, at);
+  }
+
+  /** @type {{ seq: number, tree_size: number }[]} */
   const checkpoints = [];
   for (const { seq, blob } of store.readCheckpoints()) {
     const env = parseEnvelope(blob);
     if (env.tree_size === null) continue;
-    /** @type {string|null} */
-    let at = null;
-    for (const cs of env.countersignatures) {
-      const t = cs.entry?.received_at;
-      // The witness's own clock, and it is UNSIGNED for a C2SP note — there is
-      // nowhere inside the note to put a time. The verifier labels that; here
-      // it is used only to measure a delay, and the report says the basis.
-      if (typeof t === 'string' && isTimestamp(t) && (at === null || t < at)) at = t;
-    }
-    checkpoints.push({
-      seq, tree_size: env.tree_size, witnessed_at: at, issuers: [...env.issuers],
-    });
+    // `issuers` is read ONLY to tell "nobody countersigned this" from "somebody
+    // did and it did not verify". It is never read as anchoring.
+    const present = env.issuers.size > 0;
+    const at = byCheckpoint.get(seq) ?? { verified: false, present: false, received_at: null };
+    if (present) at.present = true;
+    byCheckpoint.set(seq, at);
+    checkpoints.push({ seq, tree_size: env.tree_size });
   }
   checkpoints.sort((a, b) => a.tree_size - b.tree_size);
 
   let anchored = 0;
+  let countersigned_unverified = 0;
   let checkpointed_only = 0;
   let unanchored = 0;
   /** @type {{ record_seq: number, delay_ms: number, checkpoint_seq: number }[]} */
   const late = [];
-  // A batch anchored within one attested anchor interval is on time. Beyond
-  // it, the records sat mutable for the difference, and that is what gets
-  // reported.
-  const onTime = onTimeMs;
+
   for (const r of inWindow) {
     const seq = Number(r.record_seq);
-    const cp = checkpoints.find(c => c.tree_size >= seq);
-    // Three states, not two. A record under no checkpoint at all and one under
-    // a checkpoint nobody countersigned are different: the second has a signed
-    // root committing to it, which establishes the operator's own claim about
-    // the tree, and only the countersignature establishes WHEN. Collapsing
-    // them reported the weaker of the two as if it were the absence of any
-    // evidence.
-    if (cp === undefined) { unanchored += 1; continue; }
-    if (cp.issuers.length === 0) { checkpointed_only += 1; continue; }
+    const covering = checkpoints.filter(c => c.tree_size >= seq);
+    if (covering.length === 0) { unanchored += 1; continue; }
+
+    // The EARLIEST covering checkpoint whose evidence verifies. Earliest
+    // because a later one establishes a later time, and the honest delay is
+    // the smallest one the evidence supports.
+    const proven = covering.find(c => byCheckpoint.get(c.seq)?.verified === true);
+    if (proven === undefined) {
+      if (covering.some(c => byCheckpoint.get(c.seq)?.present === true)) {
+        countersigned_unverified += 1;
+      } else {
+        checkpointed_only += 1;
+      }
+      continue;
+    }
     anchored += 1;
-    if (cp.witnessed_at === null || onTime === null) continue;
-    const delay = Date.parse(cp.witnessed_at) - Date.parse(String(r.ts));
-    if (delay > onTime) late.push({ record_seq: seq, delay_ms: delay, checkpoint_seq: cp.seq });
+    const at = byCheckpoint.get(proven.seq)?.received_at ?? null;
+    if (at === null || onTimeMs === null) continue;
+    const delay = Date.parse(at) - Date.parse(String(r.ts));
+    if (delay > onTimeMs) late.push({ record_seq: seq, delay_ms: delay, checkpoint_seq: proven.seq });
   }
+
   return {
     anchored,
+    countersigned_unverified,
     checkpointed_only,
     unanchored,
-    unwitnessed: checkpointed_only + unanchored,
+    // Everything that is not VERIFIED anchoring. Presence is not proof, so a
+    // present-but-unverified proof counts here and not against `anchored`.
+    unwitnessed: countersigned_unverified + checkpointed_only + unanchored,
     late,
     max_delay_ms: late.reduce((a, l) => Math.max(a, l.delay_ms), 0),
     on_time_ms: onTimeMs,
