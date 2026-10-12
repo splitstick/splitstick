@@ -360,7 +360,9 @@
       "title": "Optional batch padding",
       "statement": "Provide optional padding of batches with dummy leaves to obscure activity volume. Padding is applied only at batch close and never retroactively; dummy leaves are explicitly typed so a verifier holding the pack can count them; and a real action can never be reclassified as padding, because its leaf is already committed.",
       "source": "Disclosure — optional batch padding",
-      "verify": "Retroactive padding is rejected; a verifier reports real and dummy leaf counts separately; reclassifying a committed action fails the leaf check"
+      "verify": "Retroactive padding is rejected; a verifier reports real and dummy leaf counts separately; reclassifying a committed action fails the leaf check",
+      "status": "done",
+      "evidence": "Collector.#padBatch at batch close + the verifier's kind census; padding is applied through the ordinary write path BEFORE the root is computed, so rule 2 is enforced by the structure rather than by a check — there is no code path that adds a leaf to a closed batch, because a closed batch is a signed note and leaves are not stored in it. The `padding` config key was in the known-key list and never parsed, so a config asking for padding was accepted and silently ignored: an operator could believe their volume was obscured while nothing padded anything, the same defect as the verifier's --vkey"
     },
     {
       "id": "FR-35",

@@ -414,7 +414,9 @@
     "title": "Disclose the tree-size leak",
     "statement": "Document that an inclusion proof reveals the log tree size, and that tree size is the count of ALL records — actions, heartbeats, policy events, gap declarations and padding — not a count of agent actions. The action count is therefore not directly disclosed, which is a weaker leak than an earlier draft claimed.",
     "source": "Disclosure — the honest limit",
-    "verify": "Documentation review; a test asserts tree size exceeds the action count in any run containing heartbeats"
+    "verify": "Documentation review; a test asserts tree size exceeds the action count in any run containing heartbeats",
+    "status": "done",
+    "evidence": "The verifier reports records.by_kind beside tree_size, and a test asserts tree size exceeds the action count in a run holding heartbeats — with padding OFF, so it is not padding doing the work. `real` is named for not-padding rather than for actions, because heartbeats, gaps and policy events are real records and are not agent actions either, and conflating the two is the misreading PRIV-07 exists to prevent"
   },
   {
     "id": "PRIV-08",
