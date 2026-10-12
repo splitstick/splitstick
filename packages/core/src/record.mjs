@@ -23,7 +23,8 @@ export const SUITE = 'SS1';
 
 /** Closed enum. An unknown kind makes a record unverifiable, not ignorable. */
 export const RECORD_KINDS = Object.freeze(
-  ['tool_call', 'approval', 'heartbeat', 'gap', 'gap_unknown', 'policy', 'custody', 'padding']);
+  ['tool_call', 'approval', 'heartbeat', 'gap', 'gap_unknown', 'policy', 'custody',
+    'discontinuity', 'padding']);
 
 /** Kinds that represent an observation and therefore carry a source_seq. */
 const OBSERVATION_KINDS = new Set(['tool_call', 'approval']);
@@ -67,6 +68,16 @@ const ALLOWED = Object.freeze({
   // reaches by validating a provider attestation (FR-70), never something the
   // operator writes about themselves.
   custody: [...ENVELOPE, 'epoch', 'public_key', 'custody_class', 'custody_basis'],
+  // SEC-24 — a declared key compromise, rather than a silent re-key.
+  //
+  // DES-06 calls this "a policy record". It cannot be one: this allowlist is
+  // exhaustive PER KIND, so a policy record carrying a last sound epoch and a
+  // new root key would have to make those fields optional — optional on every
+  // ordinary policy change, where they mean nothing. A distinct kind says
+  // required-here and forbidden-there, which is exactly the distinction, and it
+  // lets a verifier FIND discontinuities by kind rather than sniffing for
+  // optional fields. That is what makes "never silently bridged" checkable.
+  discontinuity: [...ENVELOPE, 'last_sound_epoch', 'new_root_public_key', 'reason'],
   padding: [...ENVELOPE, 'pad'],
 });
 
@@ -274,6 +285,25 @@ export function validateRecord(rec) {
       if (typeof r[f] !== 'string' || !DIGEST.test(/** @type {string} */ (r[f]))) {
         throw new RecordError(`${f} must be a full sha256 digest of the effective policy`);
       }
+    }
+  }
+
+  if (kind === 'discontinuity') {
+    for (const f of ['last_sound_epoch', 'new_root_public_key', 'reason']) req(r, f);
+    if (!Number.isSafeInteger(r.last_sound_epoch) || /** @type {number} */ (r.last_sound_epoch) < 0) {
+      throw new RecordError(
+        `last_sound_epoch ${JSON.stringify(r.last_sound_epoch)} is not a non-negative integer. `
+        + 'Zero is valid: the very first epoch can be the compromised one.',
+      );
+    }
+    if (typeof r.new_root_public_key !== 'string' || !B64_32.test(r.new_root_public_key)) {
+      throw new RecordError('new_root_public_key must be a 32-byte Ed25519 key, base64');
+    }
+    if (typeof r.reason !== 'string' || r.reason === '') {
+      throw new RecordError(
+        'a discontinuity needs a reason: a bare declaration tells a reader that something happened '
+        + 'and nothing about what, and this is the one record whose whole purpose is to explain',
+      );
     }
   }
 

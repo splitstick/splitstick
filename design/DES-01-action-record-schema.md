@@ -21,7 +21,7 @@ record while `DES-02` said every field contributes.
   "record_seq": 4812,                      // position in the COLLECTOR's log, from 1
   "source_seq": 4817,                      // observed actions; null on heartbeat, policy, custody, gap
   "ts": "2026-10-10T10:40:36.907Z",        // collector clock, RFC 3339, always UTC, ms precision
-  "kind": "tool_call",                     // tool_call | approval | heartbeat | gap | gap_unknown | policy | custody | padding
+  "kind": "tool_call",                     // tool_call | approval | heartbeat | gap | gap_unknown | policy | custody | discontinuity | padding
   "tool": "transfer_funds",               // a function name, not a person — retained
   "agent":  { "cid": "sha256:1a0d…" },     // a label that could identify — erasable
   "args":   { "cid": "sha256:9f2c…", "bytes": 61 },     // salted digest, FR-35
@@ -73,6 +73,7 @@ into a chain that is never deleted.
 | `outcome`, `attempt`, `correlation` | **FR-62.** A timeout or error is an outcome, not an absence. A retry is a *new record* sharing a `correlation`, never an overwrite — overwriting would make the chain a mutable store. **`source_seq` advances once per observed ATTEMPT**, and `correlation` is what groups attempts into a logical action. An earlier draft advanced it once per logical action; a review showed that breaks the counter — interleaved retries across two correlations make it move backwards — and, more importantly, a timed-out attempt may already have caused an external side effect, so every attempt must stay independently accountable. |
 
 | `custody` fields | **FR-65.** `source_seq: null`, `run: null`, and exactly `epoch`, `public_key`, `custody_class` and `custody_basis`. It is a record rather than a field on the checkpoint because a verifier cannot tell custody from a signature — an HSM signature and one produced from a PEM file on disk are byte-identical — so putting the declaration in the chain is what makes altering it later break the chain, and a countersignature over the checkpoint above it is what fixes when it was made. `custody_basis` admits exactly one value, `operator-declared`: *independently supported* is a conclusion a verifier reaches by validating a provider attestation against FR-70's five checks, never a claim an operator writes about itself. |
+| `discontinuity` fields | **SEC-24.** `source_seq: null`, `run: null`, and exactly `last_sound_epoch`, `new_root_public_key` and `reason`. DES-06 describes this as a `policy` record; it cannot be one, because this allowlist is exhaustive per kind and a policy record carrying those fields would have to make them optional — optional on every ordinary policy change, where they mean nothing. A distinct kind says required-here and forbidden-there, and it lets a verifier find discontinuities BY KIND rather than sniffing for optional fields, which is what makes "never silently bridged" checkable. The `reason` is required: a bare declaration tells a reader that something happened and nothing about what, and this is the one record whose whole purpose is to explain. It is signed by the key it disowns, because that is the only key that exists at that moment, and the verifier reports that rather than refusing it. |
 
 ### What is deliberately absent
 

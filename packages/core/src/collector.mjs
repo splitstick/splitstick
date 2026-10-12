@@ -546,6 +546,40 @@ export class Collector {
   }
 
   /**
+   * Declare a key compromise — SEC-24.
+   *
+   * There is no cryptographic recovery from a compromised signing key. Records
+   * it produced are suspect from the compromise onward and nothing can change
+   * that. What this provides instead is an HONEST DISCONTINUITY: the operator
+   * says so, in the chain, naming the last epoch they believe sound and the new
+   * root key, and the checkpoint above it is countersigned so the declaration's
+   * TIME is independently established. A silent re-key is indistinguishable
+   * from an attack; a declared one is at least a statement somebody made at a
+   * time a second party can corroborate.
+   *
+   * It is signed by whatever key is available, which in the case it exists for
+   * is the suspect one. A design that required a fresh key to declare its
+   * predecessor compromised would make the declaration impossible exactly when
+   * it is needed, so the verifier reports what the declaration rests on rather
+   * than refusing it.
+   *
+   * @param {{ last_sound_epoch: number, new_root_public_key: Uint8Array|string,
+   *           reason: string }} o
+   * @returns {import('./chain.mjs').ChainEntry}
+   */
+  declareDiscontinuity(o) {
+    const key = typeof o.new_root_public_key === 'string'
+      ? o.new_root_public_key
+      : Buffer.from(o.new_root_public_key).toString('base64');
+    return this.#write(this.#envelope({
+      run: null, source_seq: null, kind: 'discontinuity',
+      last_sound_epoch: o.last_sound_epoch,
+      new_root_public_key: key,
+      reason: o.reason,
+    }));
+  }
+
+  /**
    * Anchor a periodic summary over many batches — FR-53, FR-22.
    *
    * The roll-up's leaves are the CHECKPOINT NOTES, not the records. A public or

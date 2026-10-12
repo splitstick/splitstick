@@ -127,7 +127,8 @@ export const DEFAULT_VERDICTS = Object.freeze({
   TRUNCATED_BELOW_DISCLOSED: 'fail',
   // M3b — a declared discontinuity is reported prominently and never silently
   // bridged, but it is the operator telling you something rather than evidence
-  // contradicting itself, so the specification makes it inconclusive.
+  // contradicting itself, so the specification makes it inconclusive. The
+  // SILENT re-key is the one that fails, by breaking the succession chain.
   DISCONTINUITY: 'inconclusive',
   // M4
   COVERAGE_GAP: 'fail',

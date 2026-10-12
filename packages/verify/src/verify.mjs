@@ -481,6 +481,28 @@ export async function verifyStore(root, opts = {}) {
   check('OP-SIG', combine(sigVs));
 
   // 7 WITNESS — DES-08, DES-20, FR-19, FR-30, FR-31, INT-02.
+  // SEC-24 — declared key compromises, found by KIND rather than by sniffing
+  // for optional fields, which is what makes "never silently bridged"
+  // checkable. There is no cryptographic recovery from a compromised key:
+  // records it produced are suspect from that point and nothing here changes
+  // that. What the declaration buys is an honest discontinuity, and the
+  // verifier's job is to refuse to carry trust across it.
+  const discontinuities = entries
+    .map((e, i) => ({ e, i }))
+    .filter(({ e }) => /** @type {any} */ (e).record?.kind === 'discontinuity')
+    .map(({ e }) => /** @type {any} */ (e).record);
+  for (const d of discontinuities) {
+    findings.push({
+      code: 'DISCONTINUITY', verdict: 'inconclusive',
+      detail: `the operator declared a key compromise at record_seq ${d.record_seq}: `
+        + `"${d.reason}". They state epoch ${d.last_sound_epoch} was the last they believe sound, `
+        + 'and name a new root key. Records this log produced after the compromise are suspect and '
+        + 'no verification can change that — what this declaration establishes is that somebody '
+        + 'said so, at a time a countersignature over the checkpoint above it can corroborate',
+      record_seq: d.record_seq,
+    });
+  }
+
   const latestBatchTs = entries.length === 0
     ? null
     : (/** @type {any} */ (entries[entries.length - 1]).record?.ts ?? null);
@@ -521,7 +543,8 @@ export async function verifyStore(root, opts = {}) {
     }
   }
 
-  return report(entries.length, anchored, checks, findings, notes, collector, opts.vkey, succession, wit, rollup);
+  return report(entries.length, anchored, checks, findings, notes, collector, opts.vkey,
+    succession, wit, rollup, discontinuities);
 }
 
 /**
@@ -536,7 +559,8 @@ export async function verifyStore(root, opts = {}) {
  * @param {Awaited<ReturnType<typeof verifyWitnesses>>} [wit]
  * @param {Awaited<ReturnType<typeof verifyRollups>>} [rollup]
  */
-function report(tree_size, anchored, checks, findings, notes, collector, vkey, succession = null, wit, rollup) {
+function report(tree_size, anchored, checks, findings, notes, collector, vkey, succession = null, wit, rollup,
+  /** @type {any[]} */ discontinuities = []) {
   const verdict = combine([...checks.map(c => c.verdict), ...findings.map(f => f.verdict)]);
 
   // DES-12's own shape: a verdict is reported with how many checks could and
@@ -581,7 +605,8 @@ function report(tree_size, anchored, checks, findings, notes, collector, vkey, s
     can.push('that no record was altered, inserted, removed or reordered within it');
     if (passed('CONTENT')) can.push('that every retained payload still reproduces the commitment in its record');
   }
-  if (summary.failed === 0 && notes.length && vkey && passed('OP-SIG') && passed('TREE')) {
+  if (summary.failed === 0 && notes.length && vkey && passed('OP-SIG') && passed('TREE')
+    && discontinuities.length === 0) {
     // The PINNED identity, not the collector id. They are different things —
     // the collector scopes a chain within a store, the identity is what the
     // reader pinned out of band — and naming the wrong one in the one sentence
@@ -603,6 +628,29 @@ function report(tree_size, anchored, checks, findings, notes, collector, vkey, s
       + `${rollup.covers === 1 ? 'is' : 'are'} covered by ${rollup.count} signed roll-up `
       + `summar${rollup.count === 1 ? 'y' : 'ies'}, so a single batch can be shown to be under one `
       + 'by an inclusion proof (FR-53)',
+    );
+  }
+
+  // SEC-24 — prominently, and never silently bridged.
+  if (discontinuities.length > 0) {
+    const first = discontinuities[0];
+    cannot.push(
+      `this log contains ${discontinuities.length} declared key compromise(s) — a DISCONTINUITY. `
+      + `Nothing this reader pinned reaches across it: the records after record_seq `
+      + `${first.record_seq} are signed under a key the pinned root no longer vouches for, and a `
+      + 'reader who wants to rely on them must re-pin the new root OUT OF BAND, from somewhere '
+      + 'the operator cannot quietly change',
+    );
+    cannot.push(
+      'the compromise declaration is signed by the key it disowns — the suspect key is the only '
+      + 'one that exists at that moment, so the statement rests on it. A fresh key cannot sign a '
+      + "statement about its predecessor's compromise without first being trusted, which is the "
+      + 'thing in question',
+    );
+    cannot.push(
+      `records written before the declaration are the ones in question: the operator states epoch `
+      + `${first.last_sound_epoch} was the last they believe sound, and that is their assessment `
+      + 'rather than anything this evidence establishes',
     );
   }
 

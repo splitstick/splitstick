@@ -3,7 +3,8 @@
   "delivered_milestones": [
     "M1",
     "M2",
-    "M3a"
+    "M3a",
+    "M3b"
   ],
   "verdict_rule": "A single fail makes the whole run fail. inconclusive never upgrades to fail and never downgrades to ok. ok means every check that could run, ran, and passed.",
   "codes": [
@@ -191,7 +192,7 @@
       "code": "DISCONTINUITY",
       "milestone": "M3b",
       "verdict": "inconclusive",
-      "conclusion": "A declared key-compromise break was crossed. Not a failure, and always surfaced: a verifier never silently bridges one (DES-06)."
+      "conclusion": "The operator declared a key compromise. There is no cryptographic recovery from one: records the compromised key produced are suspect from that point and no verification changes that. What the declaration establishes is that somebody said so, at a time a countersignature over the checkpoint above it can corroborate (SEC-24). INCONCLUSIVE, not a failure — a declared discontinuity is the honest outcome, and the silent re-key is the one that breaks the succession chain instead. Nothing a reader pinned reaches across it: they must re-pin the new root out of band."
     },
     {
       "code": "COVERAGE_GAP",
