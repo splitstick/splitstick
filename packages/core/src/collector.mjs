@@ -56,6 +56,8 @@ export class Collector {
   #degraded = null;
   /** Whether epoch 0 is already in the succession journal. */
   #rootEpochRecorded = false;
+  /** @type {boolean} */
+  #reconciled = false;
 
   /**
    * @param {object} o
@@ -66,8 +68,12 @@ export class Collector {
    * @param {string} [o.origin] the log origin; defaults to the signer name
    * @param {() => Date} [o.now] injected so tests are not clock-dependent
    * @param {string} [o.build] the build digest a heartbeat attests — SEC-22
+   * @param {(e: { detail: string, span: { from_source_seq: number, to_source_seq: number } })
+   *   => void} [o.onUnrecordable] FR-58 — where a failure to record a failure
+   *   is surfaced. Out of band, because the place it would otherwise go is the
+   *   thing that has filled up.
    */
-  constructor({ store, config, signer, collector, origin, now, build }) {
+  constructor({ store, config, signer, collector, origin, now, build, onUnrecordable }) {
     this.store = store;
     this.config = config;
     this.signer = signer;
@@ -75,6 +81,16 @@ export class Collector {
     this.origin = origin ?? signer.name;
     this.now = now ?? (() => new Date());
     this.build = build ?? 'sha256:unattested';
+    /**
+     * FR-58 — where a failure to record a failure is surfaced.
+     *
+     * Out of band, because the place it would otherwise go is the thing that
+     * has filled up. A collector that could not write its gap declaration and
+     * said nothing would present a clean history for a lossy run.
+     */
+    this.onUnrecordable = onUnrecordable ?? null;
+    /** Whether reconcileObservations() has already run and declared. */
+    this.#reconciled = false;
 
     // Physical integrity on open, not only on recover(). A process that
     // crashed mid-append leaves a torn line, and resuming on top of it turns a
@@ -567,6 +583,122 @@ export class Collector {
   }
 
   /**
+   * Reconcile the durable observation counter against what was written —
+   * FR-60, FR-61. Call once, after opening, before collecting.
+   *
+   * Three outcomes, and the difference between them is the whole point:
+   *
+   * - The counter matches what was written: nothing was lost, declare nothing.
+   *   A first run is not a loss, and declaring one would put a permanent
+   *   unknown-loss interval at the head of every log ever created.
+   * - The counter is AHEAD: those observations were spent and never written,
+   *   and the span is exact, so FR-26's gap declaration names it.
+   * - The counter is absent while records exist: it did not survive, so there
+   *   is no exact span to name and FR-60's unknown-loss interval is declared
+   *   instead — bounded by the last durable checkpoint and this restart.
+   *
+   * @returns {{ from_source_seq: number, to_source_seq: number }
+   *          | { unknown: true, last_checkpoint_source_seq: number }
+   *          | null}
+   */
+  reconcileObservations() {
+    if (this.#reconciled) return null;
+    const written = this.store.tip().source_seq;
+    const durable = this.store.readObservationCounter();
+    const hasRecords = this.store.readChain().length > 0;
+
+    if (durable === null) {
+      if (!hasRecords) {
+        this.#reconciled = true;
+        return null;
+      }
+      const at = this.store.readObservationCounterAt();
+      this.gapUnknown({
+        last_checkpoint_source_seq: written,
+        ...(at ? { from_ts: at } : {}),
+      });
+      this.#reconciled = true;
+      return { unknown: /** @type {true} */ (true), last_checkpoint_source_seq: written };
+    }
+    if (durable < written) {
+      // The counter can only ever be ahead of or level with what was written.
+      // Behind means the file was tampered with or restored from an older copy,
+      // and inventing a negative span would be worse than refusing.
+      throw new Error(
+        `the observation counter is ${durable} but source_seq ${written} is already written: the `
+        + 'counter is behind the record, which cannot happen in normal operation. The counter file '
+        + 'has been replaced or restored from an older copy.',
+      );
+    }
+    this.#reconciled = true;
+    if (durable === written) return null;
+    const span = { from_source_seq: written + 1, to_source_seq: durable };
+    this.declareGap(span);
+    // Continue from after the lost span: reusing those numbers would close the
+    // hole, which is exactly what the declaration exists to keep open.
+    this.sourceSeq = Math.max(this.sourceSeq, durable);
+    return span;
+  }
+
+  /**
+   * Write a gap declaration, falling back to the reserved slot — FR-58.
+   *
+   * The ordinary path first. If it fails for want of space, the reserve is
+   * released and the declaration retried, because a store that cannot record
+   * its own failure reports a clean history for a lossy run. If that fails
+   * too, the condition is surfaced out of band and the collector degrades —
+   * it does not carry on as though the gap were not there.
+   *
+   * @param {{ from_source_seq: number, to_source_seq: number, reason?: string }} span
+   * @returns {import('./chain.mjs').ChainEntry}
+   */
+  declareGap(span) {
+    try {
+      return this.gap(span);
+    } catch (first) {
+      const freed = this.store.releaseReserve();
+      if (freed) {
+        // The failed append already degraded this collector, so the retry
+        // would be refused before it reached the store and FR-58's whole
+        // mechanism would be dead in production. Cleared for exactly one
+        // attempt, and restored below whatever happens: the store is still
+        // exhausted, and a collector that carried on because its gap
+        // declaration succeeded would be claiming the opposite.
+        const was = this.#degraded;
+        this.#degraded = null;
+        try {
+          const entry = this.gap(span);
+          this.#degraded = new Error(
+            'the store is exhausted; the gap declaration was written using the reserved slot '
+            + `(FR-58) and nothing further can be recorded: ${
+              was instanceof Error ? was.message : String(was)}`,
+          );
+          return entry;
+        } catch (second) {
+          this.#degraded = was;
+          this.#unrecordable(span, second);
+        }
+      }
+      this.#unrecordable(span, first);
+    }
+  }
+
+  /**
+   * @param {{ from_source_seq: number, to_source_seq: number }} span
+   * @param {unknown} cause
+   * @returns {never}
+   */
+  #unrecordable(span, cause) {
+    const detail = `the gap declaration for source_seq ${span.from_source_seq}-`
+      + `${span.to_source_seq} could not be written even after releasing the reserve: `
+      + `${cause instanceof Error ? cause.message : String(cause)}`;
+    // Out of band: the place this would otherwise go is the thing that failed.
+    if (this.onUnrecordable) this.onUnrecordable({ detail, span });
+    this.#degraded = new Error(detail);
+    throw new CollectorDegraded(this.#degraded);
+  }
+
+  /**
    * Declare how this epoch's signing key is held — FR-65.
    *
    * The declaration goes in the chain so that altering it later breaks the
@@ -603,6 +735,9 @@ export class Collector {
     const note = encodeNote(text, [await signNote(text, this.signer)]);
     const checkpoint_seq = ++this.checkpointSeq;
     this.store.writeCheckpoint(checkpoint_seq, note);
+    // FR-61 — at each batch flush, so an unrecoverable crash loses at most the
+    // current window and FR-60's interval is bounded rather than open-ended.
+    this.store.writeObservationCounter(this.sourceSeq);
     return { checkpoint_seq, tree_size: leaves.length, root, note };
   }
 }

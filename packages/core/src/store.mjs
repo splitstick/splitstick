@@ -9,6 +9,8 @@
  *   content/<collector>/      payloads, encrypted.      DELETABLE
  *   keys/<collector>/         per-content keys.         DELETABLE
  *   queue/<collector>.jsonl   unwitnessed batches.     DURABLE  [DES-15, NFR-13]
+ *   counter/<collector>.json  the observation counter           [FR-61]
+ *   reserve/<collector>.slot  space kept for a gap declaration  [FR-58]
  *
  * The split is the whole point: Article 19 asks for months of logs accessible
  * and Article 17 asks for erasure, and those are only compatible if the two
@@ -46,7 +48,7 @@ export class Store {
   constructor(root, collector) {
     this.root = root;
     this.collector = collector;
-    for (const d of ['chain', 'salts', 'queue', 'succession']) {
+    for (const d of ['chain', 'salts', 'queue', 'succession', 'counter', 'reserve']) {
       mkdirSync(join(root, d), { recursive: true });
     }
     // Checkpoints are scoped to the collector, like the chain and the salts.
@@ -70,6 +72,26 @@ export class Store {
     // outage created, and an outage is when a restart is most likely: the two
     // failures compound rather than being independent.
     this.queuePath = join(root, 'queue', `${collector}.jsonl`);
+    this.counterPath = join(root, 'counter', `${collector}.json`);
+    // FR-58 — space kept back so a gap declaration can be written when
+    // everything else has failed. A store that cannot record its own failure
+    // reports a clean history for a lossy run, which is the worst outcome
+    // available: the log looks complete precisely when it is not.
+    //
+    // 64 KiB, which is four orders of magnitude more than one declaration
+    // needs. The number is generous on purpose: the cost is a file nobody
+    // reads, and the thing being bought is the ability to say what went wrong.
+    this.reserveBytes = 64 * 1024;
+    this.reservePath = join(root, 'reserve', `${collector}.slot`);
+    if (!existsSync(this.reservePath)) {
+      try {
+        writeFileSync(this.reservePath, Buffer.alloc(this.reserveBytes, 0), { mode: 0o600 });
+      } catch {
+        // Already out of space, or a read-only store. Opening must still
+        // succeed: a verifier opens a store it cannot write to, and refusing
+        // here would make damage unreadable.
+      }
+    }
     // One lock per collector, covering the journals AND the content store.
     // Holding it only inside ContentStore.putGroup() left every record that
     // externalises nothing — heartbeat, gap, policy, padding — unprotected, so
@@ -509,6 +531,74 @@ export class Store {
     if (raw.length === 0 || raw.endsWith('\n')) return;
     truncateSync(path, Buffer.byteLength(raw.slice(0, raw.lastIndexOf('\n') + 1), 'utf8'));
   }
+
+  /**
+   * Record the observation counter — FR-61.
+   *
+   * Written at each batch flush, atomically. Observations are spent on
+   * ATTEMPTS, written or not (DES-04 rule 2), so after a crash the collector
+   * resuming from the last WRITTEN source_seq would reuse the numbers that were
+   * spent — the hole would close up and a lossy run would read as a complete
+   * one. This file is what makes the loss nameable.
+   * @param {number} source_seq
+   */
+  writeObservationCounter(source_seq) {
+    this.lock.claim();
+    const tmp = `${this.counterPath}.${randomBytes(6).toString('hex')}.staging`;
+    try {
+      writeFileSync(tmp, JSON.stringify({
+        source_seq, at: new Date().toISOString(),
+      }) + '\n', { mode: 0o600 });
+      renameSync(tmp, this.counterPath);
+    } catch (e) {
+      try { unlinkSync(tmp); } catch { /* may not exist */ }
+      throw e;
+    }
+  }
+
+  /**
+   * @returns {number|null} null when the counter did not survive at all, which
+   *   is a different condition from zero and leads to FR-60's unknown-loss
+   *   interval rather than to an exact span.
+   */
+  readObservationCounter() {
+    if (!existsSync(this.counterPath)) return null;
+    try {
+      const d = JSON.parse(readFileSync(this.counterPath, 'utf8'));
+      return Number.isSafeInteger(d?.source_seq) && d.source_seq >= 0 ? d.source_seq : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** @returns {string|null} when the counter was last written */
+  readObservationCounterAt() {
+    if (!existsSync(this.counterPath)) return null;
+    try {
+      const d = JSON.parse(readFileSync(this.counterPath, 'utf8'));
+      return typeof d?.at === 'string' ? d.at : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Give up the reserved space so a gap declaration can be written — FR-58.
+   *
+   * Its ABSENCE afterwards is the signal that it was spent, which a reader can
+   * see without being told. Releasing it is irreversible by design: a store
+   * that quietly re-allocated the slot would be one that had already failed to
+   * record something and then hidden that it had.
+   * @returns {boolean} whether space was actually freed
+   */
+  releaseReserve() {
+    if (!existsSync(this.reservePath)) return false;
+    unlinkSync(this.reservePath);
+    return true;
+  }
+
+  /** @returns {boolean} FR-58 — is the reserve still intact? */
+  reserveIntact() { return existsSync(this.reservePath); }
 
   /** @param {number} seq @returns {string} */
   rollupPath(seq) { return join(this.rollupDir, `${seq}.json`); }
