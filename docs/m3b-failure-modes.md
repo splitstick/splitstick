@@ -20,6 +20,10 @@ it.
 | 3 | the queue file is torn by a crash mid-append | the torn tail is dropped and repaired before the next append, as the witness's journal is | ✓ |
 | 4 | a witness returns after an outage | the queue drains with backoff, newest first, and a success supersedes the lower heights (M3a) | |
 | 5 | the queue is drained while another process is draining it | one writer, by the same lock as everything else | ✓ |
+| 5a | one of two required witnesses answers and the other is offline | the checkpoint STAYS QUEUED and the result names the missing issuer. Added by review: the entry used to be dequeued on the single answer, so a set of two silently ran as a set of one, permanently | ✓ |
+| 5b | the missing witness returns after a restart | the queue drained across the restart reaches the quorum; the quorum counts the countersignature already on the envelope, because counting only the latest attempt would never reach two | ✓ |
+| 5c | a witness returns after missing several heights | it is asked to extend the height IT last signed, not the height the set reached — otherwise it is asked for a tree it never saw, refuses, and the queue can never clear by waiting | ✓ |
+| 5d | the configured quorum exceeds the number of witnesses in that class | the target is bounded by what could answer, so nothing queues forever over a configuration the operator chose; `quorum_met` still reports the configured number unmet and SEC-04 flags the set | ✓ |
 | 6 | a witness is unreachable for longer than `unwitnessed_ceiling` | an alert is raised OUT OF BAND — not into the log, which is the thing whose integrity is in question — and the coverage report refuses to issue a completeness claim beyond that point | ✓ |
 | 7 | the ceiling is reached and the witness then returns | the alert clears, and the report says the window was unwitnessed rather than pretending it was not | ✓ |
 | 8 | the operator sets `unwitnessed_ceiling: 0` or a negative value | refused at config load. A ceiling of zero means every batch is immediately overdue, which would make the alert meaningless rather than strict | ✓ |

@@ -353,9 +353,9 @@
     "title": "Queue drain and retry",
     "statement": "Drain and re-submit queued unwitnessed batches with backoff once a witness returns.",
     "source": "Operations — queued",
-    "verify": "Drain with exponential backoff, capped, highest height first; a fresh entry is eligible immediately because anchor() already tried, and the delay applies after a failed retry; `waiting` is reported separately from `anchored` so a caller can tell waiting from failing",
+    "verify": "Drain with exponential backoff, capped, highest height first; a fresh entry is eligible immediately because anchor() already tried, and the delay applies after a failed retry; `waiting` is reported separately from `anchored` so a caller can tell waiting from failing. The queue holds INSUFFICIENTLY witnessed checkpoints, not merely unwitnessed ones: an entry stays until its quorum is met, counting the countersignatures already on the envelope, and each attempt asks only the issuers that have not answered. docs/witness-outages.md states for an operator which parts recover automatically and which do not",
     "status": "done",
-    "evidence": "Anchorer.flush/nextAttemptAt; imposing the base delay on a fresh entry left a witness that returned in two seconds unused for thirty"
+    "evidence": "Anchorer.flush/nextAttemptAt; imposing the base delay on a fresh entry left a witness that returned in two seconds unused for thirty. An entry used to leave the queue as soon as ANY witness answered, with the quorum computed afterwards and not consulted, so a deployment requiring two independent sequence witnesses ran on one permanently with nothing retrying the other"
   },
   {
     "id": "OPS-03",

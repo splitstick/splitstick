@@ -549,3 +549,61 @@ test('LEG-09: an unverified countersignature is reported as unverified, not as a
   assert.match(verified, /ANCHORED \(verified\)/);
   assert.match(verified, /those proofs verify against the acceptance policy/);
 });
+
+test('OPS-02: the operator document names real result fields and the real dequeue rule', async () => {
+  // A document is tested by whether its claims appear in a specific place AND
+  // the code agrees with them — the rule the M3b failure inventory states for
+  // itself. docs/witness-outages.md tells an operator which parts of a witness
+  // outage recover without them; if the fields it tells them to watch get
+  // renamed, or the dequeue rule goes back to "any witness answered", the
+  // document becomes a confident lie and this is what fails.
+  const { readFileSync } = await import('node:fs');
+  const { codeOnly } = await import('../../../tools/code-text.mjs');
+  const root = new URL('../../..', import.meta.url).pathname;
+  const doc = readFileSync(join(root, 'docs/witness-outages.md'), 'utf8');
+  const src = codeOnly(readFileSync(join(root, 'packages/core/src/anchor.mjs'), 'utf8'));
+
+  // The distinction the document exists to draw.
+  assert.match(doc, /INSUFFICIENTLY witnessed/,
+    'the document must state what the queue holds');
+  assert.match(src, /sufficient/, 'and the code must gate the queue on sufficiency');
+  // Checked against stripped source, so a comment SAYING this is not the check.
+  assert.doesNotMatch(src, /attached\.length === 0\) this\.#enqueue/,
+    'the old rule — queue only when nobody answered — must not be back');
+
+  // Every field the document tells an operator to watch has to exist. These
+  // are read off a real result rather than matched in the source, so a renamed
+  // field fails here even if the old name survives in a comment.
+  const { Store } = await import('../src/store.mjs');
+  const { Collector } = await import('../src/collector.mjs');
+  const { parseConfig } = await import('../src/config.mjs');
+  const { generateDevSigner } = await import('../src/signer-file.mjs');
+  const { Anchorer } = await import('../src/anchor.mjs');
+  const dir = mkdtempSync(join(tmpdir(), 'ss-opsdoc-'));
+  const origin = 'splitstick.dev/host-1';
+  const signer = await generateDevSigner(origin);
+  let t = Date.parse('2026-10-11T10:00:00.000Z');
+  const store = new Store(dir, 'host-1');
+  const c = new Collector({
+    store, signer, collector: 'host-1', origin,
+    config: parseConfig('version: 1\nstore: ./s\nunwitnessed_ceiling: 1h\n', dir),
+    now: () => new Date(t += 1000),
+  });
+  const W = await statefulWitness('audit-a.internal');
+  W.online = false;
+  const a = new Anchorer({ store, witnesses: [W], quorum: 1, now: () => t });
+  c.action(tx({ correlation: 'c-1' }));
+  const cp = await c.checkpoint();
+  const submit = await a.anchor(cp.checkpoint_seq);
+  const flush = await a.flush();
+
+  for (const f of ['missing', 'sufficient', 'quorum_met']) {
+    assert.ok(f in submit, `a submission result still has ${f}, which the document cites`);
+    assert.match(doc, new RegExp(`\`${f}\``), `and the document cites ${f}`);
+  }
+  for (const f of ['anchored', 'superseded', 'waiting', 'queued']) {
+    assert.ok(f in flush, `a flush result still has ${f}, which the document cites`);
+    assert.match(doc, new RegExp(`\`${f}\``), `and the document cites ${f}`);
+  }
+  store.close();
+});

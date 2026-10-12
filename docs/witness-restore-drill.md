@@ -1,7 +1,8 @@
 # Witness restore drill
 
 **Covers:** OPS-06 · **Related:** FR-43, FR-44, LEG-04, §5 of the
-[Witness Practice Statement](witness-practice-statement.md)
+[Witness Practice Statement](witness-practice-statement.md),
+[witness outages](witness-outages.md)
 
 ```bash
 npm run drill:restore
