@@ -24,6 +24,7 @@ import { checkpointText, encodeNote } from './note.mjs';
 import { endorse, verifySuccession } from './succession.mjs';
 import { signNote } from './signer.mjs';
 import { extractRefs } from './content.mjs';
+import { captureAttestation, UNATTESTED_BUILD } from './capture.mjs';
 import { SCHEMA_VERSION, SUITE } from './record.mjs';
 
 /** @param {unknown} v @returns {v is Uint8Array} */
@@ -59,6 +60,9 @@ export class Collector {
   /** @type {boolean} */
   #reconciled = false;
 
+  /** @type {Record<string, number>} */
+  #counts = Object.create(null);
+
   /**
    * @param {object} o
    * @param {import('./store.mjs').Store} o.store
@@ -80,7 +84,25 @@ export class Collector {
     this.collector = collector;
     this.origin = origin ?? signer.name;
     this.now = now ?? (() => new Date());
-    this.build = build ?? 'sha256:unattested';
+    // A real digest, of a documented label, rather than the string
+    // `sha256:unattested` — which was not a digest at all and validated
+    // anyway. See capture.mjs: the report says "not attested" for it.
+    this.build = build ?? UNATTESTED_BUILD;
+    /**
+     * FR-64 — the capture surface this collector reports for ITSELF, digested
+     * from its own config so a heartbeat attests it without a caller having to
+     * remember. Computed once at construction: a surface that could change
+     * under a running collector without a policy record is the quiet change
+     * FR-23 exists to prevent.
+     */
+    this.capture = captureAttestation(config);
+    /**
+     * Records written since the last heartbeat, by kind — DES-10's `counts`.
+     * The collector's own statement of what it wrote in the interval, which a
+     * reader can check the chain against. It is a cross-check, not a second
+     * guarantee: the chain is what establishes the records.
+     */
+    this.#counts = Object.create(null);
     /**
      * FR-58 — where a failure to record a failure is surfaced.
      *
@@ -405,6 +427,12 @@ export class Collector {
     }
     this.head = e.head;
     this.recordSeq += 1;
+    // DES-10's `counts`, tallied only on a write that actually landed. A
+    // heartbeat is a delimiter and not content, so it is not counted — and
+    // counting it would place it in the FOLLOWING interval's tally, since the
+    // tally resets before the heartbeat is written.
+    const kind = String(record.kind);
+    if (kind !== 'heartbeat') this.#counts[kind] = (this.#counts[kind] ?? 0) + 1;
     return e;
   }
 
@@ -487,9 +515,20 @@ export class Collector {
    * @param {{ policy?: string }} [o]
    */
   heartbeat(o = {}) {
+    const counts = this.#counts;
+    this.#counts = Object.create(null);
     return this.#write(this.#envelope({
       run: null, source_seq: null, kind: 'heartbeat',
-      build: this.build, policy: o.policy ?? 'sha256:unset',
+      build: this.build,
+      // FR-64. The caller may override it, but the default is the collector's
+      // own attested surface rather than a placeholder — a heartbeat carrying
+      // `sha256:unset` attested to nothing while looking like an attestation.
+      policy: o.policy ?? this.capture.digest,
+      // FR-24, DES-10 — in the RECORD, because a coverage report must not
+      // imply finer resolution than the interval that produced its evidence,
+      // and it cannot know that interval from whatever config a reader holds.
+      heartbeat_interval_ms: this.config.heartbeat_interval_ms,
+      counts: { ...counts },
     }));
   }
 

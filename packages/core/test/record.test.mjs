@@ -49,12 +49,29 @@ test('FR-56: non-action kinds carry source_seq null, never a repeated value', ()
     build: 'sha256:' + 'dd'.repeat(32), policy: 'sha256:' + 'ee'.repeat(32) };
   assert.doesNotThrow(() => validateRecord(hb));
   assert.throws(() => validateRecord({ ...hb, source_seq: 5 }), RecordError);
-  // This fixture used to carry suite, heartbeat_interval and counts, which
-  // nothing defines — `suite` belongs to the checkpoint (DES-16) and coverage
-  // counts arrive with DES-10 in M4. Extending the schema is now an explicit
-  // act rather than something a writer can do by accident.
+  // `suite` belongs to the checkpoint (DES-16) and is still not a record
+  // field: extending the schema is an explicit act, not something a writer can
+  // do by accident.
   assert.throws(() => validateRecord({ ...hb, suite: 'SS1' }), RecordError);
-  assert.throws(() => validateRecord({ ...hb, counts: { tool_call: 1 } }), RecordError);
+
+  // DES-10's coverage fields have now arrived with M4, so this fixture's old
+  // assertion that they are refused has expired. They are OPTIONAL: a
+  // heartbeat written before they existed must not become MALFORMED_RECORD,
+  // which the verifier reports as `fail` — a false tampering signal over
+  // evidence that was correct when written. Present and nonsensical is damage;
+  // absent is a record that cannot support the claim, and the coverage report
+  // says resolution-unknown rather than assuming one.
+  assert.doesNotThrow(() => validateRecord({ ...hb, counts: { tool_call: 1 } }));
+  assert.doesNotThrow(() => validateRecord({ ...hb, heartbeat_interval_ms: 5000 }));
+  assert.doesNotThrow(() => validateRecord(hb), 'and absent stays valid');
+  for (const bad of [0, -1, 1.5, '5000', null]) {
+    assert.throws(() => validateRecord({ ...hb, heartbeat_interval_ms: bad }), RecordError,
+      `interval ${JSON.stringify(bad)}`);
+  }
+  for (const bad of [{ tool_call: -1 }, { tool_call: 1.5 }, { tool_call: '1' }, [], null]) {
+    assert.throws(() => validateRecord({ ...hb, counts: bad }), RecordError,
+      `counts ${JSON.stringify(bad)}`);
+  }
 });
 
 test('FR-69: a padding record has a nonce, no payload fields and null source_seq', () => {
