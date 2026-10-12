@@ -38,6 +38,7 @@ import { CAPABILITY_CLASSES } from '@splitstick/core/anchor';
 import { verifyTimeStampToken } from '@splitstick/core/rfc3161';
 import { describeOtsProof } from '@splitstick/core/opentimestamps';
 import { parseEnvelope } from '@splitstick/core/envelope';
+import { createHash as nodeCreateHash } from 'node:crypto';
 
 /**
  * @typedef {object} WitnessEntry
@@ -90,7 +91,9 @@ function combine(vs) {
  * @param {string} [opts.collector] the collector instance whose chain to read
  * @param {string} [opts.vkey] the pinned operator identity, as a note vkey
  * @param {{ quorum?: number, witnesses?: { id: string, public_key?: string,
- *   establishes?: string[], anchors?: string[] }[] }} [opts.policy] FR-30 — the ACCEPTANCE POLICY,
+ *   establishes?: string[], anchors?: string[],
+ *   key_history?: { keys?: { public_key?: string }[], note?: string } }[] }} [opts.policy]
+ *   FR-30 — the ACCEPTANCE POLICY,
  *   supplied by the reader. Not a hardcoded trust store: two readers with
  *   different trust must be able to reach different conclusions from one pack,
  *   and a verifier that only accepted witnesses we operate would make
@@ -875,12 +878,13 @@ async function verifyWitnesses({ envelopes, policy, leaves, findings, anchored, 
         // the operator could rewrite the note but not forge the signature over
         // what the witness actually saw.
         const r = await checkNoteLine(env.note ?? '', cs.entry, spec);
-        if (r === 'ok') {
+        if (r === 'ok' || (typeof r === 'object' && 'via' in r)) {
           credit(credited, cs.issuer, classes);
           witnesses.push({
             id: cs.issuer, type: cs.type, establishes: classes.join('+'), accepted: true,
             verdict: 'ok',
-            detail: `checkpoint ${seq}: countersigned by ${cs.issuer}${time.detail}`,
+            detail: `checkpoint ${seq}: countersigned by ${cs.issuer}`
+              + `${r === 'ok' ? '' : ` using ${r.via}`}${time.detail}`,
             ...time.fields,
           });
           continue;
@@ -891,6 +895,18 @@ async function verifyWitnesses({ envelopes, policy, leaves, findings, anchored, 
             verdict: 'inconclusive',
             detail: `checkpoint ${seq}: the acceptance policy names ${cs.issuer} but supplies no `
               + 'public key for it, so the signature was not checked against anything',
+          });
+          continue;
+        }
+        if (typeof r === 'object' && 'detail' in r) {
+          // FR-51 — the history was supplied and could not be used, or the key
+          // is not in it. Inconclusive either way: a witness this reader
+          // cannot attribute is a witness this reader does not know, and
+          // calling that tampering would make a rotation somebody forgot to
+          // publish look like an attack.
+          witnesses.push({
+            id: cs.issuer, type: cs.type, establishes: classes.join('+'), accepted: false,
+            verdict: 'inconclusive', detail: `checkpoint ${seq}: ${r.detail}`,
           });
           continue;
         }
@@ -1017,9 +1033,18 @@ async function verifyWitnesses({ envelopes, policy, leaves, findings, anchored, 
     };
   }
   if (CAPABILITY_CLASSES.every(c => (observed[c] ?? 0) === 0)) {
+    // Nothing counted. Whether that is a FAILURE depends on why: a proof this
+    // reader could not attribute — an unpublished rotation, a witness they do
+    // not know — is not evidence of tampering, and failing the whole check on
+    // it would be the same false accusation this project keeps having to
+    // design out. A proof that was REFUTED is already a finding of its own.
+    const refuted = witnesses.some(w => w.verdict === 'fail');
     return {
-      verdict: /** @type {Verdict} */ ('fail'),
-      detail: 'no proof in this pack is from a witness the acceptance policy accepts',
+      verdict: /** @type {Verdict} */ (refuted ? 'fail' : 'inconclusive'),
+      detail: refuted
+        ? 'a proof in this pack does not verify under the key the acceptance policy supplies'
+        : 'no proof in this pack could be attributed to a witness the acceptance policy accepts, '
+          + 'which is a statement about what this reader can check rather than about the evidence',
       witnesses, observed, met, quorum,
     };
   }
@@ -1059,26 +1084,143 @@ function credit(credited, issuer, classes) {
 /**
  * @param {string} noteBlob
  * @param {import('@splitstick/core/envelope').Countersignature} cs
- * @param {{ id: string, public_key?: string }} spec
- * @returns {Promise<'ok'|'bad'|'no-key'>}
+ * @param {{ id: string, public_key?: string,
+ *           key_history?: { keys?: { public_key?: string }[], note?: string } }} spec
+ * @returns {Promise<'ok'|'bad'|'no-key'|{ via: string }|{ detail: string }>}
  */
 async function checkNoteLine(noteBlob, cs, spec) {
-  if (!spec.public_key) return 'no-key';
+  if (!spec.public_key && !spec.key_history) return 'no-key';
+  /** @type {string} */
+  let text;
+  /** @type {{ keyId: Buffer, signature: Buffer, name: string }|undefined} */
+  let line;
   try {
-    const text = parseNote(noteBlob).text;
-    const parsed = parseNote(`${text}\n${cs.line}\n`);
-    const line = parsed.signatures.find(s => s.name === cs.issuer);
-    if (!line) return 'bad';
-    const pub = Buffer.from(spec.public_key, 'base64');
-    // Synchronous shape check first: a key id that does not match cannot be a
-    // signature by this key, and saying "does not verify" would be vaguer.
-    if (!line.keyId.equals(noteKeyId(cs.issuer, pub))) return 'bad';
-    return await verifyNoteSignature(text, line, {
-      name: cs.issuer, publicKey: pub, keyId: noteKeyId(cs.issuer, pub),
-    }) ? 'ok' : 'bad';
+    text = parseNote(noteBlob).text;
+    line = parseNote(`${text}\n${cs.line}\n`).signatures.find(x => x.name === cs.issuer);
   } catch {
     return 'bad';
   }
+  if (!line) return 'bad';
+  const found = line;
+
+  /** @param {Buffer} pub */
+  const matches = async (pub) => {
+    // Shape check first: a key id that does not match cannot be a signature by
+    // this key, and saying "does not verify" would be vaguer.
+    if (!found.keyId.equals(noteKeyId(cs.issuer, pub))) return false;
+    return verifyNoteSignature(text, found, {
+      name: cs.issuer, publicKey: pub, keyId: noteKeyId(cs.issuer, pub),
+    });
+  };
+
+  // FR-51 — a published key history, if one was supplied. It is VALIDATED
+  // before any key in it is used: a history nobody signed is a list, and one
+  // signed by a key outside itself would let anybody assert whatever keys they
+  // liked.
+  if (spec.key_history) {
+    const h = await validateKeyHistory(cs.issuer, spec.key_history);
+    if (!h.ok) return { detail: h.detail };
+    for (const [i, pub] of h.keys.entries()) {
+      if (!await matches(pub)) continue;
+      return {
+        via: i === h.keys.length - 1
+          ? `the current key (key ${i + 1} of ${h.keys.length} in the signed history)`
+          : `a RETIRED key (key ${i + 1} of ${h.keys.length} in the signed history) — rotation is `
+            + 'not an amnesty for anything signed before it',
+      };
+    }
+    return {
+      detail: `${cs.issuer}'s countersignature is not any key in its signed key history, so this `
+        + 'reader cannot attribute it. That is a witness this reader does not know rather than '
+        + 'evidence of tampering: a rotation nobody published looks exactly like this',
+    };
+  }
+
+  if (!spec.public_key) return 'no-key';
+  return await matches(Buffer.from(spec.public_key, 'base64')) ? 'ok' : 'bad';
+}
+
+/**
+ * Validate a witness's published key history — FR-51.
+ *
+ * The current key signs a note over a digest of the whole list, so three
+ * things must hold before any key in it may attribute a countersignature: the
+ * note exists, its signature verifies under a key that is ITSELF in the list,
+ * and the digest signed is the digest of the list as presented.
+ *
+ * Without the third the signature covers nothing — a key could be appended
+ * after signing and the note would still check out.
+ *
+ * @param {string} issuer
+ * @param {{ keys?: { public_key?: string }[], note?: string }} history
+ * One shape rather than a discriminated union: TypeScript does not preserve a
+ * boolean literal discriminant written in JSDoc, so `if (!h.ok)` narrows
+ * nothing. `detail` is empty on success — the same lesson as trustpath.mjs.
+ * @returns {Promise<{ ok: boolean, keys: Buffer[], detail: string }>}
+ */
+async function validateKeyHistory(issuer, history) {
+  const keys = Array.isArray(history.keys) ? history.keys : [];
+  if (keys.length === 0) return { ok: false, keys: [], detail: `${issuer}'s key history is empty` };
+  if (typeof history.note !== 'string' || history.note === '') {
+    return {
+      ok: false, keys: [],
+      detail: `${issuer}'s key history is UNSIGNED. A key history nobody signed is a list, and a `
+        + 'list cannot say which keys a witness held',
+    };
+  }
+  /** @type {Buffer[]} */
+  const raw = [];
+  for (const k of keys) {
+    if (typeof k?.public_key !== 'string') {
+      return { ok: false, keys: [], detail: `${issuer}'s key history has an entry with no public_key` };
+    }
+    const b = Buffer.from(k.public_key, 'base64');
+    if (b.length !== 32) {
+      return { ok: false, keys: [], detail: `${issuer}'s key history has an entry that is not a 32-byte key` };
+    }
+    raw.push(b);
+  }
+
+  /** @type {ReturnType<typeof parseNote>} */
+  let note;
+  /** @type {ReturnType<typeof parseCheckpointText>} */
+  let cp;
+  try {
+    note = parseNote(history.note);
+    cp = parseCheckpointText(note.text);
+  } catch (e) {
+    return {
+      ok: false, keys: [],
+      detail: `${issuer}'s key history note does not parse: ${
+        e instanceof Error ? e.message : String(e)}`,
+    };
+  }
+  const expected = nodeCreateHash('sha256').update(JSON.stringify(keys)).digest();
+  if (!expected.equals(cp.root)) {
+    return {
+      ok: false, keys: [],
+      detail: `${issuer}'s key history note signs a digest that does not cover the key list as `
+        + 'presented, so a key could have been added after it was signed and the signature would '
+        + 'still check out',
+    };
+  }
+  const sig = note.signatures.find(x => x.name === issuer);
+  if (!sig) {
+    return { ok: false, keys: [], detail: `${issuer}'s key history note carries no signature for ${issuer}` };
+  }
+  for (const pub of raw) {
+    if (!sig.keyId.equals(noteKeyId(issuer, pub))) continue;
+    if (await verifyNoteSignature(note.text, sig, {
+      name: issuer, publicKey: pub, keyId: noteKeyId(issuer, pub),
+    })) {
+      return { ok: true, keys: raw, detail: '' };
+    }
+  }
+  return {
+    ok: false, keys: [],
+    detail: `${issuer}'s key history is signed by a key that is not in the history itself, so `
+      + 'anybody could publish a history asserting whatever keys they liked',
+  };
 }
 
 
