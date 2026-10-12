@@ -40,6 +40,7 @@ import { fileSigner } from '@splitstick/core/signer-file';
 import { formatVkey } from '@splitstick/core/note';
 import { parseEnvelope } from '@splitstick/core/envelope';
 import { witnessesFromConfig } from '@splitstick/witnesses';
+import { verifyStore } from '@splitstick/verify';
 
 const ROOT = new URL('..', import.meta.url).pathname;
 const DEFAULT_WPS = join(ROOT, 'docs/witness-practice-statement.md');
@@ -51,12 +52,22 @@ const ORIGIN = 'splitstick.dev/wps';
 let configPath = null;
 let OUT = DEFAULT_OUT;
 let WPS = DEFAULT_WPS;
+/** @type {any} */
+let acceptance = null;
 const argv = process.argv.slice(2);
 for (let i = 0; i < argv.length; i += 1) {
   const a = argv[i];
   if (a === '--config') {
     configPath = argv[i + 1] ?? null;
     if (configPath === null) { console.error('--config needs a path'); process.exit(2); }
+    i += 1;
+  } else if (a === '--policy') {
+    // The ACCEPTANCE policy — whose signature counts. A separate file from
+    // --config by DES-09, because a verification that terminates at the key of
+    // the party who asked for the signature establishes nothing.
+    const v = argv[i + 1];
+    if (v === undefined) { console.error('--policy needs a path'); process.exit(2); }
+    acceptance = JSON.parse(readFileSync(v, 'utf8'));
     i += 1;
   } else if (a === '--statement') {
     // An operator publishes their OWN practice statement; this project's copy
@@ -75,7 +86,7 @@ for (let i = 0; i < argv.length; i += 1) {
   } else {
     // An unknown flag is refused rather than ignored. A misspelled --config
     // that silently produced an unwitnessed artefact would be read as anchored.
-    console.error(`unknown argument ${JSON.stringify(a)}; usage: anchor-wps [--config <file>] [--statement <file>] [--out <dir>]`);
+    console.error(`unknown argument ${JSON.stringify(a)}; usage: anchor-wps [--config <file>] [--policy <file>] [--statement <file>] [--out <dir>]`);
     process.exit(2);
   }
 }
@@ -162,56 +173,115 @@ for (const r of policyRecords) {
 }
 const policies = policyRecords;
 const current = policies.at(-1);
-if (current?.next_policy === digest) {
-  console.log(`
-Witness Practice Statement v${version} is already the current recorded version.
 
-  digest        ${digest}
-  records       ${policies.length} version(s) in ${OUT}
+// RECORDING and ANCHORING are separate steps, and this used to exit here when
+// the digest was unchanged — before the witness configuration was even read.
+// So the natural sequence, record the statement now and anchor it when a
+// witness set exists, was impossible: the second run saw an unchanged digest
+// and went home without contacting anybody. "Already recorded" is not "already
+// anchored", and only the first of those is a reason to append nothing.
+const unchanged = current?.next_policy === digest;
+const previous = unchanged
+  ? /** @type {string} */ (current?.previous_policy)
+  : (current?.next_policy ?? GENESIS_POLICY);
 
-Nothing appended: re-recording an unchanged statement would put a second record
-of the same version in the chain and make one publication look like two.
-`);
-  store.close();
-  process.exit(0);
+/** @type {number} */
+let recordSeq;
+if (unchanged) {
+  recordSeq = Number(current?.record_seq);
+} else {
+  collector.policy({ previous, next: digest });
+  await collector.checkpoint();
+  const appended = store.readChain().map(e => e.record).filter(r => r?.kind === 'policy').at(-1);
+  recordSeq = Number(appended?.record_seq);
 }
-const previous = current?.next_policy ?? GENESIS_POLICY;
 
-collector.policy({ previous, next: digest });
-const cp = await collector.checkpoint();
+/**
+ * The checkpoint the statement's record falls under: the earliest one whose
+ * tree size reaches it. That is the artefact a witness countersigns, and on a
+ * later run it has to be FOUND rather than assumed to be the one just written.
+ */
+let cpSeq = null;
+let cpTreeSize = null;
+for (const { seq, blob } of store.readCheckpoints()) {
+  const p = parseEnvelope(blob);
+  if (p.tree_size === null || p.tree_size < recordSeq) continue;
+  if (cpSeq === null || seq < cpSeq) { cpSeq = seq; cpTreeSize = p.tree_size; }
+}
+if (cpSeq === null) {
+  console.error(
+    `record ${recordSeq} in ${OUT} is under no checkpoint, so there is nothing a witness `
+    + 'could countersign. A checkpoint covering it has to exist before it can be anchored.',
+  );
+  store.close();
+  process.exit(1);
+}
 
 // ── anchoring, if and only if a witness was configured ──────────────────────
-/** @type {import('@splitstick/core/anchor').WitnessAdapter[]} */
-let witnesses = [];
 if (configPath !== null) {
   const cfg = parseConfig(readFileSync(configPath, 'utf8'), OUT);
-  witnesses = witnessesFromConfig(cfg);
+  const witnesses = witnessesFromConfig(cfg);
   if (witnesses.length === 0) {
     console.error(`${configPath} configures no witnesses, so there is nothing to anchor to`);
     store.close();
     process.exit(1);
   }
+  // Issuers already on the envelope are skipped by the Anchorer, so running
+  // this against an already-anchored checkpoint adds nothing and breaks
+  // nothing.
   const anchorer = new Anchorer({ store, witnesses, quorum: 1 });
-  const r = await anchorer.anchor(cp.checkpoint_seq);
+  const r = await anchorer.anchor(cpSeq);
   for (const f of r.failed) console.error(`  witness ${f.issuer} failed: ${f.detail}`);
 }
 
-// Whether this is anchored is read off the envelope, not decided by intent.
-const env = store.readCheckpointEnvelope(cp.checkpoint_seq);
-const parsed = env === null ? null : parseEnvelope(env);
-const issuers = parsed === null ? [] : [...parsed.issuers];
+// ── what may be claimed, decided by the VERIFIER ────────────────────────────
+//
+// Three states, not two. Issuer presence is not verification: an envelope can
+// carry a countersignature this operator could not check, and reporting that
+// as anchored states as established exactly what has not been established.
+//
+//   RECORDED                 nothing countersigned it.
+//   COUNTERSIGNED (unverified)  a proof is present and nothing checked it —
+//                            either no acceptance policy was supplied, or it
+//                            does not accept that issuer.
+//   ANCHORED (verified)      the proof validates against the acceptance policy.
+//
+// The verdict comes from verifyStore, the shipped verification path, rather
+// than from a check written here: that is what "no special path" means, and it
+// is also the only way the TSA token verification, trust path and EKU checks
+// apply to this artefact as they do to any other.
+//
+// DES-09 keeps the two policy files apart on purpose — --config says who is
+// ASKED, --policy says whose signature is ACCEPTED. Collapsing them would make
+// every verification terminate at the asker's own key, so with no --policy the
+// honest answer is "unverified" and never "anchored".
+const report = await verifyStore(OUT, {
+  collector: 'wps',
+  ...(acceptance ? { policy: acceptance } : {}),
+});
+const present = report.witnesses;
+const verified = present.filter(w => w.accepted && w.verdict === 'ok');
+const status = verified.length > 0
+  ? 'ANCHORED (verified)'
+  : present.length > 0 ? 'COUNTERSIGNED (unverified)' : 'RECORDED (not anchored)';
 
 console.log(`
-Witness Practice Statement v${version} ${issuers.length > 0 ? 'ANCHORED' : 'RECORDED (not anchored)'}.
+Witness Practice Statement v${version} — ${status}${unchanged ? ', already recorded' : ''}.
 
   digest        ${digest}
   supersedes    ${previous}
-  tree_size     ${cp.tree_size}
-  versions      ${policies.length + 1} in this chain
+  record_seq    ${recordSeq}
+  checkpoint    ${cpSeq} (tree_size ${cpTreeSize})
+  versions      ${policies.length + (unchanged ? 0 : 1)} in this chain
   store         ${OUT}
   identity      ${formatVkey(ORIGIN, signer.publicKey)}
-  countersigned ${issuers.length > 0 ? issuers.join(', ') : 'nobody'}
-
+  countersigned ${present.length === 0 ? 'nobody' : present.map(w => `${w.id} [${w.accepted ? w.verdict : 'not accepted by your policy'}]`).join(', ')}
+${unchanged ? `
+Nothing appended: re-recording an unchanged statement would put a second record
+of the same version in the chain and make one publication look like two. The
+existing record's checkpoint was used, so a statement recorded earlier can be
+anchored later.
+` : ''}
 Verify it the ordinary way — there is no special path, which is what "chained
 like any other record" means:
 
@@ -220,21 +290,33 @@ like any other record" means:
 Recompute the digest yourself:
 
   shasum -a 256 ${WPS}
-${issuers.length > 0 ? `
+${verified.length > 0 ? `
 Anchored: the digest above fell under a checkpoint countersigned by
-${issuers.map(i => `  - ${i}`).join('\n')}
-so the TIME of this version is established by those parties and not by this
-operator. Under the shipped default (FR-48) that time comes from a TSA, with
-nothing maintaining sequence state over it.
+${verified.map(w => `  - ${w.id} (${w.establishes})`).join('\n')}
+and those proofs verify against the acceptance policy you supplied, so the TIME
+of this version is established by those parties and not by this operator. Under
+the shipped default (FR-48) that time comes from a TSA, with nothing
+maintaining sequence state over it.
+` : present.length > 0 ? `
+Countersigned, NOT verified. ${present.length} proof(s) are on the envelope and
+nothing here checked them:
+${present.map(w => `  - ${w.id}: ${w.accepted ? w.verdict : 'no acceptance policy accepts this issuer'}`).join('\n')}
+A proof nobody checked is a proof that may not verify later, and the first
+anyone would hear of it is an auditor's report. Supply the acceptance policy
+that names these issuers and their keys:
+
+  npm run anchor-wps -- --config <witnesses> --policy <acceptance.json>
 ` : `
 THE LIMIT, stated because LEG-09 asks for anchored and this is not that. This
 run is signed by a local development key and countersigned by nobody, so what
 it establishes is the version chain and the digest of this text — NOT when the
 statement was published. The repository holds no operator key and must not.
 
-To actually anchor it, run it against a witness configuration:
+To actually anchor it, submit it to a witness set and name whose signatures you
+accept. The statement does not have to be re-recorded first: an existing
+record's checkpoint is found and submitted.
 
-  npm run anchor-wps -- --config path/to/witnesses.yaml
+  npm run anchor-wps -- --config path/to/witnesses.yaml --policy path/to/acceptance.json
 
 Until an operator does that with their own witness set, the external-anchoring
 half of LEG-09 is outstanding, and docs/m3b-follow-ups.md says so.

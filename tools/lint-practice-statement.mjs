@@ -130,8 +130,13 @@ const ROWS = [
     // run and no witness had ever signed it. If that disclosure is ever
     // deleted while the claim above stays, this is what fails.
     also: /that half of LEG-09 is\s+outstanding/i,
-    // And the command must keep deciding the word by reading the envelope.
-    tool: /issuers\.length > 0 \? 'ANCHORED'/,
+    // And the command must keep taking the word from the VERIFIER. Issuer
+    // presence was the first version of this and was not enough: an envelope
+    // can carry a proof the operator could not check, so the pinned property
+    // is that the status comes from verifyStore's accepted+ok witnesses, which
+    // is also what makes the TSA token and trust-path checks apply here.
+    tool: /verified = present\.filter\(w => w\.accepted && w\.verdict === 'ok'\)/,
+    tool2: /await verifyStore\(/,
   },
   {
     req: 'LEG-19', what: 'names the time source and the limits of the time assertion',
@@ -168,12 +173,14 @@ for (const row of ROWS) {
   if (row.also && !row.also.test(wps)) {
     errs.push(`${row.req}: the statement is missing its second half (${row.also}).`);
   }
-  if (row.tool && !row.tool.test(toolSrc)) {
-    errs.push(
-      `${row.req}: the statement claims ${row.what}, and tools/anchor-wps.mjs no longer matches `
-      + `${row.tool}. The command must read whether a countersignature is present rather than `
-      + 'assert that one is.',
-    );
+  for (const key of /** @type {const} */ (['tool', 'tool2'])) {
+    const pat = row[key];
+    if (pat && !pat.test(toolSrc)) {
+      errs.push(
+        `${row.req}: the statement claims ${row.what}, and tools/anchor-wps.mjs no longer matches `
+        + `${pat}. The command must take its verdict from the verifier rather than assert one.`,
+      );
+    }
   }
   if (row.source && !row.source.test(src)) {
     errs.push(

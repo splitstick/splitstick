@@ -224,3 +224,59 @@ every run: precisely the failure the check immediately below it was written to
 prevent. A policy record missing that field is now refused rather than treated
 as an absent record. Same shape as findings 7 and 11, in code written to fix
 findings 7 and 11.
+
+## Defects found by the re-review of PR #8
+
+Both in the command from finding 12 — the fix for a defect, with two defects in
+it. Both reproduced before being fixed.
+
+14. **A statement recorded earlier could never be anchored later.** The command
+    exited as soon as it saw an unchanged digest, and that check sat *before*
+    the witness configuration was read. So the ordinary sequence — record the
+    statement now, anchor it when a witness set exists — did not work: the
+    second run saw the same digest and went home without contacting anybody.
+    Reproduced exactly that way; the run printed "already the current recorded
+    version" and made no submission.
+
+    *Already recorded* is not *already anchored*, and only the first is a reason
+    to append nothing. The two are now separate: on an unchanged digest the
+    command finds the checkpoint the existing record already falls under and
+    submits that, appending no second record of the same version.
+
+15. **`ANCHORED` was decided by issuer presence, not by verification.** The
+    status was `issuers.length > 0 ? 'ANCHORED' : ...`, read straight off the
+    envelope. An envelope can carry a proof this operator could not check — the
+    collector attaches an unverified countersignature deliberately, because
+    discarding evidence a reader with the right policy could use would be worse
+    — so presence was being reported as established time. This was *my* fix for
+    finding 12: I replaced "the command asserts it anchored" with "the command
+    reads the envelope", which is better and still not verification.
+
+    Three states now, and the verdict is taken from `verifyStore` rather than
+    decided here:
+
+    | Reported | What is true |
+    |---|---|
+    | `RECORDED` | digest and version chain fixed; nothing countersigned them |
+    | `COUNTERSIGNED (unverified)` | a proof is present and nothing validated it |
+    | `ANCHORED (verified)` | the proof validates against the acceptance policy |
+
+    Using the shipped verifier rather than a check written in the command is
+    what makes the timestamp-token, certificate-path and extended-key-usage
+    checks apply to this artefact as they do to any other — and it is the
+    literal content of LEG-09's "like any other record, with no special path".
+    A local check would have been a fifth instance of the recurring instrument
+    failure in this project: a check that reads its own description as though
+    it were the code.
+
+    `--policy` is a separate flag from `--config` because DES-09 keeps the two
+    policy files apart: one says who gets asked, the other whose signature is
+    accepted. With no acceptance policy the only honest answer is *unverified*,
+    never *anchored*.
+
+**The shape of these two.** Finding 12 was a command that overclaimed. Both of
+these are in the correction to it, and both are the same error one step in:
+having been told the evidence must survive, I made it survive and then reported
+its mere existence as its sufficiency. Presence is not proof, and a record is
+not an anchor. That is the third and fourth time in this branch that the defect
+was a value checked against the wrong thing.

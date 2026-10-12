@@ -434,7 +434,10 @@ test('LEG-09: the statement record is append-only, and is not called anchored wi
   assert.doesNotMatch(first, /\bANCHORED\b/);
 
   // Running it again must not append a second record of the same version.
-  assert.match(run(), /already the current recorded version/);
+  const again = run();
+  assert.match(again, /already recorded/);
+  assert.match(again, /Nothing appended/);
+  assert.match(again, /versions      1 in this chain/);
 
   writeFileSync(statement, '**Version 1.1**\n\nsecond\n');
   assert.match(run(), /versions      2 in this chain/);
@@ -450,4 +453,99 @@ test('LEG-09: the statement record is append-only, and is not called anchored wi
   // against the first.
   assert.equal(store.readSuccession().length, 1);
   store.close();
+});
+
+// ── PR #8 re-review: recording is not anchoring, and presence is not proof ──
+
+/**
+ * Run the real anchor-wps command. Returns stdout+stderr together, because
+ * what it REFUSES to claim is as much the subject here as what it prints.
+ * @param {string[]} args
+ */
+async function anchorWps(args) {
+  const { spawnSync } = await import('node:child_process');
+  const tool = new URL('../../../tools/anchor-wps.mjs', import.meta.url).pathname;
+  const r = spawnSync(process.execPath, [tool, ...args], { encoding: 'utf8' });
+  return `${r.stdout}${r.stderr}`;
+}
+
+test('LEG-09: a statement recorded earlier can be anchored later', async () => {
+  // The command exited as soon as it saw an unchanged digest — BEFORE reading
+  // the witness configuration. So record-now-anchor-later, which is the
+  // ordinary sequence when the witness set arrives after the statement, was
+  // impossible: the second run saw the same digest and went home without
+  // contacting anybody. "Already recorded" is not "already anchored".
+  const { writeFileSync } = await import('node:fs');
+  const dir = mkdtempSync(join(tmpdir(), 'ss-wps-later-'));
+  const statement = join(dir, 'wps.md');
+  const out = join(dir, 'store');
+  const cfg = join(dir, 'witnesses.yaml');
+  writeFileSync(statement, '**Version 1.0**\n\nfirst\n');
+  // A host in .invalid can never resolve, so the submission fails without
+  // reaching a network. The point is that it is ATTEMPTED.
+  writeFileSync(cfg, 'version: 1\nstore: ./s\nwitnesses:\n  - id: tsa.invalid\n'
+    + '    type: rfc3161\n    url: https://tsa.invalid/tsa\n');
+
+  await anchorWps(['--statement', statement, '--out', out]);
+  const later = await anchorWps(['--statement', statement, '--out', out, '--config', cfg]);
+
+  assert.match(later, /already recorded/, 'it still does not append a second record');
+  assert.match(later, /witness tsa\.invalid failed/,
+    'but the witness IS contacted: the configuration is read on an unchanged digest');
+  assert.match(later, /checkpoint    1/, 'against the EXISTING record\'s checkpoint');
+});
+
+test('LEG-09: an unverified countersignature is reported as unverified, not as anchored', async () => {
+  // The status was `issuers.length > 0 ? 'ANCHORED' : ...` — issuer PRESENCE.
+  // An envelope can carry a proof this operator could not check, and calling
+  // that anchored states as established the one thing that has not been.
+  // Three states now, and the verdict comes from verifyStore rather than from
+  // a check written in the command: that is what "no special path" means, and
+  // it is what makes the TSA token, trust path and EKU checks apply here too.
+  const { writeFileSync } = await import('node:fs');
+  const { Store } = await import('../src/store.mjs');
+  const { generateDevSigner } = await import('../src/signer-file.mjs');
+  const { parseNote, encodeNote } = await import('../src/note.mjs');
+  const { signNote } = await import('../src/signer.mjs');
+  const { parseEnvelope, addCountersignature } = await import('../src/envelope.mjs');
+
+  const dir = mkdtempSync(join(tmpdir(), 'ss-wps-verif-'));
+  const statement = join(dir, 'wps.md');
+  const out = join(dir, 'store');
+  writeFileSync(statement, '**Version 1.0**\n\nfirst\n');
+  assert.match(await anchorWps(['--statement', statement, '--out', out]),
+    /RECORDED \(not anchored\)/, 'nothing countersigned it');
+
+  // Put a real, well-formed countersignature on the envelope.
+  const issuer = 'audit.example';
+  const key = await generateDevSigner(issuer);
+  const store = new Store(out, 'wps');
+  const raw = /** @type {string} */ (store.readCheckpointEnvelope(1));
+  const note = /** @type {string} */ (parseEnvelope(raw).note);
+  const text = parseNote(note).text;
+  const line = encodeNote(text, [await signNote(text, key)]).trim().split('\n').at(-1);
+  store.writeCheckpointEnvelope(1, addCountersignature(JSON.parse(raw), {
+    type: 'c2sp-note', issuer, covers: 'note', line: /** @type {string} */ (line),
+  }));
+  store.close();
+
+  // No acceptance policy: a proof is present and nothing checked it.
+  const unverified = await anchorWps(['--statement', statement, '--out', out]);
+  assert.match(unverified, /COUNTERSIGNED \(unverified\)/);
+  assert.doesNotMatch(unverified, /ANCHORED/, 'and the word anchored is not used');
+  assert.match(unverified, /no acceptance policy accepts this issuer/);
+
+  // With the acceptance policy that names the issuer and its key, the same
+  // evidence verifies — and only then is it anchored.
+  const policy = join(dir, 'acceptance.json');
+  writeFileSync(policy, JSON.stringify({
+    witnesses: [{
+      id: issuer,
+      public_key: Buffer.from(key.publicKey).toString('base64'),
+      establishes: ['sequence'],
+    }],
+  }));
+  const verified = await anchorWps(['--statement', statement, '--out', out, '--policy', policy]);
+  assert.match(verified, /ANCHORED \(verified\)/);
+  assert.match(verified, /those proofs verify against the acceptance policy/);
 });

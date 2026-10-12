@@ -190,10 +190,28 @@ itself the evidence, and it verifies through the ordinary verifier.
 
 **Two steps, and only one of them is ours.** Recording the digest establishes
 the version chain. It establishes nothing about *when*, because that takes a
-second party. `npm run anchor-wps -- --config <witnesses>` submits the
-checkpoint to a configured witness set, and the command describes a result as
-anchored only when a countersignature actually came back — it reads the
-envelope rather than taking its own word for it.
+second party. `npm run anchor-wps -- --config <witnesses> --policy <acceptance>`
+submits the checkpoint to a configured witness set. The two steps need not be
+one run: a statement recorded before any witness set existed is anchored later
+against the checkpoint it already falls under, with no second record of the
+same version.
+
+**Three states, because countersigned is not verified.** A proof sitting on an
+envelope is not a proof anybody checked, and the difference is the whole of
+what a countersignature is worth:
+
+| Reported | What is true |
+|---|---|
+| `RECORDED` | the digest and the version chain are fixed; nothing countersigned them |
+| `COUNTERSIGNED (unverified)` | a proof is present and nothing here validated it — no acceptance policy was supplied, or it does not accept that issuer |
+| `ANCHORED (verified)` | the proof validates against the acceptance policy, over the note it names |
+
+The verdict is taken from the ordinary verifier, not decided by the command, so
+the timestamp-token, certificate-path and extended-key-usage checks that apply
+to any other evidence apply to this statement too. Which signatures count is
+the reader's acceptance policy (DES-09), a separate file from the one naming
+who gets asked: a verification that terminated at the key of the party who
+requested the signature would establish nothing.
 
 **What this means for the copy you are reading.** This repository holds no
 operator key and must not, so the artefact its own command produces is signed
