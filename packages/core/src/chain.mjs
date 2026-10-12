@@ -146,12 +146,21 @@ export function recomputeChain(entries) {
     if (e.record.kind === 'gap') {
       const from = /** @type {number} */ (e.record.from_source_seq);
       const to = /** @type {number} */ (e.record.to_source_seq);
-      if (from !== lastSource + 1) {
+      // Against the ACCOUNTED position, which includes any earlier
+      // declaration. Comparing only against the last written observation let
+      // the same span be declared any number of times — every repeat met
+      // `lastSource + 1` and every repeat was accepted, by the verifier as
+      // well as the collector. It also refused two genuinely adjacent
+      // declarations, which a collector that lost two windows before writing
+      // anything produces.
+      const accounted = declared === null ? lastSource : declared;
+      if (from !== accounted + 1) {
         findings.push({
           code: 'SEQ_BROKEN', record_seq: seq,
-          detail: `the gap declared ${from}-${to} does not begin at ${lastSource + 1}, the next `
-            + 'observation after the last one written: a declaration that does not meet the '
-            + 'sequence accounts for nothing',
+          detail: `the gap declared ${from}-${to} does not begin at ${accounted + 1}, the next `
+            + 'observation this log has not yet accounted for: a declaration that does not meet '
+            + 'the sequence accounts for nothing, and a span already declared cannot be declared '
+            + 'again',
         });
       } else {
         declared = to;

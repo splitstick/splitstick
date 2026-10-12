@@ -105,6 +105,32 @@ const HEX32 = /^[0-9a-f]{32}$/;
 // the bytes move, and 16 bits of collision resistance does not carry it.
 const CID = /^sha256:[0-9a-f]{64}$/;
 const RFC3339 = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+
+/**
+ * A timestamp must match the SHAPE and name a real instant.
+ *
+ * The regex alone accepted `2026-13-45T99:99:99.999Z` — month thirteen, day
+ * forty-five — because every digit is in the right place. Anything that later
+ * computed with the value got NaN: FR-39's unwitnessed window, M4's coverage
+ * reasoning, any ordering by time. A regex that checks the shape of a
+ * timestamp does not check that it is one.
+ *
+ * `Date.parse` is not the check either: it rejects month thirteen but ROLLS
+ * `2026-02-30` over to March 2nd and reports it finite, so a date that does
+ * not exist would be read back as a different date than the one written.
+ * The round trip is the check — the required format is exactly the one
+ * `toISOString` emits, so a string naming a real instant is reproduced
+ * character for character and anything normalised away fails to match.
+ *
+ * Found reviewing M3b; the hole was in M1's schema from the beginning.
+ * @param {unknown} v
+ */
+export function isTimestamp(v) {
+  if (typeof v !== 'string' || !RFC3339.test(v)) return false;
+  const ms = Date.parse(v);
+  if (!Number.isFinite(ms)) return false;
+  return new Date(ms).toISOString() === v;
+}
 /** Exactly 32 bytes, base64 — 43 characters and one '=' of padding. */
 const B64_32 = /^[A-Za-z0-9+/]{43}=$/;
 const DIGEST = /^sha256:[0-9a-f]{64}$/;
@@ -112,7 +138,7 @@ const DIGEST = /^sha256:[0-9a-f]{64}$/;
 /** @param {Record<string, unknown>} r @param {string} f */
 function reqTimestamp(r, f) {
   req(r, f);
-  if (typeof r[f] !== 'string' || !RFC3339.test(/** @type {string} */ (r[f]))) {
+  if (typeof r[f] !== 'string' || !isTimestamp(/** @type {string} */ (r[f]))) {
     throw new RecordError(`${f} must be RFC 3339 UTC with milliseconds, got ${JSON.stringify(r[f])}`);
   }
 }
@@ -169,7 +195,7 @@ export function validateRecord(rec) {
   if (!Number.isInteger(r.record_seq) || /** @type {number} */ (r.record_seq) < 1) {
     throw new RecordError('record_seq must be an integer from 1');
   }
-  if (typeof r.ts !== 'string' || !RFC3339.test(r.ts)) throw new RecordError('ts must be RFC 3339 UTC with milliseconds');
+  if (typeof r.ts !== 'string' || !isTimestamp(r.ts)) throw new RecordError('ts must be RFC 3339 UTC with milliseconds');
   if (typeof r.kind !== 'string' || !RECORD_KINDS.includes(r.kind)) {
     throw new RecordError(`unknown kind ${String(r.kind)}: the enum is closed (DES-01)`);
   }

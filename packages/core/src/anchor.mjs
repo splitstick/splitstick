@@ -190,7 +190,11 @@ export class Anchorer {
     const oldest = this.entries.reduce(
       (m, e) => (Date.parse(e.since) < Date.parse(m.since) ? e : m), first);
     const age = this.now() - Date.parse(oldest.since);
-    const over = Number.isFinite(age) && age > ceiling;
+    // An unreadable age counts as OVER, not under. The store refuses such an
+    // entry on read, so this should be unreachable — and if it ever is
+    // reachable, the safe direction is to raise the alarm rather than to
+    // suppress it, which is how the previous version failed.
+    const over = !Number.isFinite(age) || age > ceiling;
     if (over && !this.#breached) {
       const event = {
         oldest_checkpoint_seq: oldest.checkpoint_seq,
@@ -405,11 +409,12 @@ export class Anchorer {
    */
   #enqueue(seq) {
     if (this.entries.some(e => e.checkpoint_seq === seq)) return;
-    this.entries.push({
+    const entry = {
       checkpoint_seq: seq,
       since: new Date(this.now()).toISOString(),
       attempts: 0,
-    });
+    };
+    this.entries.push(entry);
     this.entries.sort((a, b) => a.checkpoint_seq - b.checkpoint_seq);
     let trimmed = false;
     while (this.entries.length > this.queue_ceiling) {
@@ -417,8 +422,13 @@ export class Anchorer {
       this.dropped += 1;
       trimmed = true;
     }
-    if (trimmed) this.store.writeQueue(this.entries);
-    else this.store.appendQueue(/** @type {any} */ (this.entries.at(-1)));
+    // THIS entry, not whatever sorted last. Appending `entries.at(-1)` meant
+    // that anchoring an older checkpoint appended the newest one a second time
+    // and never persisted the new entry at all — the disk held [2,3,3] while
+    // memory held [1,2,3], so checkpoint 1 was lost on restart. A batch that
+    // never gets witnessed is precisely what NFR-13 exists to prevent.
+    if (trimmed || !this.entries.includes(entry)) this.store.writeQueue(this.entries);
+    else this.store.appendQueue(entry);
   }
 
   /**

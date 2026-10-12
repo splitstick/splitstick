@@ -130,10 +130,18 @@ test('FR-60: an empty store with no counter declares nothing', async () => {
   store.close();
 });
 
-test('FR-60: a counter BEHIND the written records is damage, not a loss', async () => {
-  // The counter can only ever be ahead of or level with what was written.
-  // Behind means the file was tampered with or restored from an older copy,
-  // and inventing a negative span would be worse than refusing.
+test('FR-60: a counter behind the written records is the ordinary state, not damage', async () => {
+  // This test asserted the opposite and was wrong. The counter is written at
+  // each FLUSH while source_seq advances on every observation, so between
+  // flushes it is always behind — treating that as tampering made any crash
+  // after a reconciliation and before the next checkpoint refuse to open the
+  // store, with hand-editing the counter file as the only way out.
+  //
+  // The consequence of accepting it: a counter restored from an older copy
+  // causes a loss to be UNDER-declared. That is the operator misreporting
+  // their own loss, which the gap mechanism never claimed to prevent — and it
+  // cannot be told apart from the normal mid-window state, so refusing would
+  // break the ordinary path to catch nothing.
   const root = mkdtempSync(join(tmpdir(), 'ss-ctr-'));
   const { store, c, signer } = await open_(root);
   c.action(tx({ correlation: 'a' }));
@@ -143,7 +151,9 @@ test('FR-60: a counter BEHIND the written records is damage, not a loss', async 
   writeFileSync(join(root, 'counter', 'host-1.json'),
     JSON.stringify({ source_seq: 1, at: '2026-10-11T10:00:00.000Z' }));
   const { store: s2, c: c2 } = await open_(root, signer);
-  assert.throws(() => c2.reconcileObservations(), /behind|counter/i);
+  assert.doesNotThrow(() => c2.reconcileObservations());
+  assert.equal(c2.reconcileObservations(), null, 'nothing is declared, and nothing invented');
+  assert.deepEqual(s2.readChain().map(rec).filter(r => r.kind === 'gap'), []);
   s2.close();
 });
 

@@ -270,9 +270,9 @@
       "title": "Gap declarations with an exact span",
       "statement": "When the observation counter survived the failure, record a signed declaration naming the exact source_seq span that was observed but never written. It occupies one record position. Observation gaps are detected from consecutive persisted source_seq values, never by comparing source_seq with record_seq, which count different things.",
       "source": "Coverage attestation — signed gap declarations",
-      "verify": "A gap occupies one record position whatever its span; a reversed, zero-bounded or non-integer span is refused and consumes no position. The verifier now READS the declaration: it accounts for exactly the span it names, must meet the sequence where it left off, does not carry forward, and a span wider or narrower than the jump is itself reported",
+      "verify": "A gap occupies one record position whatever its span; a reversed, zero-bounded or non-integer span is refused and consumes no position. The verifier now READS the declaration: it accounts for exactly the span it names, must meet the sequence where it left off, does not carry forward, and a span wider or narrower than the jump is itself reported. A span already accounted for by an earlier declaration is refused at both ends — the collector will not propose it and the verifier will not accept it",
       "status": "done",
-      "evidence": "record.mjs validation + recomputeChain declared-gap accounting; M3a wrote the record and never taught the verifier to read it, so a log that disclosed its own loss was reported as SEQ_BROKEN"
+      "evidence": "record.mjs validation + recomputeChain declared-gap accounting + reconcileObservations accounting against prior declarations; M3a wrote the record and never taught the verifier to read it, so a log that disclosed its own loss was reported as SEQ_BROKEN. Then reading it was not enough: a SECOND declaration of the same span was accepted by both sides and verified ok, which is how an operator makes one loss look like two and hides the size of a third"
     },
     {
       "id": "FR-27",

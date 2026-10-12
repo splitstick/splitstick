@@ -90,3 +90,68 @@ band through a callback and the collector writes no record for it.
    restored directory — and that number is the drill's entire output. It now
    fails if it measures no loss at all, so it cannot pass without exercising a
    stale backup.
+
+## Defects found by the independent review of M3b, each reproduced before it was fixed
+
+Five findings. Four are M3b's; the fifth has been in the record schema since M1.
+All five are the same shape as the external findings on M3a — a bad value
+tolerated, coerced, or skipped where it should have been refused or repaired.
+
+7. **One corrupt `since` in the queue silenced the FR-68 ceiling forever.** The
+   unwitnessed age is `now - since`. An unparseable `since` makes that `NaN`,
+   and every comparison against the ceiling is then false — so the mechanism
+   whose only job is to stop fail-open becoming indefinite was itself silenced
+   indefinitely, by one field, with no warning anywhere. Two changes: an
+   unreadable entry is refused by `Store.readQueue` instead of being coerced or
+   dropped, and an age that cannot be measured counts as **over** the ceiling,
+   because an unmeasurable outage is not a short one.
+
+8. **The queue's append fast path persisted a different queue than the one in
+   memory.** Entries are kept ordered by `checkpoint_seq`, so an out-of-order
+   enqueue lands mid-array — while `appendQueue` wrote the new entry at the end.
+   Memory held `[1,2,3]` and the journal held `[2,3,3]`: a restart could not
+   reconcile the two, and the queue is the thing that exists to survive a
+   restart. The append is now taken only when the new entry really is last.
+
+9. **A legitimate restart refused to open the store.** A counter behind the
+   written records was treated as tampering, but the counter is written at each
+   flush while `source_seq` advances at every observation, so behind is what the
+   ordinary state between flushes looks like. Any crash after a reconciliation
+   and before the next checkpoint bricked the store until somebody edited the
+   counter file by hand. The test that asserted the wrong behaviour is rewritten
+   to record why. The cost of accepting it: a counter restored from an older
+   copy under-declares a loss — the operator misreporting their own loss, which
+   the gap mechanism never claimed to prevent, and which cannot be told apart
+   from the normal state, so refusing would break the ordinary path to catch
+   nothing.
+
+10. **A duplicate gap declaration was accepted by both the collector and the
+    verifier, and verified `ok`.** Declaring `2-3` twice passed, because each
+    side only ever compared a declaration against the written sequence and never
+    against the declarations already made. That is how an operator makes one
+    loss look like two, and how the size of a third is hidden inside the
+    double-count. Both sides now account against what has already been
+    declared: the collector will not propose an accounted span, and the verifier
+    will not accept one. Finding 2 above taught the verifier to *read* the
+    declaration; reading it was not sufficient.
+
+11. **`2026-13-45T99:99:99.999Z` validated as a timestamp** — month thirteen,
+    day forty-five — because every digit was in the right place and the schema
+    checked the shape with a regex. Present since M1. Anything computing with
+    the value got `NaN`: FR-39's unwitnessed window, M4's coverage reasoning,
+    any ordering by time. `Date.parse` is not the fix either: it rejects month
+    thirteen but rolls `2026-02-30` over to March 2nd and reports it finite, so
+    a date that never existed would read back as a different date than the one
+    written. One `isTimestamp` now round-trips through `toISOString` — the
+    required format is exactly what `toISOString` emits, so a real instant is
+    reproduced character for character and anything normalised away fails — and
+    every call site that was testing the regex directly uses it.
+
+**What the five have in common with M3a's external findings.** Every one sits in
+state that crosses a restart — the queue, the counter, the declarations, a
+stored timestamp — and every one was a place where the code read damaged or
+duplicated state and carried on. None was a missing feature; all five were
+written, reviewed by me, and passed. The failure is not in noticing that state
+must be checked, it is in checking it against the wrong thing: the shape instead
+of the value (7, 11), memory instead of disk (8), the written records instead of
+what is accounted for (9, 10).

@@ -284,7 +284,7 @@
     "source": "Operations — fails open, loudly; Coverage attestation",
     "verify": "An unknown-loss interval bounded by the last durable checkpoint and the restart, declared when the counter did not survive; a first run declares nothing, because a first run is not a loss",
     "status": "done",
-    "evidence": "Collector.reconcileObservations -> gapUnknown; declaring one would put a permanent unknown-loss interval at the head of every log ever created"
+    "evidence": "Collector.reconcileObservations -> gapUnknown; declaring one would put a permanent unknown-loss interval at the head of every log ever created. The span is measured from what is ACCOUNTED FOR — written records and the spans already declared — so a gap is never re-declared and the interval after a restart starts where the last declaration ended"
   },
   {
     "id": "FR-61",
@@ -293,9 +293,9 @@
     "title": "Observation counter durability",
     "statement": "Checkpoint the observation counter durably at each batch flush, so an unrecoverable crash loses at most the current window and the unknown-loss interval is bounded rather than open-ended.",
     "source": "Operations — fails open, loudly",
-    "verify": "The counter is written atomically at each batch flush and reconciled against the chain on open; level means no loss, ahead means an exact span to declare, absent means FR-60's interval. A counter BEHIND the records is refused rather than reconciled",
+    "verify": "The counter is written atomically at each batch flush and reconciled against the chain on open; level means no loss, ahead means an exact span to declare, absent means FR-60's interval. A counter BEHIND the accounted position is the ordinary mid-window state and declares nothing: the counter advances at each flush while source_seq advances at every observation, so behind is what the state between flushes looks like",
     "status": "done",
-    "evidence": "Store.writeObservationCounter + Collector.reconcileObservations; resuming from the last WRITTEN source_seq reused the numbers that were spent, so the hole closed up and a lossy run read as complete"
+    "evidence": "Store.writeObservationCounter + Collector.reconcileObservations; resuming from the last WRITTEN source_seq reused the numbers that were spent, so the hole closed up and a lossy run read as complete. Treating a behind counter as tampering was then wrong in the other direction — it refused to open the store after any crash between a reconciliation and the next checkpoint, with hand-editing the counter file as the only way back. A restored-older counter under-declares a loss, which is the operator misreporting their own loss and indistinguishable from the normal state"
   },
   {
     "id": "FR-62",
@@ -357,7 +357,7 @@
     "source": "Operations — fails open, loudly",
     "verify": "Past the ceiling an alert is raised OUT OF BAND through a callback that writes no record, once per breach rather than once per flush; the breach clears on drain and `breaches` keeps the window; a ceiling of zero or less is refused at config load",
     "status": "done",
-    "evidence": "Anchorer.ceilingBreached/onCeilingBreached + config positive(); an alert about the log's integrity written into that log asks the suspect to carry the complaint"
+    "evidence": "Anchorer.ceilingBreached/onCeilingBreached + config positive(); an alert about the log's integrity written into that log asks the suspect to carry the complaint. The age was computed from the queued entry's `since`, so a single unparseable `since` on disk made the age NaN and every comparison against the ceiling false — the ceiling that exists to stop fail-open becoming indefinite was itself silenced indefinitely by one corrupt field. Store.readQueue now refuses such an entry, and an unmeasurable age counts as over the ceiling rather than under it"
   },
   {
     "id": "FR-69",

@@ -30,8 +30,11 @@
 
 import { mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync, openSync, writeSync, closeSync, renameSync, unlinkSync, truncateSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
+
+
 import { join } from 'node:path';
 import { ContentStore } from './content.mjs';
+import { isTimestamp } from './record.mjs';
 import { buildEnvelope, parseEnvelope } from './envelope.mjs';
 import { WriteLock } from './writelock.mjs';
 
@@ -512,11 +515,26 @@ export class Store {
           + 'disappears from the queue is a batch that never gets witnessed.',
         );
       }
-      out.push({
-        checkpoint_seq: e.checkpoint_seq,
-        since: typeof e.since === 'string' ? e.since : '',
-        attempts: Number.isSafeInteger(e.attempts) && e.attempts >= 0 ? e.attempts : 0,
-      });
+      // `since` is validated, not coerced. It was defaulted to '' when
+      // unreadable, so Date.parse gave NaN, the age computed from it was NaN,
+      // and FR-68's ceiling never fired — one corrupted byte silenced the
+      // unwitnessed-outage alarm permanently and without a sound. Strict
+      // RFC 3339, the shape DES-01 requires of every timestamp.
+      if (!isTimestamp(e.since)) {
+        throw new Error(
+          `${this.queuePath} line ${i + 1} has since ${JSON.stringify(e?.since)}, which is not an `
+          + 'RFC 3339 timestamp. Refused rather than defaulted: a queue entry whose age cannot be '
+          + "computed is one the unwitnessed ceiling can never fire for, and that failure is silent.",
+        );
+      }
+      if (!Number.isSafeInteger(e.attempts) || e.attempts < 0) {
+        throw new Error(
+          `${this.queuePath} line ${i + 1} has attempts ${JSON.stringify(e?.attempts)}, which is `
+          + 'not a non-negative integer. Refused rather than defaulted, for the same reason: a '
+          + 'coerced attempt count resets the backoff silently.',
+        );
+      }
+      out.push({ checkpoint_seq: e.checkpoint_seq, since: e.since, attempts: e.attempts });
     });
     return out;
   }

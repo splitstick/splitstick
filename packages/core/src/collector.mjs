@@ -637,9 +637,21 @@ export class Collector {
    */
   reconcileObservations() {
     if (this.#reconciled) return null;
+    const chain = this.store.readChain();
     const written = this.store.tip().source_seq;
     const durable = this.store.readObservationCounter();
-    const hasRecords = this.store.readChain().length > 0;
+    const hasRecords = chain.length > 0;
+
+    // What the log already ACCOUNTS for: the highest observation either written
+    // or covered by a gap declaration already in the chain. A declaration does
+    // not advance tip().source_seq, so comparing against that alone re-declared
+    // the same span on every restart until a fresh observation landed — and
+    // both the collector and the verifier accepted the duplicate.
+    const declared = chain
+      .map(e => /** @type {any} */ (e).record)
+      .filter(r => r?.kind === 'gap' && Number.isSafeInteger(r.to_source_seq))
+      .reduce((m, r) => Math.max(m, r.to_source_seq), 0);
+    const accounted = Math.max(written, declared);
 
     if (durable === null) {
       if (!hasRecords) {
@@ -654,19 +666,15 @@ export class Collector {
       this.#reconciled = true;
       return { unknown: /** @type {true} */ (true), last_checkpoint_source_seq: written };
     }
-    if (durable < written) {
-      // The counter can only ever be ahead of or level with what was written.
-      // Behind means the file was tampered with or restored from an older copy,
-      // and inventing a negative span would be worse than refusing.
-      throw new Error(
-        `the observation counter is ${durable} but source_seq ${written} is already written: the `
-        + 'counter is behind the record, which cannot happen in normal operation. The counter file '
-        + 'has been replaced or restored from an older copy.',
-      );
-    }
     this.#reconciled = true;
-    if (durable === written) return null;
-    const span = { from_source_seq: written + 1, to_source_seq: durable };
+    // A counter BEHIND what is accounted for is the ordinary mid-window state,
+    // not damage. It is written at each flush while source_seq advances on
+    // every observation, so between flushes it is always behind. Treating that
+    // as tampering made any crash after a reconciliation and before the next
+    // checkpoint refuse to open the store at all, which is a hard failure on
+    // an ordinary path — and the only recovery was editing the counter by hand.
+    if (durable <= accounted) return null;
+    const span = { from_source_seq: accounted + 1, to_source_seq: durable };
     this.declareGap(span);
     // Continue from after the lost span: reusing those numbers would close the
     // hole, which is exactly what the declaration exists to keep open.

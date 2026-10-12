@@ -126,7 +126,7 @@
     "source": "Operations — marked unwitnessed, and queued",
     "verify": "The queue is a journal, read from disk on open; a drain is durable across restart; a torn tail is dropped AND repaired before the next append; damage in the middle is refused rather than skipped",
     "status": "done",
-    "evidence": "Store.appendQueue/writeQueue/readQueue; an in-memory queue lost exactly the evidence an outage created, and an outage is when a restart is most likely"
+    "evidence": "Store.appendQueue/writeQueue/readQueue; an in-memory queue lost exactly the evidence an outage created, and an outage is when a restart is most likely. The append fast path then persisted the WRONG entry: the queue is kept ordered by checkpoint_seq, so an out-of-order enqueue landed mid-array while the append wrote the new entry at the end, leaving a disk order that no restart could reconcile with memory. A damaged entry is refused on read rather than coerced, because a queue that silently drops the unreadable loses the submission it was holding"
   },
   {
     "id": "SEC-01",
