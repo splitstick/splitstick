@@ -179,16 +179,35 @@ somebody other than the operator to have retained an earlier tree head.
 ## 7. Versioning and anchoring — LEG-09
 
 This statement is versioned, and each version is **anchored like any other
-record**: its digest is written into a Splitstick log and countersigned, so the
+record** — by the same mechanism, with no special path: its digest goes into a
+`policy` record in a Splitstick log, chained to the digest of the version it
+supersedes, and the checkpoint over it is submitted to a witness set. So the
 claim "this is what version 1.0 said" is checkable rather than asserted.
 
-`npm run anchor-wps` writes the declaration. The digest of this file at the
-version named above appears in that log.
+`npm run anchor-wps` writes the record. Each run appends; no version's record
+is ever removed, so the chain from the first version to the current one is
+itself the evidence, and it verifies through the ordinary verifier.
 
-**The limit.** Anchoring is only as good as the witness set that anchored it.
-Under the shipped default (FR-48: a TSA plus an OpenTimestamps roll-up) the
-statement's *time* is attested and nothing maintains sequence state over it —
-the same honest limit as everything else here.
+**Two steps, and only one of them is ours.** Recording the digest establishes
+the version chain. It establishes nothing about *when*, because that takes a
+second party. `npm run anchor-wps -- --config <witnesses>` submits the
+checkpoint to a configured witness set, and the command describes a result as
+anchored only when a countersignature actually came back — it reads the
+envelope rather than taking its own word for it.
+
+**What this means for the copy you are reading.** This repository holds no
+operator key and must not, so the artefact its own command produces is signed
+by a local development key and countersigned by nobody: it fixes the digest and
+the version chain, not the publication time. **Until the project anchors its
+published statement with a real witness set, that half of LEG-09 is
+outstanding**, and `docs/m3b-follow-ups.md` records it as such. An operator
+anchoring their own statement, with their own signer and witnesses, gets the
+time assertion; the project does not get it by writing this paragraph.
+
+**The limit, even then.** Anchoring is only as good as the witness set that
+anchored it. Under the shipped default (FR-48: a TSA plus an OpenTimestamps
+roll-up) the statement's *time* is attested and nothing maintains sequence
+state over it — the same honest limit as everything else here.
 
 ### Change history
 

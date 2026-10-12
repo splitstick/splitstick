@@ -310,7 +310,7 @@ What the countersignature asserts and disclaims, how the statement is versioned 
 | `LEG-06` | WPS disclaims truthfulness | ✅ |
 | `LEG-07` | WPS disclaims completeness | ✅ |
 | `LEG-08` | WPS disclaims lawfulness | ✅ |
-| `LEG-09` | WPS versioned and anchored | ✅ |
+| `LEG-09` | WPS versioned and anchored | ☐ |
 | `LEG-19` | WPS states the time discipline | ✅ |
 | `OPS-03` | Self-hosted witness deployment guide | ☐ |
 | `OPS-05` | Zero-egress mode | ☐ |

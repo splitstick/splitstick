@@ -155,3 +155,72 @@ written, reviewed by me, and passed. The failure is not in noticing that state
 must be checked, it is in checking it against the wrong thing: the shape instead
 of the value (7, 11), memory instead of disk (8), the written records instead of
 what is accounted for (9, 10).
+
+## Defects found by the external review of PR #8
+
+Two findings, both reproduced before being fixed, and both about whether the
+evidence is still *sufficient* after the system has been through exactly the
+conditions M3b exists to handle.
+
+12. **The practice-statement command destroyed its own history.** `anchor-wps`
+    deleted its output directory on every run and generated a fresh signing key
+    each time, so each version's record was the only one that survived and the
+    link between versions existed solely as text inside the newest record — a
+    log discarding its own history in order to record its history. It also
+    printed its result as anchored while signed by a throwaway key and
+    countersigned by nobody, and LEG-09 was marked done on that basis.
+
+    Now: the store is append-only across runs under one persisted identity, so
+    the chain from the first version to the current one *is* the evidence and
+    verifies through the ordinary verifier; the predecessor digest is read from
+    the chain rather than from a file beside it; re-running on an unchanged
+    statement appends nothing, because two records of one version make one
+    publication look like two; `--config` submits the checkpoint to a real
+    witness set; and the word *anchored* is chosen by reading the envelope for
+    a countersignature rather than by the command's intent. §7 of the statement
+    now separates the two steps and says which one the project has not taken.
+
+    **LEG-09 is marked `partial`,** not done. The versioning half is held and
+    tested. The external-anchoring half needs an operator key this repository
+    does not hold and must not, so the project's own published statement is not
+    anchored by anybody, and the matrix now says so rather than claiming it.
+
+13. **The queue cleared a checkpoint before its quorum was met.** An entry left
+    the durable queue as soon as *any* witness answered; the quorum was computed
+    afterwards and not consulted. With two independent sequence witnesses
+    required and one offline, the checkpoint was dequeued on the single answer
+    and the second witness was never retried — so a deployment that asked for
+    two ran on one, permanently, with nothing reporting it.
+
+    The queue now means **insufficiently witnessed**, not unwitnessed. Three
+    things were needed and only the first was reported:
+
+    - Entries stay queued until the quorum is met, and the result names which
+      issuers are still missing.
+    - The quorum counts every countersignature on the envelope, not just the
+      ones this attempt added. Counting only the latest attempt would have let
+      the second witness answer, be counted alone, never reach two, and requeue
+      forever — the fix would have looked like it worked while quietly never
+      finishing.
+    - `old_size` is now **per issuer**. It was the highest height witnessed by
+      anybody, which is the same number with one witness and wrong for whichever
+      is behind with two: a witness returning from an outage was asked to extend
+      a tree it had never signed, refused, and would go on refusing. The queue
+      could never have cleared by waiting, which is the only thing the queue
+      does. This was not in the report; it is what made the reported bug
+      unfixable on its own.
+
+    The target is bounded by how many witnesses could ever answer for a class,
+    so a quorum of two against one configured witness does not hold every
+    checkpoint and breach the FR-68 ceiling forever over a configuration the
+    operator chose. `quorum_met` still reports the configured number unmet, and
+    SEC-04 is what flags a set that small.
+
+**And one found while fixing them.** Reading the previous version's digest from
+the chain, I filtered policy records on `r.next` — the field is `next_policy`.
+The filter matched nothing, an empty list read as "there is no previous
+version", and the command appended a duplicate record of the same version on
+every run: precisely the failure the check immediately below it was written to
+prevent. A policy record missing that field is now refused rather than treated
+as an absent record. Same shape as findings 7 and 11, in code written to fix
+findings 7 and 11.

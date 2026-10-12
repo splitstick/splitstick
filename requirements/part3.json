@@ -94,9 +94,9 @@
     "title": "WPS versioned and anchored",
     "statement": "The practice statement is itself versioned and anchored like any other record.",
     "source": "WPS — versioned and anchored like everything else",
-    "verify": "§7 — the statement is versioned AND anchored like any other record. `npm run anchor-wps` writes its digest into a chained log and checkpoints it, verifiable through the ordinary verifier with no special path",
-    "status": "done",
-    "evidence": "tools/anchor-wps.mjs; a published document can be edited, a digest in a chained log cannot be without breaking the chain. The limit is stated: anchoring is only as good as the witness set that anchored it"
+    "verify": "§7 — the statement is versioned AND anchored like any other record, by the same mechanism and with no special path. `npm run anchor-wps` appends a chained `policy` record naming the digest and the version it supersedes, never removing an earlier one, verifiable through the ordinary verifier. The anchoring half needs a second party: `--config` submits the checkpoint to a witness set, and the command calls a result anchored only when a countersignature is on the envelope. OUTSTANDING: the project's own published statement is not yet anchored by any witness, because this repository holds no operator key",
+    "status": "partial",
+    "evidence": "tools/anchor-wps.mjs + the LEG-09 append-only test; a published document can be edited, a digest in a chained log cannot be without breaking the chain. The command used to DELETE its output directory on every run and generate a fresh key, so each version's record was the only one that survived and the chain between versions existed solely as text inside the newest record — a log discarding its own history in order to record it. It also called the result anchored while countersigned by nobody. Both corrected; the external-anchoring half is reported outstanding rather than claimed"
   },
   {
     "id": "LEG-10",

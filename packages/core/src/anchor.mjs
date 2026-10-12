@@ -258,11 +258,19 @@ export class Anchorer {
     const waiting = [];
     /** @type {typeof this.entries} */
     const still = [];
+    // Whether some HIGHER checkpoint got at least one issuer to sign in this
+    // flush. That issuer has now advanced past the lower heights, so they are
+    // unsubmittable to it (FR-43); and an issuer still outstanding wants the
+    // highest, not a lower one. Tracked separately from `anchored` because a
+    // partially witnessed checkpoint still advances a witness while remaining
+    // queued — reading `anchored` for this would resubmit heights the witness
+    // must refuse and report its refusals as outages.
+    let advanced = false;
     const descending = [...this.entries].sort((a, b) => b.checkpoint_seq - a.checkpoint_seq);
     for (const entry of descending) {
       const seq = entry.checkpoint_seq;
-      if (anchored.length > 0) {
-        // Something higher is already countersigned, and it covers this one.
+      if (advanced) {
+        // Something higher is countersigned, and it covers this one.
         superseded.push(seq);
         continue;
       }
@@ -274,7 +282,10 @@ export class Anchorer {
         continue;
       }
       const r = await this.#submit(seq, 'anchor', { requeue: false });
-      if (r.attached.length > 0) anchored.push(seq);
+      if (r.attached.length > 0) advanced = true;
+      // Only a SUFFICIENTLY witnessed checkpoint leaves the queue. One answer
+      // out of a required two is progress, not completion.
+      if (r.sufficient) anchored.push(seq);
       else still.push({ ...entry, attempts: entry.attempts + 1 });
     }
     this.entries = still.sort((a, b) => a.checkpoint_seq - b.checkpoint_seq);
@@ -309,15 +320,20 @@ export class Anchorer {
     const note = parsed.note;
     const due = this.witnesses.filter(w => w.tier === tier);
 
-    // What the witness needs to prove the submission extends what it holds.
-    // The highest previously witnessed size is the honest `old_size`: anything
-    // larger would be claiming a history the witness has not seen.
+    // What a witness needs to prove the submission extends what IT holds. The
+    // height that witness last signed is the honest `old_size`: anything
+    // larger claims a history it has not seen.
     // A roll-up's heights are its own ordinals, not the record log's, so the
     // record-log context would be a lie about what the witness is being asked
     // to extend.
-    const ctx = artefact === 'rollup'
-      ? { old_size: 0, consistency_proof: [] }
-      : this.#consistencyContext(seq, parsed.tree_size);
+    const heights = artefact === 'rollup' ? new Map() : this.#witnessedHeights(seq);
+
+    // Issuers whose countersignature is already on this envelope from an
+    // earlier attempt. Asking them again earns a duplicate-issuer refusal,
+    // which would read as a witness failure on every retry and would stop the
+    // quorum this entry is queued for from ever being reached.
+    const already = parsed.issuers;
+    const outstanding = due.filter(w => !already.has(w.id));
 
     /** @type {{ issuer: string, verified: boolean, establishes: string[] }[]} */
     const attached = [];
@@ -330,7 +346,10 @@ export class Anchorer {
     // case it never reached.
     let env = /** @type {import('./envelope.mjs').Envelope} */ (JSON.parse(raw));
 
-    for (const w of due) {
+    for (const w of outstanding) {
+      const ctx = artefact === 'rollup'
+        ? { old_size: 0, consistency_proof: [] }
+        : this.#consistencyContext(seq, parsed.tree_size, heights.get(w.id) ?? 0);
       /** @type {import('./envelope.mjs').Countersignature} */
       let cs;
       try {
@@ -371,29 +390,78 @@ export class Anchorer {
       else this.store.writeCheckpointEnvelope(seq, env);
     }
 
-    // Queue only when a witness was asked and none answered. An empty witness
-    // set is SCOPE-15's supported configuration, and queueing for witnesses
-    // that do not exist would report an outage that is not happening.
-    if (opts.requeue !== false && due.length > 0 && attached.length === 0) this.#enqueue(seq);
-    if (attached.length > 0 && this.entries.some(e => e.checkpoint_seq === seq)) {
+    // The quorum counts ALL the evidence on the envelope, not just what this
+    // attempt added — otherwise a second witness answering on a retry would be
+    // counted alone, never reach two, and requeue forever.
+    const signed = new Set([...already, ...attached.map(a => a.issuer)]);
+    /** @type {Record<string, number>} */
+    const quorum = Object.fromEntries(CAPABILITY_CLASSES.map(c => [c, 0]));
+    for (const issuer of signed) {                        // one issuer, one vote
+      for (const cls of this.#establishes(issuer)) quorum[cls] = (quorum[cls] ?? 0) + 1;
+    }
+    const quorum_met = Object.fromEntries(
+      CAPABILITY_CLASSES.map(c => [c, (quorum[c] ?? 0) >= this.quorum]),
+    );
+    const target = this.#quorumTarget(due);
+    const sufficient = Object.entries(target).every(([c, n]) => (quorum[c] ?? 0) >= n);
+    /** @type {string[]} */
+    const missing = outstanding.filter(w => !signed.has(w.id)).map(w => w.id);
+
+    // The queue holds checkpoints that are INSUFFICIENTLY witnessed, not only
+    // those witnessed by nobody. One answer out of a required two left the
+    // entry dequeued and the second witness never retried, so a deployment
+    // that asked for two independent sequence witnesses silently kept running
+    // on one, permanently, with nothing reporting it. An empty witness set is
+    // still SCOPE-15's supported configuration: queueing for witnesses that do
+    // not exist would report an outage that is not happening.
+    const queued = this.entries.some(e => e.checkpoint_seq === seq);
+    if (!sufficient && due.length > 0) {
+      if (opts.requeue !== false && !queued) this.#enqueue(seq);
+    } else if (queued) {
       this.entries = this.entries.filter(e => e.checkpoint_seq !== seq);
       this.store.writeQueue(this.entries);
     }
     this.#checkCeiling();
 
-    /** @type {Record<string, number>} */
-    const quorum = Object.fromEntries(CAPABILITY_CLASSES.map(c => [c, 0]));
-    const counted = new Set();
-    for (const a of attached) {
-      if (counted.has(a.issuer)) continue;      // one issuer, one vote
-      counted.add(a.issuer);
-      for (const cls of a.establishes) quorum[cls] = (quorum[cls] ?? 0) + 1;
-    }
-    const quorum_met = Object.fromEntries(
-      CAPABILITY_CLASSES.map(c => [c, (quorum[c] ?? 0) >= this.quorum]),
-    );
+    return {
+      seq, attached, failed, quorum, quorum_met, sufficient, missing,
+      unwitnessed: signed.size === 0,
+    };
+  }
 
-    return { seq, attached, failed, quorum, quorum_met, unwitnessed: attached.length === 0 };
+  /**
+   * What class(es) an issuer establishes, per the CONFIGURED witness set.
+   *
+   * An issuer on the envelope that is not in the configuration counts towards
+   * no class: the operator never said what it is good for, and guessing would
+   * let an unknown party fill a quorum.
+   * @param {string} issuer
+   */
+  #establishes(issuer) {
+    return this.witnesses.find(w => w.id === issuer)?.establishes ?? [];
+  }
+
+  /**
+   * How many countersignatures each class actually needs here.
+   *
+   * The configured quorum, BOUNDED by how many witnesses could ever answer for
+   * that class. A quorum of two against a single witness is unreachable, and
+   * an unreachable target would keep every checkpoint queued and breach the
+   * FR-68 ceiling forever rather than ever clearing. `quorum_met` still reports
+   * the configured number unmet, and SEC-04 is what flags a set that small.
+   *
+   * A class no due witness establishes is not a target: it is a thing this
+   * witness set does not do, which FR-57 reports.
+   * @param {WitnessAdapter[]} due
+   */
+  #quorumTarget(due) {
+    /** @type {Record<string, number>} */
+    const target = {};
+    for (const cls of CAPABILITY_CLASSES) {
+      const n = due.filter(w => w.establishes.includes(cls)).length;
+      if (n > 0) target[cls] = Math.min(this.quorum, n);
+    }
+    return target;
   }
 
   /**
@@ -450,14 +518,39 @@ export class Anchorer {
    * @param {number|null} tree_size what this checkpoint commits to
    * @returns {{ old_size: number, consistency_proof: string[] }}
    */
-  #consistencyContext(seq, tree_size) {
-    let old_size = 0;
+  /**
+   * The highest tree_size each issuer has already countersigned, below `seq`.
+   *
+   * PER ISSUER, not per set. This used to take the highest size witnessed by
+   * ANYBODY and hand it to every witness as `old_size`. With one witness that
+   * is the same number. With two it is wrong for whichever one is behind: a
+   * witness returning from an outage would be asked to extend a tree it never
+   * signed, refuse, and go on refusing — so the queue could never clear by
+   * waiting, which is the only thing the queue does.
+   *
+   * @param {number} seq
+   * @returns {Map<string, number>}
+   */
+  #witnessedHeights(seq) {
+    /** @type {Map<string, number>} */
+    const heights = new Map();
     for (const { seq: s, blob } of this.store.readCheckpoints()) {
       if (s >= seq) continue;
       const p = parseEnvelope(blob);
       if (!p.ok || p.unwitnessed || p.tree_size === null) continue;
-      if (p.tree_size > old_size) old_size = p.tree_size;
+      for (const issuer of p.issuers) {
+        if ((heights.get(issuer) ?? 0) < p.tree_size) heights.set(issuer, p.tree_size);
+      }
     }
+    return heights;
+  }
+
+  /**
+   * @param {number} seq
+   * @param {number|null} tree_size
+   * @param {number} old_size the height THIS issuer last signed
+   */
+  #consistencyContext(seq, tree_size, old_size) {
     if (old_size === 0 || tree_size === null || tree_size <= old_size) {
       return { old_size, consistency_proof: [] };
     }

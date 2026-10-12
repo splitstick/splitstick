@@ -56,6 +56,12 @@ const wps = flatten(readFileSync(WPS, 'utf8'));
 const wpsRaw = readFileSync(WPS, 'utf8');
 const src = code(sources(join(ROOT, 'packages')).map(f => readFileSync(f, 'utf8')).join('\n'));
 
+// The tools are a separate corpus. `absent` rows check that no code CLAIMS
+// something the statement disclaims, and folding the tools into `src` would
+// widen every one of those at once; a row that means to pin a tool's behaviour
+// says so with `tool`.
+const toolSrc = code(readFileSync(join(ROOT, 'tools/anchor-wps.mjs'), 'utf8'));
+
 /**
  * Each row: the requirement, a pattern the STATEMENT must contain, and a
  * pattern the SOURCE must contain for that claim to be implemented.
@@ -118,6 +124,14 @@ const ROWS = [
   {
     req: 'LEG-09', what: 'the statement is itself anchored, not merely published',
     statement: /anchored like any other record/i,
+    // The honest half. An earlier version of §7 said the digest "is written
+    // into a Splitstick log and countersigned", which was not true of the
+    // copy anybody could read: the command deleted its own history on every
+    // run and no witness had ever signed it. If that disclosure is ever
+    // deleted while the claim above stays, this is what fails.
+    also: /that half of LEG-09 is\s+outstanding/i,
+    // And the command must keep deciding the word by reading the envelope.
+    tool: /issuers\.length > 0 \? 'ANCHORED'/,
   },
   {
     req: 'LEG-19', what: 'names the time source and the limits of the time assertion',
@@ -153,6 +167,13 @@ for (const row of ROWS) {
   }
   if (row.also && !row.also.test(wps)) {
     errs.push(`${row.req}: the statement is missing its second half (${row.also}).`);
+  }
+  if (row.tool && !row.tool.test(toolSrc)) {
+    errs.push(
+      `${row.req}: the statement claims ${row.what}, and tools/anchor-wps.mjs no longer matches `
+      + `${row.tool}. The command must read whether a countersignature is present rather than `
+      + 'assert that one is.',
+    );
   }
   if (row.source && !row.source.test(src)) {
     errs.push(

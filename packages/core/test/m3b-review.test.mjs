@@ -228,3 +228,226 @@ test('a timestamp must be a real instant, not merely the right shape', async () 
     assert.doesNotThrow(() => validateRecord(heartbeat(good)), good);
   }
 });
+
+// ── PR #8 review: the queue, the quorum, and what "anchored" may mean ──────
+
+/**
+ * A stateful sequence witness that remembers its height and refuses a history
+ * that does not extend what it signed — FR-43. `online` lets a test take it
+ * away and give it back.
+ * @param {string} id
+ */
+async function statefulWitness(id) {
+  const { generateDevSigner } = await import('../src/signer-file.mjs');
+  const { parseNote, encodeNote } = await import('../src/note.mjs');
+  const { signNote } = await import('../src/signer.mjs');
+  const key = await generateDevSigner(id);
+  /** @type {{ old_size: number, size: number }[]} */
+  const asked = [];
+  const w = {
+    id, proof_type: /** @type {const} */ ('c2sp-note'),
+    establishes: ['sequence'], tier: /** @type {const} */ ('anchor'),
+    online: true,
+    height: 0,
+    asked,
+    async submit(/** @type {string} */ note, /** @type {any} */ ctx) {
+      if (!w.online) throw new Error('ECONNREFUSED');
+      const text = parseNote(note).text;
+      const size = Number(text.split('\n')[1]);
+      asked.push({ old_size: ctx.old_size, size });
+      if (ctx.old_size !== w.height) {
+        throw new Error(`409: I am at ${w.height}, you say I am at ${ctx.old_size}`);
+      }
+      w.height = size;
+      return {
+        type: /** @type {const} */ ('c2sp-note'), issuer: id,
+        covers: /** @type {const} */ ('note'),
+        line: encodeNote(text, [await signNote(text, key)]).trim().split('\n').at(-1),
+      };
+    },
+  };
+  return w;
+}
+
+test('a checkpoint short of its quorum stays queued, and recovers after a restart', async () => {
+  // One of two required sequence witnesses answers. The entry used to be
+  // DEQUEUED on that single answer — quorum was computed afterwards and
+  // ignored — so a deployment that asked for two independent sequence
+  // witnesses silently ran on one, permanently, with nothing retrying the
+  // other and nothing reporting it.
+  const { Store } = await import('../src/store.mjs');
+  const { Collector } = await import('../src/collector.mjs');
+  const { parseConfig } = await import('../src/config.mjs');
+  const { generateDevSigner } = await import('../src/signer-file.mjs');
+  const { Anchorer } = await import('../src/anchor.mjs');
+  const { parseEnvelope } = await import('../src/envelope.mjs');
+
+  const root = mkdtempSync(join(tmpdir(), 'ss-quorum-'));
+  const origin = 'splitstick.dev/host-1';
+  const signer = await generateDevSigner(origin);
+  let t = Date.parse('2026-10-11T10:00:00.000Z');
+  const store = new Store(root, 'host-1');
+  const c = new Collector({
+    store, signer, collector: 'host-1', origin,
+    config: parseConfig('version: 1\nstore: ./s\nunwitnessed_ceiling: 1h\n', root),
+    now: () => new Date(t += 1000),
+  });
+  const A = await statefulWitness('audit-a.internal');
+  const B = await statefulWitness('audit-b.internal');
+  B.online = false;
+
+  let a = new Anchorer({ store, witnesses: [A, B], quorum: 2, now: () => t });
+  for (let i = 1; i <= 3; i += 1) {
+    c.action(tx({ correlation: `c-${i}` }));
+    const cp = await c.checkpoint();
+    const r = await a.anchor(cp.checkpoint_seq);
+    assert.equal(r.quorum.sequence, 1, 'one witness answered');
+    assert.equal(r.sufficient, false, 'one of two required is not sufficient');
+    assert.deepEqual(r.missing, ['audit-b.internal'], 'and it says which is missing');
+    assert.equal(r.unwitnessed, false, 'but it is not unwitnessed either');
+  }
+  assert.deepEqual(a.queued(), [1, 2, 3], 'all three are held for the missing witness');
+
+  // NFR-13: the queue is the thing that survives a restart.
+  store.close();
+  const s2 = new Store(root, 'host-1');
+  a = new Anchorer({ store: s2, witnesses: [A, B], quorum: 2, now: () => t });
+  assert.deepEqual(a.queued(), [1, 2, 3], 'and it survives the restart');
+
+  B.online = true;
+  t += 2 * 3_600_000;                        // past OPS-02's backoff
+  const f = await a.flush();
+  assert.deepEqual(f.anchored, [3], 'the highest reaches quorum');
+  assert.deepEqual(f.superseded, [1, 2], 'the lower ones are covered by it, not silently dropped');
+  assert.deepEqual(f.queued, [], 'and the queue clears');
+
+  const env = s2.readCheckpointEnvelope(3);
+  assert.notEqual(env, null);
+  const issuers = [...parseEnvelope(/** @type {string} */ (env)).issuers].sort();
+  assert.deepEqual(issuers, ['audit-a.internal', 'audit-b.internal']);
+  s2.close();
+});
+
+test('a returning witness is told the height IT signed, not the height the set reached', async () => {
+  // The consistency context used the highest size witnessed by ANYBODY. With
+  // one witness that is the same number; with two it is wrong for whichever is
+  // behind, so a witness coming back from an outage was asked to extend a tree
+  // it had never signed, refused, and went on refusing — the queue could never
+  // have cleared by waiting, which is the only thing the queue does.
+  const { Store } = await import('../src/store.mjs');
+  const { Collector } = await import('../src/collector.mjs');
+  const { parseConfig } = await import('../src/config.mjs');
+  const { generateDevSigner } = await import('../src/signer-file.mjs');
+  const { Anchorer } = await import('../src/anchor.mjs');
+
+  const root = mkdtempSync(join(tmpdir(), 'ss-oldsize-'));
+  const origin = 'splitstick.dev/host-1';
+  const signer = await generateDevSigner(origin);
+  let t = Date.parse('2026-10-11T10:00:00.000Z');
+  const store = new Store(root, 'host-1');
+  const c = new Collector({
+    store, signer, collector: 'host-1', origin,
+    config: parseConfig('version: 1\nstore: ./s\nunwitnessed_ceiling: 1h\n', root),
+    now: () => new Date(t += 1000),
+  });
+  const A = await statefulWitness('audit-a.internal');
+  const B = await statefulWitness('audit-b.internal');
+  B.online = false;
+  const a = new Anchorer({ store, witnesses: [A, B], quorum: 2, now: () => t });
+
+  for (let i = 1; i <= 3; i += 1) {
+    c.action(tx({ correlation: `c-${i}` }));
+    const cp = await c.checkpoint();
+    await a.anchor(cp.checkpoint_seq);
+  }
+  assert.equal(A.height, 3, 'A advanced with the log');
+
+  B.online = true;
+  B.asked.length = 0;
+  t += 2 * 3_600_000;
+  await a.flush();
+
+  assert.deepEqual(B.asked, [{ old_size: 0, size: 3 }],
+    'B is asked to extend ITS zero, not the set\'s three');
+  assert.equal(B.height, 3, 'so it accepts, which is what lets the queue clear');
+  store.close();
+});
+
+test('a quorum larger than the witness set does not queue forever', async () => {
+  // Bounding the target by what could ever answer. Without it a quorum of two
+  // against one configured witness would hold every checkpoint in the queue
+  // and breach FR-68's ceiling permanently, reporting an outage that is really
+  // a configuration the operator chose. SEC-04 is what flags a set that small;
+  // `quorum_met` still reports the configured number unmet.
+  const { Store } = await import('../src/store.mjs');
+  const { Collector } = await import('../src/collector.mjs');
+  const { parseConfig } = await import('../src/config.mjs');
+  const { generateDevSigner } = await import('../src/signer-file.mjs');
+  const { Anchorer } = await import('../src/anchor.mjs');
+
+  const root = mkdtempSync(join(tmpdir(), 'ss-unreach-'));
+  const origin = 'splitstick.dev/host-1';
+  const signer = await generateDevSigner(origin);
+  let t = Date.parse('2026-10-11T10:00:00.000Z');
+  const store = new Store(root, 'host-1');
+  const c = new Collector({
+    store, signer, collector: 'host-1', origin,
+    config: parseConfig('version: 1\nstore: ./s\nunwitnessed_ceiling: 1h\n', root),
+    now: () => new Date(t += 1000),
+  });
+  const A = await statefulWitness('audit-a.internal');
+  const a = new Anchorer({ store, witnesses: [A], quorum: 2, now: () => t });
+  c.action(tx({ correlation: 'c-1' }));
+  const cp = await c.checkpoint();
+  const r = await a.anchor(cp.checkpoint_seq);
+
+  assert.equal(r.sufficient, true, 'the only witness there is, is enough to stop queueing');
+  assert.equal(r.quorum_met.sequence, false, 'and the configured quorum is still reported unmet');
+  assert.deepEqual(a.queued(), []);
+  store.close();
+});
+
+test('LEG-09: the statement record is append-only, and is not called anchored without a witness', async () => {
+  // The command used to DELETE its output directory on every run. Each
+  // version's record was therefore the only one that survived, and the chain
+  // linking the versions existed solely as text inside the newest record —
+  // a log that discarded its own history in order to record its history. It
+  // also generated a fresh signing key per run, so even a retained chain would
+  // have been unverifiable across versions.
+  const { execFileSync } = await import('node:child_process');
+  const { Store } = await import('../src/store.mjs');
+  const { writeFileSync } = await import('node:fs');
+
+  const dir = mkdtempSync(join(tmpdir(), 'ss-wps-'));
+  const statement = join(dir, 'wps.md');
+  const out = join(dir, 'store');
+  const tool = new URL('../../../tools/anchor-wps.mjs', import.meta.url).pathname;
+  const run = () => execFileSync(process.execPath,
+    [tool, '--statement', statement, '--out', out], { encoding: 'utf8' });
+
+  writeFileSync(statement, '**Version 1.0**\n\nfirst\n');
+  const first = run();
+  assert.match(first, /RECORDED \(not anchored\)/,
+    'with no witness configured the word anchored is not used');
+  assert.match(first, /countersigned nobody/);
+  assert.match(first, /outstanding/, 'and it says LEG-09 is not closed by this');
+  assert.doesNotMatch(first, /\bANCHORED\b/);
+
+  // Running it again must not append a second record of the same version.
+  assert.match(run(), /already the current recorded version/);
+
+  writeFileSync(statement, '**Version 1.1**\n\nsecond\n');
+  assert.match(run(), /versions      2 in this chain/);
+
+  const store = new Store(out, 'wps');
+  const policies = store.readChain().map(e => e.record).filter(r => r?.kind === 'policy');
+  assert.equal(policies.length, 2, 'the first version\'s record is still there');
+  // The chain links them: each record names the digest it supersedes, and the
+  // predecessor is read from the chain rather than from a file beside it.
+  assert.equal(policies[1]?.previous_policy, policies[0]?.next_policy);
+  assert.notEqual(policies[0]?.next_policy, policies[1]?.next_policy);
+  // One identity across both, which is what makes the second verifiable
+  // against the first.
+  assert.equal(store.readSuccession().length, 1);
+  store.close();
+});
