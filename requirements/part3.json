@@ -123,7 +123,8 @@
     "title": "eIDAS presumption only via qualified TSA",
     "statement": "Document that the Art. 41 presumption attaches only when anchored to a qualified TSA, and not via Splitstick's own witness.",
     "source": "Legal posture",
-    "verify": "Documentation review; no contrary claim anywhere"
+    "verify": "Documentation review; no contrary claim anywhere",
+    "status": "done"
   },
   {
     "id": "LEG-13",
@@ -372,7 +373,8 @@
     "title": "Self-hosted witness deployment guide",
     "statement": "Document running the witness under internal audit with keys in their custody.",
     "source": "Deployment \u2014 two parties, one company",
-    "verify": "Guide published; followed end to end in a clean environment"
+    "verify": "Guide published; followed end to end in a clean environment",
+    "status": "done"
   },
   {
     "id": "OPS-04",
@@ -392,7 +394,8 @@
     "title": "Zero-egress mode",
     "statement": "Support and verify a deployment with no account, no enrolment with us, and no traffic leaving the perimeter.",
     "source": "Deployment \u2014 no traffic leaving your perimeter",
-    "verify": "Egress capture in a fully self-hosted deployment"
+    "verify": "Egress capture in a fully self-hosted deployment",
+    "status": "done"
   },
   {
     "id": "INT-01",

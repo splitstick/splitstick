@@ -67,10 +67,53 @@ test('SEC-25: every witness type declares where its time comes from', () => {
   // And the declarations are honest about their limits.
   assert.match(TIME_DISCIPLINE.opentimestamps, /[Nn]ot a clock at all/);
   assert.match(TIME_DISCIPLINE.rfc3161, /and no better/);
-  const d = describeWitnessSet(witnessesFromConfig({
-    witnesses: [{ id: 'tsa', type: 'rfc3161', url: 'https://tsa.example' }],
-  }));
+
+  // EVERY type, built and described — not just `rfc3161`.
+  //
+  // This test used to build one witness, and it chose the single type whose
+  // config name and proof type are the same string. The description looked the
+  // discipline up by `proof_type`, so `rekor`, `splitstick` and `tlog-witness`
+  // (all `c2sp-note`) resolved to undefined and were described with no time
+  // discipline at all — Rekor's entry sat in the table, correct and
+  // unreachable, and this assertion passed throughout. A table with an entry
+  // for every type is not the same claim as a report that carries one.
+  const built = witnessesFromConfig({
+    witnesses: [
+      { id: 'tsa', type: 'rfc3161', url: 'https://tsa.example' },
+      { id: 'ots', type: 'opentimestamps', url: 'https://o.example' },
+      { id: 'rek', type: 'rekor', url: 'https://rekor.example', tier: 'rollup' },
+      { id: 'tlg', type: 'tlog-witness', url: 'https://w.example' },
+    ],
+  });
+  const d = describeWitnessSet(built);
+  for (const w of built) {
+    assert.ok(d.time_discipline[w.id],
+      `${w.id} (${w.proof_type}) is described with no time discipline, so a reader is not told `
+      + 'where its authority about time comes from');
+  }
   assert.match(d.time_discipline.tsa, /TSA's own clock/);
+  // A tlog cosignature has nowhere to carry a time, and the declaration says
+  // so rather than being quietly absent.
+  assert.match(d.time_discipline.tlg, /^NOTHING\./);
+
+  // `splitstick` is not buildable from config by design, so its declaration is
+  // the one that can only be checked in the table. Named here so the gap is
+  // deliberate rather than overlooked.
+  assert.ok(TIME_DISCIPLINE.splitstick);
+  assert.equal(Object.keys(d.time_discipline).length, built.length,
+    'a witness was described with no discipline, or one appeared for a witness not in the set');
+});
+
+test('SEC-25: a witness type with no declared time discipline cannot be built', () => {
+  // The guard that keeps the table and the type list in step. Adding a type to
+  // WITNESS_TYPES and forgetting the declaration is how the gap above would
+  // come back, and it is caught at construction rather than by a reader
+  // noticing the report is missing a line.
+  for (const t of WITNESS_TYPES) {
+    if (t === 'splitstick') continue;
+    assert.ok(/** @type {Record<string, string>} */ (TIME_DISCIPLINE)[t],
+      `${t} is buildable and declares no time discipline`);
+  }
 });
 
 test('SEC-04: a single-witness set is flagged, because one honest witness means one', () => {

@@ -293,7 +293,7 @@ Stop depending on one upstream project, and make the format genuinely somebody e
 | ✅ `FR-46` | **Conformance test suite** — Publish an executable conformance suite any witness implementation can run against itself. | Suite runs green against the reference witness |
 | ✅ `FR-47` | **Witness list as data** — Maintain the list of known conformant witnesses as a machine-readable file, each entry carrying its acceptable-use terms, rate limits, and whether it retains entries publicly, so an operator chooses on informed grounds rather than by default. | File parses; the collector consumes it; every entry states its acceptable-use position |
 | ✅ `NFR-08` | **Node.js 20+** — Run on Node.js 20 and later. | CI matrix across supported majors |
-| ☐ `NFR-10` | **OMA version compatibility** — Support @open-multi-agent/core 1.21.x. | CI pinned against the supported range |
+| ✅ `NFR-10` | **OMA version compatibility** — Support @open-multi-agent/core 1.21.x. | CI pinned against the supported range |
 | ✅ `NFR-11` | **MCP transport coverage** — Support MCP over stdio and HTTP. | E2E per transport |
 | ✅ `GOV-05` | **Third-party witnesses permitted** — Anyone, including competitors and hyperscalers, may run a conformant witness. | No technical or licence barrier; third-party witness interoperates |
 | ✅ `GOV-06` | **Open conformance suite** — Publish the conformance suite so implementations can self-check. | Suite in the repository under the open licence |
@@ -301,11 +301,11 @@ Stop depending on one upstream project, and make the format genuinely somebody e
 | ✅ `GOV-09` | **No gatekeeping of the witness list** — Do not vet, rank, or charge for inclusion in the witness list. | Policy published; list contains entries not controlled by us |
 | ✅ `INT-05` | **Framework-agnostic capture** — Capture works for any stack speaking MCP, including runtimes with no journal. | E2E against two non-OMA agent runtimes |
 | ✅ `INT-06` | **Reuse rather than reimplement** — Build on Sigstore, Rekor, Trillian and C2SP rather than reimplementing their roles. | Dependency review; no bespoke transparency log |
-| ☐ `OPS-03` | **Self-hosted witness deployment guide** — Document running the witness under internal audit with keys in their custody. | Guide published; followed end to end in a clean environment |
-| ☐ `OPS-05` | **Zero-egress mode** — Support and verify a deployment with no account, no enrolment with us, and no traffic leaving the perimeter. | Egress capture in a fully self-hosted deployment |
+| ✅ `OPS-03` | **Self-hosted witness deployment guide** — Document running the witness under internal audit with keys in their custody. | Guide published; followed end to end in a clean environment |
+| ✅ `OPS-05` | **Zero-egress mode** — Support and verify a deployment with no account, no enrolment with us, and no traffic leaving the perimeter. | Egress capture in a fully self-hosted deployment |
 | ☐ `LEG-13` | **Qualified TSA configurable** — A qualified TSA can be configured in the witness set by the operator. | Live anchor against a qualified TSA |
-| ☐ `LEG-12` | **eIDAS presumption only via qualified TSA** — Document that the Art. 41 presumption attaches only when anchored to a qualified TSA, and not via Splitstick's own witness. | Documentation review; no contrary claim anywhere |
-| ☐ `FR-49` | **Documented CLI contract** — Provide the entry points and flags printed in Getting started: collect-oma, mcp-proxy (--upstream, --out), verify (--policy), coverage (--from, --to) and disclose (--event, --out). | CLI contract test executes every documented invocation verbatim |
+| ✅ `LEG-12` | **eIDAS presumption only via qualified TSA** — Document that the Art. 41 presumption attaches only when anchored to a qualified TSA, and not via Splitstick's own witness. | Documentation review; no contrary claim anywhere |
+| ✅ `FR-49` | **Documented CLI contract** — Provide the entry points and flags printed in Getting started: collect-oma, mcp-proxy (--upstream, --out), verify (--policy), coverage (--from, --to) and disclose (--event, --out). | CLI contract test executes every documented invocation verbatim |
 
 ### M7 — Launch gate
 

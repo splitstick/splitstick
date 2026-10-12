@@ -4,8 +4,8 @@
     "type": "functional",
     "release": "1.0",
     "title": "Shipped default witness configuration",
-    "statement": "Ship a default the project neither operates nor overloads: an RFC 3161 timestamp authority for the per-batch countersignature and clock, plus a trust-minimised roll-up anchor on a slow interval. A transparency log such as Rekor is opt-in — for operators self-hosting one, or whose volume suits a public instance — and never the shipped default, because a 10-second cadence against a public good is not acceptable use.",
-    "source": "Independence — the shipped default anchors to a log we do not run",
+    "statement": "Ship a default the project neither operates nor overloads: an RFC 3161 timestamp authority for the per-batch countersignature and clock, plus a trust-minimised roll-up anchor on a slow interval. A transparency log such as Rekor is opt-in \u2014 for operators self-hosting one, or whose volume suits a public instance \u2014 and never the shipped default, because a 10-second cadence against a public good is not acceptable use.",
+    "source": "Independence \u2014 the shipped default anchors to a log we do not run",
     "verify": "The canonical default-config.yaml is read by the test, so the shipped default cannot drift from what is asserted; defaultWitnessWarning() states that it does NOT close classes 4 and 5",
     "status": "done",
     "evidence": "packages/witnesses; TSA plus OpenTimestamps roll-up, Rekor commented out with FR-47's reason"
@@ -16,8 +16,9 @@
     "release": "1.0",
     "title": "Documented CLI contract",
     "statement": "Provide the entry points and flags printed in Getting started: collect-oma, mcp-proxy (--upstream, --out), verify (--policy), coverage (--from, --to) and disclose (--event, --out).",
-    "source": "Getting started — the published commands",
-    "verify": "CLI contract test executes every documented invocation verbatim"
+    "source": "Getting started \u2014 the published commands",
+    "verify": "CLI contract test executes every documented invocation verbatim",
+    "status": "done"
   },
   {
     "id": "FR-50",
@@ -25,7 +26,7 @@
     "release": "1.0",
     "title": "Witness publishes signed tree heads",
     "statement": "The witness publishes its own signed tree head so an operator or third party can detect a rolled-back or equivocating witness.",
-    "source": "Durability — losing a witness must not lose the evidence",
+    "source": "Durability \u2014 losing a witness must not lose the evidence",
     "verify": "The witness publishes its own signed tree head; detectRollback compares two observed heads and says which contradicts which",
     "status": "done",
     "evidence": "StatefulWitness.treeHead + client.detectRollback; the earlier head must have been RETAINED by whoever polled it, which the module says"
@@ -36,7 +37,7 @@
     "release": "1.0",
     "title": "Witness key rotation",
     "statement": "Rotate witness keys while keeping historical countersignatures verifiable, by publishing a signed key history.",
-    "source": "Durability — key rotation",
+    "source": "Durability \u2014 key rotation",
     "verify": "A retired witness key still verifies, against a published key history that is VALIDATED first: the note must exist, verify under a key that is itself in the list, and sign a digest that covers the list as presented. A key absent from a valid history is inconclusive, not a failure",
     "status": "done",
     "evidence": "validateKeyHistory() in packages/verify/src/verify.mjs; without the digest check a key could be appended after signing and the signature would still check out"
@@ -47,10 +48,10 @@
     "release": "1.0",
     "title": "Build provenance attestation",
     "statement": "Publish a provenance attestation for every released collector artifact, binding the digest to its source commit and build, so the digest in a heartbeat can be independently traced.",
-    "source": "Provenance — a build digest you can check",
+    "source": "Provenance \u2014 a build digest you can check",
     "verify": "Attestation verifies against the published artifact and source revision",
     "status": "done",
-    "evidence": ".github/workflows/release.yml — actions/attest-build-provenance over every tarball, plus npm provenance"
+    "evidence": ".github/workflows/release.yml \u2014 actions/attest-build-provenance over every tarball, plus npm provenance"
   },
   {
     "id": "SEC-23",
@@ -58,10 +59,10 @@
     "release": "1.0",
     "title": "Signed releases and SBOM",
     "statement": "Sign every release and publish an SBOM with pinned dependencies.",
-    "source": "Provenance — signed releases and an SBOM",
+    "source": "Provenance \u2014 signed releases and an SBOM",
     "verify": "Signature and SBOM present and verified in CI for each release",
     "status": "done",
-    "evidence": ".github/workflows/release.yml — npm publish --provenance and a CycloneDX SBOM with pinned dependencies"
+    "evidence": ".github/workflows/release.yml \u2014 npm publish --provenance and a CycloneDX SBOM with pinned dependencies"
   },
   {
     "id": "SEC-24",
@@ -69,10 +70,10 @@
     "release": "1.0",
     "title": "Key compromise recovery",
     "statement": "Document and support recovery from operator key compromise: a declared, countersigned discontinuity rather than a silent re-key.",
-    "source": "Durability — key compromise",
-    "verify": "A `discontinuity` record kind naming the last sound epoch, the new root key and a required reason; reported prominently as DISCONTINUITY, never bridged — no affirmative signing claim spans it and the report says the reader must re-pin out of band. The declaration is signed by the key it disowns and the report says so",
+    "source": "Durability \u2014 key compromise",
+    "verify": "A `discontinuity` record kind naming the last sound epoch, the new root key and a required reason; reported prominently as DISCONTINUITY, never bridged \u2014 no affirmative signing claim spans it and the report says the reader must re-pin out of band. The declaration is signed by the key it disowns and the report says so",
     "status": "done",
-    "evidence": "record.mjs allowlist + Collector.declareDiscontinuity + verify.mjs; DES-06 called it a policy record, which the per-kind allowlist cannot express — a distinct kind also lets the verifier find discontinuities BY KIND, which is what makes 'never silently bridged' checkable"
+    "evidence": "record.mjs allowlist + Collector.declareDiscontinuity + verify.mjs; DES-06 called it a policy record, which the per-kind allowlist cannot express \u2014 a distinct kind also lets the verifier find discontinuities BY KIND, which is what makes 'never silently bridged' checkable"
   },
   {
     "id": "SEC-25",
@@ -80,7 +81,7 @@
     "release": "1.0",
     "title": "Witness time source",
     "statement": "The witness clock derives from a documented, traceable time source, and the verifier surfaces the witness's declared time discipline.",
-    "source": "Durability — the clock the witness stamps with",
+    "source": "Durability \u2014 the clock the witness stamps with",
     "verify": "Every witness type declares its time discipline, including that OpenTimestamps is not a clock at all and a TSA's clock is disciplined as its practice statement says and no better",
     "status": "done",
     "evidence": "TIME_DISCIPLINE in packages/witnesses"
@@ -91,8 +92,8 @@
     "release": "1.0",
     "title": "Witness store durability",
     "statement": "The witness store is replicated and recoverable, with a documented recovery point objective, because a witness that loses its roots destroys the corroboration it exists to provide.",
-    "source": "Durability — losing a witness must not lose the evidence",
-    "verify": "A runnable drill (`npm run drill:restore`) rather than a described procedure: it takes a backup, advances past it, destroys the live store, restores, and asserts the restored witness refuses both a conflicting submission AND the operator's honest next one — then recovers by resubmitting from the height the witness reports. It exits non-zero if it measures no loss, so it cannot pass without exercising a stale backup",
+    "source": "Durability \u2014 losing a witness must not lose the evidence",
+    "verify": "A runnable drill (`npm run drill:restore`) rather than a described procedure: it takes a backup, advances past it, destroys the live store, restores, and asserts the restored witness refuses both a conflicting submission AND the operator's honest next one \u2014 then recovers by resubmitting from the height the witness reports. It exits non-zero if it measures no loss, so it cannot pass without exercising a stale backup",
     "status": "done",
     "evidence": "packages/witness-self/drill/restore.mjs + docs/witness-restore-drill.md; RPO is one submission for a crash and the backup interval for a restore, measured rather than assumed. Replication is stated as a deployment concern this project specifies and does not implement"
   },
@@ -102,7 +103,7 @@
     "release": "1.0",
     "title": "No agent code changes",
     "statement": "Both collectors integrate by dependency and configuration only; no change to the customer's agent code is required.",
-    "source": "Why — without asking you to change your agent code",
+    "source": "Why \u2014 without asking you to change your agent code",
     "verify": "Byte-identical agent source before and after integration, for both collectors",
     "status": "done",
     "evidence": "packages/collect-oma/test/integration.test.mjs hashes the agent source before and after integration and asserts the run outcome is unchanged; the agent fixture mentions Splitstick nowhere"
@@ -113,8 +114,8 @@
     "release": "1.0",
     "title": "WPS states the time discipline",
     "statement": "The practice statement names the witness's time source and the limits of the time assertion.",
-    "source": "Witness Practice Statement — per its clock",
-    "verify": "§4 names each witness type's time source and the limits of the time assertion, including that OpenTimestamps is not a clock at all and that none of them establishes when an action OCCURRED — only when a root was received, and only from above",
+    "source": "Witness Practice Statement \u2014 per its clock",
+    "verify": "\u00a74 names each witness type's time source and the limits of the time assertion, including that OpenTimestamps is not a clock at all and that none of them establishes when an action OCCURRED \u2014 only when a root was received, and only from above",
     "status": "done",
     "evidence": "lint-practice-statement.mjs pairs it with TIME_DISCIPLINE in packages/witnesses"
   },
@@ -133,7 +134,7 @@
     "release": "1.0",
     "title": "Accept third-party attack classes",
     "statement": "Accept contributed attack classes by pull request, with attribution. A goal, explicitly not a launch gate.",
-    "source": "Attack class section — the suite is open, contributions are invited",
+    "source": "Attack class section \u2014 the suite is open, contributions are invited",
     "verify": "Contribution path documented; not referenced in any release gate"
   },
   {
@@ -142,7 +143,7 @@
     "release": "1.0",
     "title": "No fail-closed option",
     "statement": "MUST NOT provide any configuration, flag or build that makes the collector block an agent run. Fail-open is a design constraint, not a setting.",
-    "source": "Operations — a design constraint, not a setting",
+    "source": "Operations \u2014 a design constraint, not a setting",
     "verify": "Config schema review; no enforcement path exists; rejected as a feature request by policy"
   },
   {
@@ -162,7 +163,7 @@
     "release": "1.0",
     "title": "Canonicalisation completeness",
     "statement": "The canonical encoding must cover every field of the action record at every nesting depth. A test must prove that mutating any single field, at any depth, changes the leaf digest.",
-    "source": "Capture — action record: tool name, arguments, result, approval decision",
+    "source": "Capture \u2014 action record: tool name, arguments, result, approval decision",
     "verify": "Property test mutating each field in turn, including nested argument keys; every mutation must change the digest",
     "status": "done",
     "evidence": "spec/vectors/jcs.json; leafPaths property test in record.test.mjs; leaf-level mutation test in leaf.test.mjs"
@@ -173,7 +174,7 @@
     "release": "1.0",
     "title": "Roll-up anchoring",
     "statement": "Anchor a periodic summary checkpoint covering many batches, separately from the per-batch soft anchor, so a public or rate-limited witness receives a handful of entries per day rather than thousands.",
-    "source": "Independence — tiered anchoring",
+    "source": "Independence \u2014 tiered anchoring",
     "verify": "A roll-up commits to the CHECKPOINT NOTES; a single batch is provable under it by an ordinary inclusion proof, and successive roll-ups are prefixes of each other",
     "status": "done",
     "evidence": "Collector.rollup + Anchorer.anchorRollup + verifyRollups; kept in their own directory because a roll-up read as a checkpoint is a false TREE_MISMATCH"
@@ -183,8 +184,8 @@
     "type": "functional",
     "release": "1.0",
     "title": "Cross-pack consistency verification",
-    "statement": "Given two or more evidence packs, detect a record inconsistent with a checkpoint already countersigned in an earlier pack — so a record truncated below a height previously disclosed is contradicted offline, with no live service.",
-    "source": "Proof — offline verification; Durability",
+    "statement": "Given two or more evidence packs, detect a record inconsistent with a checkpoint already countersigned in an earlier pack \u2014 so a record truncated below a height previously disclosed is contradicted offline, with no live service.",
+    "source": "Proof \u2014 offline verification; Durability",
     "verify": "A pack disclosed earlier holding a countersigned height above where this record ends emits TRUNCATED_BELOW_DISCLOSED; a differing root at the same height is reported as a fork with neither preferred",
     "status": "done",
     "evidence": "verifyStore opts.disclosed"
@@ -195,7 +196,7 @@
     "release": "1.0",
     "title": "Counterparty reference capture",
     "statement": "Extract externally issued identifiers from a tool result and index them for reconciliation. The index lives in the deletable content store, never in the chain, because a transaction reference can itself be identifying.",
-    "source": "Capture — action record",
+    "source": "Capture \u2014 action record",
     "verify": "A result containing an external reference is indexed and queryable; the index is removed by crypto-shredding",
     "status": "done",
     "evidence": "extractRefs + the deletable reference index in content.mjs; shredded with the content"
@@ -217,7 +218,7 @@
     "release": "1.0",
     "title": "Reconciliation guidance",
     "statement": "Document reconciliation against counterparty records as a detection method for erasure and omission, with its limits stated: it requires access to the counterparty and it is a procedure an auditor performs, not a guarantee the software makes.",
-    "source": "Durability; Threat model — residual risk",
+    "source": "Durability; Threat model \u2014 residual risk",
     "verify": "docs/reconciliation.md states the procedure and five limits: it needs access to the counterparty, it is a procedure with a procedure's failure modes, its coverage is bounded by the counterparty's completeness, it is retrospective, and it does not establish WHEN",
     "status": "done",
     "evidence": "docs/reconciliation.md, with the preference order putting it last because it is the most expensive and least verifiable"
@@ -228,7 +229,7 @@
     "release": "1.0",
     "title": "Collector instance identity",
     "statement": "Each collector instance has a stable identity that scopes its chain and its log origin. Records carry the run they belong to as a field; the chain itself is collector-scoped, so concurrent runs interleave in one log and heartbeats need no run at all.",
-    "source": "Capture — action record; Coverage attestation",
+    "source": "Capture \u2014 action record; Coverage attestation",
     "verify": "Two concurrent runs produce one contiguous chain with correct run tags; a heartbeat emitted with no run active is chained and anchored",
     "status": "done",
     "evidence": "collector-scoped chain in chain.mjs and collector.mjs; interleaved-run test; heartbeat with no run"
@@ -239,18 +240,18 @@
     "release": "1.0",
     "title": "Document the collector-patch limit",
     "statement": "State plainly, wherever coverage attestation is described, that a collector patched to report a valid digest while suppressing actions is not detectable without remote attestation, which this release does not provide.",
-    "source": "Coverage attestation; Threat model — residual risk",
+    "source": "Coverage attestation; Threat model \u2014 residual risk",
     "verify": "Statement present in the threat model, the coverage report output, and DES-10; claims audit checks no surface implies otherwise",
     "status": "done",
-    "evidence": "The limit in the threat model, DES-10 and the coverage report's OUTPUT, with tools/lint-claims.mjs checking all three — a limit in a design file is one the person acting on the report never sees. Each half of the check was shown to fail when removed"
+    "evidence": "The limit in the threat model, DES-10 and the coverage report's OUTPUT, with tools/lint-claims.mjs checking all three \u2014 a limit in a design file is one the person acting on the report never sees. Each half of the check was shown to fail when removed"
   },
   {
     "id": "FR-57",
     "type": "functional",
     "release": "1.0",
     "title": "Verifier states witness-set capabilities",
-    "statement": "The verifier prints what the configured or observed witness set can and cannot establish — in particular whether any witness maintains operator sequence state, and therefore whether truncation above the last disclosed height is detectable at all.",
-    "source": "Proof — offline verification; Independence",
+    "statement": "The verifier prints what the configured or observed witness set can and cannot establish \u2014 in particular whether any witness maintains operator sequence state, and therefore whether truncation above the last disclosed height is detectable at all.",
+    "source": "Proof \u2014 offline verification; Independence",
     "verify": "The capability statement is derived from the proofs actually present, not from configuration, and prints quorum per class",
     "status": "done",
     "evidence": "report() in packages/verify/src/verify.mjs"
@@ -261,10 +262,10 @@
     "release": "1.0",
     "title": "Reserved slot for gap declarations",
     "statement": "Pre-allocate storage sufficient to write a gap declaration, so the declaration can be written even when the store is otherwise exhausted. If even that fails, the condition is surfaced out of band and the next successful write declares the lost window.",
-    "source": "Operations — fails open, loudly",
+    "source": "Operations \u2014 fails open, loudly",
     "verify": "A 64 KiB reserve written when the store is created, never touched by ordinary records, released only to write a gap declaration; its absence afterwards is the signal it was spent. If even that fails the condition is surfaced out of band and the collector degrades",
     "status": "done",
-    "evidence": "Store.releaseReserve + Collector.declareGap; the failed append degraded the collector so the retry was refused before reaching the store — the mechanism would have been dead in production"
+    "evidence": "Store.releaseReserve + Collector.declareGap; the failed append degraded the collector so the retry was refused before reaching the store \u2014 the mechanism would have been dead in production"
   },
   {
     "id": "FR-59",
@@ -272,7 +273,7 @@
     "release": "1.0",
     "title": "Action record and chain entry are separate structures",
     "statement": "The canonicalised, hashed ActionRecord is immutable and contains no chain metadata. prev, leaf and head live in a ChainEntry wrapper that is never canonicalised, so the digest of a record can never depend on a value derived from it. Conformance vectors publish the exact bytes hashed.",
-    "source": "Integrity — chained, salted, ratcheted; Capture — action record",
+    "source": "Integrity \u2014 chained, salted, ratcheted; Capture \u2014 action record",
     "verify": "Conformance vectors: given a fixed ActionRecord, the canonical bytes, leaf and head are byte-exact. A test asserts no chain field appears inside the canonicalised subject",
     "status": "done",
     "evidence": "ActionRecord and ChainEntry are separate structures; validateRecord rejects leaf/prev/head/salt in the subject"
@@ -282,11 +283,11 @@
     "type": "functional",
     "release": "1.0",
     "title": "Unknown-loss intervals",
-    "statement": "When the observation counter did not survive — an unrecoverable crash with the counter only in memory — declare an unknown-loss interval bounded by the last durable checkpoint and the first record after restart. Never fabricate an exact span. The two kinds of loss evidence are distinct record kinds and a verifier reports them differently.",
-    "source": "Operations — fails open, loudly; Coverage attestation",
+    "statement": "When the observation counter did not survive \u2014 an unrecoverable crash with the counter only in memory \u2014 declare an unknown-loss interval bounded by the last durable checkpoint and the first record after restart. Never fabricate an exact span. The two kinds of loss evidence are distinct record kinds and a verifier reports them differently.",
+    "source": "Operations \u2014 fails open, loudly; Coverage attestation",
     "verify": "An unknown-loss interval bounded by the last durable checkpoint and the restart, declared when the counter did not survive; a first run declares nothing, because a first run is not a loss",
     "status": "done",
-    "evidence": "Collector.reconcileObservations -> gapUnknown; declaring one would put a permanent unknown-loss interval at the head of every log ever created. The span is measured from what is ACCOUNTED FOR — written records and the spans already declared — so a gap is never re-declared and the interval after a restart starts where the last declaration ended"
+    "evidence": "Collector.reconcileObservations -> gapUnknown; declaring one would put a permanent unknown-loss interval at the head of every log ever created. The span is measured from what is ACCOUNTED FOR \u2014 written records and the spans already declared \u2014 so a gap is never re-declared and the interval after a restart starts where the last declaration ended"
   },
   {
     "id": "FR-61",
@@ -294,10 +295,10 @@
     "release": "1.0",
     "title": "Observation counter durability",
     "statement": "Checkpoint the observation counter durably at each batch flush, so an unrecoverable crash loses at most the current window and the unknown-loss interval is bounded rather than open-ended.",
-    "source": "Operations — fails open, loudly",
+    "source": "Operations \u2014 fails open, loudly",
     "verify": "The counter is written atomically at each batch flush and reconciled against the chain on open; level means no loss, ahead means an exact span to declare, absent means FR-60's interval. A counter BEHIND the accounted position is the ordinary mid-window state and declares nothing: the counter advances at each flush while source_seq advances at every observation, so behind is what the state between flushes looks like",
     "status": "done",
-    "evidence": "Store.writeObservationCounter + Collector.reconcileObservations; resuming from the last WRITTEN source_seq reused the numbers that were spent, so the hole closed up and a lossy run read as complete. Treating a behind counter as tampering was then wrong in the other direction — it refused to open the store after any crash between a reconciliation and the next checkpoint, with hand-editing the counter file as the only way back. A restored-older counter under-declares a loss, which is the operator misreporting their own loss and indistinguishable from the normal state"
+    "evidence": "Store.writeObservationCounter + Collector.reconcileObservations; resuming from the last WRITTEN source_seq reused the numbers that were spent, so the hole closed up and a lossy run read as complete. Treating a behind counter as tampering was then wrong in the other direction \u2014 it refused to open the store after any crash between a reconciliation and the next checkpoint, with hand-editing the counter file as the only way back. A restored-older counter under-declares a loss, which is the operator misreporting their own loss and indistinguishable from the normal state"
   },
   {
     "id": "FR-62",
@@ -305,7 +306,7 @@
     "release": "1.0",
     "title": "Retries, timeouts and errors in the schema",
     "statement": "The record schema represents a failed, timed-out or retried tool call explicitly: an outcome enum, an attempt number, and a correlation id grouping attempts of one logical action. source_seq advances once per observed ATTEMPT, not per logical action, because a timed-out attempt may already have caused an external side effect and must stay independently accountable. Correlation, not the counter, is what groups attempts. The correlation identifier is opaque and randomly generated, never derived from a payload, user or session, because it is retained after erasure.",
-    "source": "Capture — action record",
+    "source": "Capture \u2014 action record",
     "verify": "Interleaved retries across two correlations keep source_seq strictly increasing; an omitted retry is detected as a source_seq gap; coverage reports attempt count and logical-action count separately",
     "status": "done",
     "evidence": "outcome, attempt and correlation in record.mjs; Collector.correlate; unresolved calls settled as timeout"
@@ -316,7 +317,7 @@
     "release": "1.0",
     "title": "Pinned operator identity",
     "statement": "The acceptance policy names the operator identity the reader expects, and the verifier reports any pack presented under a different key or origin rather than silently accepting it. Nothing prevents an operator maintaining a second log; the guarantee is that a reader who pinned an identity is told when they are shown another.",
-    "source": "Proof — offline verification; Threat model",
+    "source": "Proof \u2014 offline verification; Threat model",
     "verify": "A pack under another origin emits IDENTITY_UNPINNED; the right origin with the wrong key is also reported; pinning nothing reads as pinning nothing rather than as a pass",
     "status": "done",
     "evidence": "packages/verify/test/assumptions.test.mjs"
@@ -326,19 +327,19 @@
     "type": "functional",
     "release": "1.0",
     "title": "Collector self-reported configuration attestation",
-    "statement": "Each heartbeat carries a digest of the capture configuration the collector reports for itself — upstreams proxied, interfaces bound, heartbeat and anchor intervals — so a change to THAT configuration is recorded and visible. It does not detect an execution path created outside the collector: such a path leaves the collector reporting an unchanged digest and nothing diverges. This is provenance of a self-report, not independent observation.",
+    "statement": "Each heartbeat carries a digest of the capture configuration the collector reports for itself \u2014 upstreams proxied, interfaces bound, heartbeat and anchor intervals \u2014 so a change to THAT configuration is recorded and visible. It does not detect an execution path created outside the collector: such a path leaves the collector reporting an unchanged digest and nothing diverges. This is provenance of a self-report, not independent observation.",
     "source": "Coverage attestation",
     "verify": "Changing a declared upstream alters the attested digest and emits a policy record; a test asserts that a path bypassing the collector entirely produces NO signal, so the limit is pinned by a test rather than by prose",
     "status": "done",
-    "evidence": "capture.mjs captureSurface/captureDigest, attested in every heartbeat; duplicates and unknown keys refused rather than collapsed or ignored, because two different declarations must not produce one digest and a misspelled `upstream:` would attest to a narrower surface than was written. The bypass test is PAIRED: it asserts a path outside the collector produces no signal AND, over the same store, that a declared change produces one — without that half it would pass against a deleted implementation"
+    "evidence": "capture.mjs captureSurface/captureDigest, attested in every heartbeat; duplicates and unknown keys refused rather than collapsed or ignored, because two different declarations must not produce one digest and a misspelled `upstream:` would attest to a narrower surface than was written. The bypass test is PAIRED: it asserts a path outside the collector produces no signal AND, over the same store, that a declared change produces one \u2014 without that half it would pass against a deleted implementation"
   },
   {
     "id": "FR-65",
     "type": "functional",
     "release": "1.0",
     "title": "Operator-declared key custody",
-    "statement": "The key custody class — non-exportable KMS or HSM, versus a software key — is declared in a chained record per epoch, because an HSM signature and a file-key signature are byte-identical and a verifier cannot otherwise tell them apart. The declaration proves the operator declared it, not that the key was non-exportable or later destroyed. Custody is reported as operator-declared unless a provider attestation document is supplied alongside, which is the only path to independently supported custody.",
-    "source": "Integrity — forward-secure epoch ratchet",
+    "statement": "The key custody class \u2014 non-exportable KMS or HSM, versus a software key \u2014 is declared in a chained record per epoch, because an HSM signature and a file-key signature are byte-identical and a verifier cannot otherwise tell them apart. The declaration proves the operator declared it, not that the key was non-exportable or later destroyed. Custody is reported as operator-declared unless a provider attestation document is supplied alongside, which is the only path to independently supported custody.",
+    "source": "Integrity \u2014 forward-secure epoch ratchet",
     "verify": "A `custody` record kind, chained; custody_basis admits only 'operator-declared' and the validator refuses 'independently-supported' outright",
     "status": "done",
     "evidence": "record.mjs allowlist + Collector.custody; rotate(next, {declare:true}) means an epoch is never undeclared"
@@ -348,8 +349,8 @@
     "type": "functional",
     "release": "1.0",
     "title": "Compare expected witnesses against proofs present",
-    "statement": "Each checkpoint records which witnesses were expected for it, given their tier and cadence, and the verifier compares that against the proofs in the pack. A proof that is expected and absent is reported as missing and inconclusive — it may be pending under fail-open, the witness may have been unavailable, or the receipt may have been removed, and the verifier cannot tell which from absence alone. Demonstrating removal requires an earlier pack that contained it, which is cross-pack comparison.",
-    "source": "Proof — offline verification",
+    "statement": "Each checkpoint records which witnesses were expected for it, given their tier and cadence, and the verifier compares that against the proofs in the pack. A proof that is expected and absent is reported as missing and inconclusive \u2014 it may be pending under fail-open, the witness may have been unavailable, or the receipt may have been removed, and the verifier cannot tell which from absence alone. Demonstrating removal requires an earlier pack that contained it, which is cross-pack comparison.",
+    "source": "Proof \u2014 offline verification",
     "verify": "Remove a proof: WITNESS_MISSING is reported as inconclusive, never as deletion. A witness on a slower tier with no proof yet is reported as not-yet-expected. A pack pair where one holds the proof and the later one does not yields removal",
     "status": "done",
     "evidence": "verify.mjs tier-aware expectation; a witness on the roll-up tier is reported not-yet-expected rather than missing, because its proofs live in the roll-up envelopes and a permanent inconclusive on every correctly configured log is how a finding stops being read. Absence is never reported as deletion: pending, unavailable and removed are indistinguishable from absence alone, and demonstrating removal takes FR-54's cross-pack comparison"
@@ -360,10 +361,10 @@
     "release": "1.0",
     "title": "Unwitnessed outage ceiling",
     "statement": "Fail-open must not become indefinite. An unwitnessed_ceiling sets the point at which the collector raises an alert out of band, and beyond which the coverage report refuses to issue a completeness claim spanning the outage, stating the unwitnessed window instead.",
-    "source": "Operations — fails open, loudly",
+    "source": "Operations \u2014 fails open, loudly",
     "verify": "Past the ceiling an alert is raised OUT OF BAND through a callback that writes no record, once per breach rather than once per flush; the breach clears on drain and `breaches` keeps the window; a ceiling of zero or less is refused at config load",
     "status": "done",
-    "evidence": "Anchorer.ceilingBreached/onCeilingBreached + config positive(); an alert about the log's integrity written into that log asks the suspect to carry the complaint. The age was computed from the queued entry's `since`, so a single unparseable `since` on disk made the age NaN and every comparison against the ceiling false — the ceiling that exists to stop fail-open becoming indefinite was itself silenced indefinitely by one corrupt field. Store.readQueue now refuses such an entry, and an unmeasurable age counts as over the ceiling rather than under it"
+    "evidence": "Anchorer.ceilingBreached/onCeilingBreached + config positive(); an alert about the log's integrity written into that log asks the suspect to carry the complaint. The age was computed from the queued entry's `since`, so a single unparseable `since` on disk made the age NaN and every comparison against the ceiling false \u2014 the ceiling that exists to stop fail-open becoming indefinite was itself silenced indefinitely by one corrupt field. Store.readQueue now refuses such an entry, and an unmeasurable age counts as over the ceiling rather than under it"
   },
   {
     "id": "FR-69",
@@ -371,10 +372,10 @@
     "release": "1.0",
     "title": "Padding is a record kind",
     "statement": "A padding leaf is an explicit record kind in the version-1 enum, with its own record_seq, source_seq null, no tool or payload fields, and a random nonce so no two padding records share a leaf. Padding leaves without records would break record_seq equals tree_size.",
-    "source": "Disclosure — optional batch padding",
+    "source": "Disclosure \u2014 optional batch padding",
     "verify": "Two real records plus three padding records yield tree_size 5 and record_seq 5; a verifier counts real and padding records separately; a mixed real-and-padding log verifies end to end",
     "status": "done",
-    "evidence": "record.mjs padding kind + Collector.padding(); each nonce is random so no two padding leaves match — identical ones would be a recognisable pattern and therefore no padding at all. record_seq still equals tree_size, which dummy leaves without records would have broken"
+    "evidence": "record.mjs padding kind + Collector.padding(); each nonce is random so no two padding leaves match \u2014 identical ones would be a recognisable pattern and therefore no padding at all. record_seq still equals tree_size, which dummy leaves without records would have broken"
   },
   {
     "id": "DOC-11",
@@ -382,7 +383,7 @@
     "release": "1.0",
     "title": "Every assurance claim names its evidence",
     "statement": "Each assurance claim in the specifications and the release notes names the evidence that supports it, classified as independent, operator-declared, or none. A claim resting only on the operator-controlled collector is worded as an assertion, never as a verified guarantee. This rule exists because the design repeatedly acquired guarantees its own threat model excludes.",
-    "source": "Threat model — detection, not prevention",
+    "source": "Threat model \u2014 detection, not prevention",
     "verify": "Claims audit per release checks each assurance claim against the register; npm run review flags a curated set of overclaim phrasings"
   },
   {
@@ -391,7 +392,7 @@
     "release": "1.0",
     "title": "Validate a provider custody attestation",
     "statement": "Before reporting custody as independently supported, validate the attestation: issuer chains to a provider root named in the acceptance policy, document signature valid over the bytes presented, attested key is the one that signed this epoch, attestation period covers the epoch, and the document actually asserts non-exportability. Even all five together do not establish historical key destruction, which remains operator-declared.",
-    "source": "Integrity — forward-secure epoch ratchet",
+    "source": "Integrity \u2014 forward-secure epoch ratchet",
     "verify": "All five checks reported separately, each with a test that breaks only it. Check 5 reads YubiHSM 2's own Origin and Capabilities BIT STRINGs at the OIDs Yubico publishes, and requires BOTH that the key was generated on the device (not imported, not imported under wrap) and that it lacks exportable-under-wrap. Fixtures are vendor FORMAT; no real provider document has ever been put through it, and every result carries provider_untested: true",
     "status": "done",
     "evidence": "packages/core/src/attestation.mjs over the shared packages/core/src/trustpath.mjs; an end-entity certificate cannot act as a CA; bit indexing follows Yubico's own reference parser (docs.yubico.com/hardware/oid/oid-product-arc.html, YubicoLabs/yubihsm-parse-attestation); establishes_destruction is hard-coded false with a test asserting it"

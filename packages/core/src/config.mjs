@@ -58,6 +58,7 @@ export const WITNESS_KEYS = Object.freeze({
   rfc3161: Object.freeze(['qualified']),
   opentimestamps: Object.freeze(['calendars']),
   rekor: Object.freeze(['self_hosted']),
+  'tlog-witness': Object.freeze([]),
   splitstick: Object.freeze([]),
 });
 
