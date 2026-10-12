@@ -6,7 +6,9 @@
     "title": "Publish a Witness Practice Statement",
     "statement": "Publish a versioned practice statement defining exactly what a countersignature means.",
     "source": "Witness Practice Statement",
-    "verify": "Self-authored practice statement published in the repository and versioned"
+    "verify": "Published at docs/witness-practice-statement.md, versioned with a change history, and every claim matched against the code by tools/lint-practice-statement.mjs",
+    "status": "done",
+    "evidence": "15 claim/witness pairs; a practice statement the software contradicts is worse than none, because somebody will rely on it"
   },
   {
     "id": "LEG-02",
@@ -15,16 +17,20 @@
     "title": "WPS asserts receipt time",
     "statement": "The countersignature asserts the root was received at the stated time per the witness clock.",
     "source": "WPS — a countersignature asserts",
-    "verify": "Statement text review against implementation"
+    "verify": "§1.1 asserts receipt at the stated time by the witness's own clock, AND states the limit: for a C2SP note the time travels beside the signature rather than under it, reported as 'witness-asserted, unsigned'",
+    "status": "done",
+    "evidence": "lint-practice-statement.mjs pairs the claim with received_at and with the verifier's basis label"
   },
   {
     "id": "LEG-03",
     "type": "legal",
     "release": "1.0",
     "title": "WPS asserts successor ordering",
-    "statement": "The countersignature asserts the root is the immediate successor of the previous one for that operator.",
+    "statement": "The countersignature asserts the root EXTENDS the history the witness last held for that operator, proved by an RFC 6962 consistency proof. Not 'immediate successor': DES-05 publishes every 10 seconds or 1,024 records, so heights legitimately jump, and DES-08 moved to consistency proofs for exactly that reason. The earlier wording predated that change.",
     "source": "WPS — a countersignature asserts",
-    "verify": "Statement matches FR-43 behaviour"
+    "verify": "§1.2 asserts the submitted root EXTENDS the history the witness last held, proved by an RFC 6962 consistency proof — not 'immediate successor', which M3a deliberately does not enforce because DES-05 publishes every 10s or 1,024 records and heights legitimately jump",
+    "status": "done",
+    "evidence": "The requirement's own wording predated DES-08's change to consistency proofs and has been corrected rather than writing a promise the software does not keep; the statement says so explicitly and the lint checks both halves"
   },
   {
     "id": "LEG-04",
@@ -33,7 +39,9 @@
     "title": "WPS asserts retention",
     "statement": "The countersignature asserts the witness retained the root in its own append-only store.",
     "source": "WPS — a countersignature asserts",
-    "verify": "Statement matches FR-44 behaviour"
+    "verify": "§1.3 asserts retention in the witness's own append-only store, paired with the roots journal",
+    "status": "done",
+    "evidence": "lint-practice-statement.mjs; retention is what makes a countersignature worth anything after the operator deletes their envelope"
   },
   {
     "id": "LEG-05",
@@ -42,7 +50,9 @@
     "title": "WPS disclaims occurrence",
     "statement": "The statement disclaims any assertion that the underlying actions occurred.",
     "source": "WPS — asserts nothing about",
-    "verify": "Text review"
+    "verify": "§2.1 disclaims that the actions occurred, and the lint asserts no source claims otherwise",
+    "status": "done",
+    "evidence": "An agent that recorded a payment it never made produces a log that countersigns perfectly"
   },
   {
     "id": "LEG-06",
@@ -51,7 +61,9 @@
     "title": "WPS disclaims truthfulness",
     "statement": "The statement disclaims any assertion that recorded content is true.",
     "source": "WPS — asserts nothing about",
-    "verify": "Text review"
+    "verify": "§2.2 disclaims that recorded content is true, and the lint asserts no source claims otherwise",
+    "status": "done",
+    "evidence": "A record saying 'transferred EUR 25' when EUR 2,000,000 moved is a true record of a false statement"
   },
   {
     "id": "LEG-07",
@@ -60,7 +72,9 @@
     "title": "WPS disclaims completeness",
     "statement": "The statement disclaims completeness and points to coverage attestation instead.",
     "source": "WPS — asserts nothing about",
-    "verify": "Text review"
+    "verify": "§2.3 disclaims completeness and points at the coverage attestation (DES-10, M4) instead",
+    "status": "done",
+    "evidence": "Until that ships the honest position is that completeness is not established by anything in the statement, and the verifier's capability block says so"
   },
   {
     "id": "LEG-08",
@@ -69,7 +83,9 @@
     "title": "WPS disclaims lawfulness",
     "statement": "The statement disclaims any assertion that an action was lawful or authorised.",
     "source": "WPS — asserts nothing about",
-    "verify": "Text review"
+    "verify": "§2.4 disclaims lawfulness and authorisation, and the lint asserts no source claims otherwise",
+    "status": "done",
+    "evidence": "The approval record records that somebody approved something; it does not establish that they were entitled to"
   },
   {
     "id": "LEG-09",
@@ -78,7 +94,9 @@
     "title": "WPS versioned and anchored",
     "statement": "The practice statement is itself versioned and anchored like any other record.",
     "source": "WPS — versioned and anchored like everything else",
-    "verify": "Statement root present in the witness log; counsel review deferred to a funded release"
+    "verify": "§7 — the statement is versioned AND anchored like any other record. `npm run anchor-wps` writes its digest into a chained log and checkpoints it, verifiable through the ordinary verifier with no special path",
+    "status": "done",
+    "evidence": "tools/anchor-wps.mjs; a published document can be edited, a digest in a chained log cannot be without breaking the chain. The limit is stated: anchoring is only as good as the witness set that anchored it"
   },
   {
     "id": "LEG-10",
@@ -335,7 +353,9 @@
     "title": "Queue drain and retry",
     "statement": "Drain and re-submit queued unwitnessed batches with backoff once a witness returns.",
     "source": "Operations — queued",
-    "verify": "Outage and recovery test"
+    "verify": "Drain with exponential backoff, capped, highest height first; a fresh entry is eligible immediately because anchor() already tried, and the delay applies after a failed retry; `waiting` is reported separately from `anchored` so a caller can tell waiting from failing",
+    "status": "done",
+    "evidence": "Anchorer.flush/nextAttemptAt; imposing the base delay on a fresh entry left a witness that returned in two seconds unused for thirty"
   },
   {
     "id": "OPS-03",

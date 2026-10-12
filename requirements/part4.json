@@ -37,7 +37,9 @@
     "title": "Witness key rotation",
     "statement": "Rotate witness keys while keeping historical countersignatures verifiable, by publishing a signed key history.",
     "source": "Durability — key rotation",
-    "verify": "Countersignatures from a retired key still verify after rotation"
+    "verify": "A retired witness key still verifies, against a published key history that is VALIDATED first: the note must exist, verify under a key that is itself in the list, and sign a digest that covers the list as presented. A key absent from a valid history is inconclusive, not a failure",
+    "status": "done",
+    "evidence": "validateKeyHistory() in packages/verify/src/verify.mjs; without the digest check a key could be appended after signing and the signature would still check out"
   },
   {
     "id": "SEC-22",
@@ -68,7 +70,9 @@
     "title": "Key compromise recovery",
     "statement": "Document and support recovery from operator key compromise: a declared, countersigned discontinuity rather than a silent re-key.",
     "source": "Durability — key compromise",
-    "verify": "Compromise drill: discontinuity is recorded, countersigned and visible to the verifier"
+    "verify": "A `discontinuity` record kind naming the last sound epoch, the new root key and a required reason; reported prominently as DISCONTINUITY, never bridged — no affirmative signing claim spans it and the report says the reader must re-pin out of band. The declaration is signed by the key it disowns and the report says so",
+    "status": "done",
+    "evidence": "record.mjs allowlist + Collector.declareDiscontinuity + verify.mjs; DES-06 called it a policy record, which the per-kind allowlist cannot express — a distinct kind also lets the verifier find discontinuities BY KIND, which is what makes 'never silently bridged' checkable"
   },
   {
     "id": "SEC-25",
@@ -88,7 +92,9 @@
     "title": "Witness store durability",
     "statement": "The witness store is replicated and recoverable, with a documented recovery point objective, because a witness that loses its roots destroys the corroboration it exists to provide.",
     "source": "Durability — losing a witness must not lose the evidence",
-    "verify": "Restore drill from backup; RPO measured against the stated objective"
+    "verify": "A runnable drill (`npm run drill:restore`) rather than a described procedure: it takes a backup, advances past it, destroys the live store, restores, and asserts the restored witness refuses both a conflicting submission AND the operator's honest next one — then recovers by resubmitting from the height the witness reports. It exits non-zero if it measures no loss, so it cannot pass without exercising a stale backup",
+    "status": "done",
+    "evidence": "packages/witness-self/drill/restore.mjs + docs/witness-restore-drill.md; RPO is one submission for a crash and the backup interval for a restore, measured rather than assumed. Replication is stated as a deployment concern this project specifies and does not implement"
   },
   {
     "id": "INT-07",
@@ -108,7 +114,9 @@
     "title": "WPS states the time discipline",
     "statement": "The practice statement names the witness's time source and the limits of the time assertion.",
     "source": "Witness Practice Statement — per its clock",
-    "verify": "Statement text reviewed against SEC-25 implementation"
+    "verify": "§4 names each witness type's time source and the limits of the time assertion, including that OpenTimestamps is not a clock at all and that none of them establishes when an action OCCURRED — only when a root was received, and only from above",
+    "status": "done",
+    "evidence": "lint-practice-statement.mjs pairs it with TIME_DISCIPLINE in packages/witnesses"
   },
   {
     "id": "GOV-17",
@@ -252,7 +260,9 @@
     "title": "Reserved slot for gap declarations",
     "statement": "Pre-allocate storage sufficient to write a gap declaration, so the declaration can be written even when the store is otherwise exhausted. If even that fails, the condition is surfaced out of band and the next successful write declares the lost window.",
     "source": "Operations — fails open, loudly",
-    "verify": "Disk-exhaustion test: the agent completes, a gap declaration is written from the reserve, and the lost window appears in the coverage report"
+    "verify": "A 64 KiB reserve written when the store is created, never touched by ordinary records, released only to write a gap declaration; its absence afterwards is the signal it was spent. If even that fails the condition is surfaced out of band and the collector degrades",
+    "status": "done",
+    "evidence": "Store.releaseReserve + Collector.declareGap; the failed append degraded the collector so the retry was refused before reaching the store — the mechanism would have been dead in production"
   },
   {
     "id": "FR-59",
@@ -272,7 +282,9 @@
     "title": "Unknown-loss intervals",
     "statement": "When the observation counter did not survive — an unrecoverable crash with the counter only in memory — declare an unknown-loss interval bounded by the last durable checkpoint and the first record after restart. Never fabricate an exact span. The two kinds of loss evidence are distinct record kinds and a verifier reports them differently.",
     "source": "Operations — fails open, loudly; Coverage attestation",
-    "verify": "Disk exhaustion followed by kill -9 and restart: an unknown-loss interval is written with no span, and no exact gap is invented. A verifier distinguishes it from a declared span"
+    "verify": "An unknown-loss interval bounded by the last durable checkpoint and the restart, declared when the counter did not survive; a first run declares nothing, because a first run is not a loss",
+    "status": "done",
+    "evidence": "Collector.reconcileObservations -> gapUnknown; declaring one would put a permanent unknown-loss interval at the head of every log ever created"
   },
   {
     "id": "FR-61",
@@ -281,7 +293,9 @@
     "title": "Observation counter durability",
     "statement": "Checkpoint the observation counter durably at each batch flush, so an unrecoverable crash loses at most the current window and the unknown-loss interval is bounded rather than open-ended.",
     "source": "Operations — fails open, loudly",
-    "verify": "Kill -9 mid-window: the restart reads the last checkpointed source_seq and the declared unknown interval starts there, not at zero"
+    "verify": "The counter is written atomically at each batch flush and reconciled against the chain on open; level means no loss, ahead means an exact span to declare, absent means FR-60's interval. A counter BEHIND the records is refused rather than reconciled",
+    "status": "done",
+    "evidence": "Store.writeObservationCounter + Collector.reconcileObservations; resuming from the last WRITTEN source_seq reused the numbers that were spent, so the hole closed up and a lossy run read as complete"
   },
   {
     "id": "FR-62",
@@ -341,7 +355,9 @@
     "title": "Unwitnessed outage ceiling",
     "statement": "Fail-open must not become indefinite. An unwitnessed_ceiling sets the point at which the collector raises an alert out of band, and beyond which the coverage report refuses to issue a completeness claim spanning the outage, stating the unwitnessed window instead.",
     "source": "Operations — fails open, loudly",
-    "verify": "Exceed the ceiling: an alert is raised and the coverage report declines a completeness claim for that window rather than reporting it as covered"
+    "verify": "Past the ceiling an alert is raised OUT OF BAND through a callback that writes no record, once per breach rather than once per flush; the breach clears on drain and `breaches` keeps the window; a ceiling of zero or less is refused at config load",
+    "status": "done",
+    "evidence": "Anchorer.ceilingBreached/onCeilingBreached + config positive(); an alert about the log's integrity written into that log asks the suspect to carry the complaint"
   },
   {
     "id": "FR-69",
