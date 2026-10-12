@@ -53,7 +53,7 @@ const ALLOWED = Object.freeze({
   heartbeat: [...ENVELOPE, 'build', 'policy', 'heartbeat_interval_ms', 'counts'],
   gap: [...ENVELOPE, 'from_source_seq', 'to_source_seq', 'reason'],
   gap_unknown: [...ENVELOPE, 'from_ts', 'to_ts', 'last_checkpoint_source_seq'],
-  policy: [...ENVELOPE, 'previous_policy', 'next_policy'],
+  policy: [...ENVELOPE, 'previous_policy', 'next_policy', 'policy_subject'],
   // FR-65 — the operator's declaration of how the epoch's key is held.
   //
   // It is a RECORD rather than a field on the checkpoint because a verifier
@@ -349,6 +349,27 @@ export function validateRecord(rec) {
   }
 
   if (kind === 'policy') {
+    // WHICH policy. Two different things use this record kind — the effective
+    // anchoring-and-capture policy (FR-23, SEC-12) and the practice
+    // statement's version chain (LEG-09) — and `previous_policy`/`next_policy`
+    // alone never said which. The collector then read a practice-statement
+    // version as an attestation of its own effective policy, found it did not
+    // match, and emitted a spurious change event: two digests compared that
+    // were not about the same subject.
+    //
+    // Optional, and an ABSENT subject is not read as either. A record written
+    // before the field existed is evidence that something moved, and inferring
+    // which policy it was about would reintroduce the same guess that caused
+    // the collision.
+    if ('policy_subject' in r) {
+      if (r.policy_subject !== 'effective' && r.policy_subject !== 'practice-statement') {
+        throw new RecordError(
+          `policy_subject is ${JSON.stringify(r.policy_subject)}; expected 'effective' or `
+          + "'practice-statement'. An unknown subject is refused rather than ignored, because a "
+          + 'record about an unknown policy would be counted towards whichever one read it',
+        );
+      }
+    }
     // SEC-12's downgrade defence IS these two digests: a policy record carrying
     // neither is a note saying something happened, not evidence of what.
     for (const f of ['previous_policy', 'next_policy']) {

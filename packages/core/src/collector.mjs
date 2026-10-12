@@ -25,6 +25,7 @@ import { endorse, verifySuccession } from './succession.mjs';
 import { signNote } from './signer.mjs';
 import { extractRefs } from './content.mjs';
 import { captureAttestation, UNATTESTED_BUILD } from './capture.mjs';
+import { effectivePolicy, policyDigest, GENESIS_POLICY } from './policy.mjs';
 import { SCHEMA_VERSION, SUITE } from './record.mjs';
 
 /** @param {unknown} v @returns {v is Uint8Array} */
@@ -64,6 +65,25 @@ export class Collector {
   #counts = Object.create(null);
 
   /**
+   * FR-23, SEC-12 — a policy change that must be chained before anything else.
+   *
+   * Set at construction when the config's effective policy differs from the
+   * last one recorded, and cleared only by writing the record. Every write
+   * flushes it first, so no record can ever be written UNDER a policy the
+   * chain does not yet show: weakening the policy and then tampering has to
+   * leave the weakening in front of the tampering, in order, or the tampering
+   * does not get written at all.
+   * @type {{ previous: string, next: string }|null}
+   */
+  #pendingPolicy = null;
+
+  /** Guard against #write recursing through the pending-policy flush. */
+  #writingPolicy = false;
+
+  /** Whether this run has written the document for the policy it attests. */
+  #policyDocumented = false;
+
+  /**
    * @param {object} o
    * @param {import('./store.mjs').Store} o.store
    * @param {import('./config.mjs').Config} o.config
@@ -96,6 +116,14 @@ export class Collector {
      * FR-23 exists to prevent.
      */
     this.capture = captureAttestation(config);
+    /**
+     * FR-23, SEC-12 — the policy this collector is running, as a digest the
+     * chain commits to. Computed once: a surface that could change under a
+     * running collector without a record is the quiet change FR-23 exists to
+     * prevent.
+     */
+    this.policyDoc = effectivePolicy(config);
+    this.policyDigest = policyDigest(this.policyDoc);
     /**
      * Records written since the last heartbeat, by kind — DES-10's `counts`.
      * The collector's own statement of what it wrote in the interval, which a
@@ -133,6 +161,39 @@ export class Collector {
     this.head = tip.record_seq === 0 ? genesis() : tip.head;
     this.checkpointSeq = store.lastCheckpointSeq();
     this.rollupSeq = store.lastRollupSeq();
+
+    // FR-23, SEC-12 — did the effective policy move since the last record of
+    // it? Read from the CHAIN rather than from a file beside it: a side file is
+    // a claim about what the policy was, and the chain is what it was.
+    //
+    // Detected here and written on the first write, not now. A constructor
+    // that wrote would make opening a store an act of writing to it, which
+    // broke lock handover once already and would make a read-only reader
+    // mutate what it is reading.
+    // The last policy ATTESTED in this chain, from either kind that attests
+    // one: a `policy` record names the one it moved to, and every heartbeat
+    // names the one in force when it was written.
+    //
+    // Heartbeats carry it precisely so that no baseline record is needed. An
+    // earlier version of this wrote a `policy` record at record_seq 1 of every
+    // store to establish the baseline, which worked and cost a record in every
+    // log and shifted the sequence of 76 existing tests. The heartbeat already
+    // commits to a policy digest continuously, which is strictly better than a
+    // baseline event: a reader can tell which policy ANY window ran under,
+    // rather than only reconstructing it from change events.
+    //
+    // No attested policy at all means a fresh store with nothing to have
+    // changed from, so there is no change to record. FR-23 says record any
+    // CHANGE, and the first policy is not one.
+    let attested = null;
+    for (const { record: r } of detail.entries) {
+      if (r?.kind === 'policy' && r.policy_subject === 'effective'
+        && typeof r.next_policy === 'string') attested = String(r.next_policy);
+      else if (r?.kind === 'heartbeat' && typeof r.policy === 'string') attested = String(r.policy);
+    }
+    if (attested !== null && attested !== this.policyDigest) {
+      this.#pendingPolicy = { previous: attested, next: this.policyDigest };
+    }
 
     // The epoch comes off disk, never from memory — FR-11. A collector that
     // remembered its epoch would start back at 0 after a restart and endorse a
@@ -182,6 +243,50 @@ export class Collector {
    * that no succession entry accounts for is exactly the gap a verifier would
    * report as unattributable.
    */
+  /**
+   * Write the pending policy record, if there is one — FR-23, SEC-12.
+   *
+   * The DOCUMENT is written before the record that names it, so a reader never
+   * meets a commitment to a document that is not there yet. The guard is not
+   * decoration: the policy record is written through #write like any other, and
+   * without it the flush would recurse into itself forever.
+   */
+  /**
+   * Store the document for the policy this collector attests — FR-23, SEC-12.
+   *
+   * On every run, not only when the policy CHANGED. A heartbeat commits to the
+   * policy in force, so that policy becomes some later change's
+   * `previous_policy` — and if its document was never stored, the first
+   * downgrade is detectable but not legible, which is the gap the document
+   * exists to close. Two tests caught this: the document was written only on
+   * change, so the baseline was missing exactly when it was needed.
+   *
+   * Idempotent: the filename is the digest, so this writes the same bytes
+   * every time. Lazy, like the root epoch — a constructor that wrote would
+   * make opening a store an act of writing to it.
+   */
+  #ensurePolicyDocument() {
+    if (this.#policyDocumented) return;
+    this.store.writePolicyDocument(this.policyDigest, this.policyDoc);
+    this.#policyDocumented = true;
+  }
+
+  #flushPendingPolicy() {
+    const pending = this.#pendingPolicy;
+    if (pending === null || this.#writingPolicy) return;
+    this.#writingPolicy = true;
+    try {
+      this.#ensurePolicyDocument();
+      // Cleared BEFORE the write returns, so a failure cannot leave a
+      // half-flushed state that writes the record twice. If the write throws,
+      // the collector is degraded anyway and nothing further is written.
+      this.#pendingPolicy = null;
+      this.policy({ previous: pending.previous, next: pending.next, subject: 'effective' });
+    } finally {
+      this.#writingPolicy = false;
+    }
+  }
+
   #ensureRootEpoch() {
     if (this.#rootEpochRecorded) return;
     this.store.appendEpoch({
@@ -407,10 +512,18 @@ export class Collector {
    */
   #write(record) {
     if (this.#degraded !== null) throw new CollectorDegraded(this.#degraded);
+    // SEC-12, inventory row 17. Also flushed here, for the paths that build a
+    // record without #envelope: the policy event goes in FRONT of the first
+    // record written under the new policy, never alongside or after it. An
+    // operator who weakens the witness set and then tampers must leave the
+    // weakening earlier in the chain than the tampering, because the tampering
+    // cannot be written until the weakening has been.
+    this.#flushPendingPolicy();
     const salt = newSalt();
     const e = chainEntry(record, salt, this.head);   // validates; throws before any mutation
     try {
       this.#ensureRootEpoch();
+      this.#ensurePolicyDocument();
       this.store.append(e);
     } catch (err) {
       // A lock conflict is not local damage. The lock is claimed before any
@@ -438,6 +551,14 @@ export class Collector {
 
   /** @param {Partial<Record<string, unknown>>} [extra] */
   #envelope(extra = {}) {
+    // The pending policy record is flushed HERE and not in #write, because
+    // the envelope is what fixes record_seq. Flushing later meant the policy
+    // record and the record that triggered it were both built from the same
+    // counter and both claimed the same record_seq — a duplicate sequence,
+    // which the verifier reports as SEQ_BROKEN. Found by probing the downgrade
+    // path rather than by the type system, since both values were valid
+    // integers; it was the comparison that was against the wrong state.
+    this.#flushPendingPolicy();
     return {
       v: SCHEMA_VERSION,
       collector: this.collector,
@@ -520,10 +641,19 @@ export class Collector {
     return this.#write(this.#envelope({
       run: null, source_seq: null, kind: 'heartbeat',
       build: this.build,
-      // FR-64. The caller may override it, but the default is the collector's
-      // own attested surface rather than a placeholder — a heartbeat carrying
-      // `sha256:unset` attested to nothing while looking like an attestation.
-      policy: o.policy ?? this.capture.digest,
+      // FR-64 AND FR-23/SEC-12. The EFFECTIVE policy — witness set, quorum,
+      // intervals and the declared capture surface — not the capture surface
+      // alone. DES-10 specified the capture digest here; the effective policy
+      // is a superset of it, so FR-64 is unaffected, and carrying it means
+      // every heartbeat commits to the policy in force. That is what lets a
+      // reader say which policy a given window ran under, and it is what makes
+      // the first downgrade legible without a baseline record. The deviation
+      // is recorded in DES-10.
+      //
+      // The caller may override it; the default is never a placeholder. This
+      // field defaulted to the string `sha256:unset`, which attested to
+      // nothing while looking like an attestation.
+      policy: o.policy ?? this.policyDigest,
       // FR-24, DES-10 — in the RECORD, because a coverage report must not
       // imply finer resolution than the interval that produced its evidence,
       // and it cannot know that interval from whatever config a reader holds.
@@ -575,12 +705,17 @@ export class Collector {
    * A policy change — FR-23, SEC-12. Chained and anchored like anything else,
    * which is what closes the downgrade attack: weakening the policy and then
    * tampering leaves a countersigned record of the weakening.
-   * @param {{ previous: string, next: string }} o digests of the effective policies
+   * @param {{ previous: string, next: string,
+   *   subject?: 'effective'|'practice-statement' }} o digests of the effective policies
    */
   policy(o) {
     return this.#write(this.#envelope({
       run: null, source_seq: null, kind: 'policy',
       previous_policy: o.previous, next_policy: o.next,
+      // WHICH policy moved. Omitted means unstated, which no reader counts as
+      // either subject — see record.mjs. A caller recording an effective
+      // policy change says so, and the practice statement says so too.
+      ...(o.subject ? { policy_subject: o.subject } : {}),
     }));
   }
 

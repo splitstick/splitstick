@@ -26,6 +26,14 @@ collector emits positive evidence that it was alive and which build it was.
 Chained and anchored like any record, every 5 seconds by default, **whether or not a run is
 active** (FR-24, FR-56). A window with no heartbeat is as loud as a broken hash.
 
+**Deviation, M4 — `policy` carries the EFFECTIVE policy, not the capture configuration alone.**
+The effective policy is a superset of the capture surface — it adds the witness set, the quorum and
+the anchor and roll-up intervals — so `FR-64` is unaffected and `FR-23`/`SEC-12` gain something
+the design did not have: every heartbeat commits to the policy in force, so a reader can say which
+policy *any* window ran under rather than reconstructing it from change events. It also removes the
+need for a baseline policy record. An earlier attempt wrote one at `record_seq` 1 of every store;
+it worked, cost a record in every log, and shifted the sequence of 76 existing tests.
+
 This is why the chain is collector-scoped (DES-04). A heartbeat stream living inside a run would
 prove nothing about the interval between runs — which is precisely when stopping the collector is
 invisible, and therefore precisely the window an operator would choose.
