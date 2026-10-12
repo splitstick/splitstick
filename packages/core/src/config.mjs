@@ -36,6 +36,37 @@ export const SIGNER_TYPES = Object.freeze(['kms', 'hsm', 'file']);
  */
 export const ON_UNAVAILABLE_VALUES = Object.freeze(['mark_gap']);
 
+/**
+ * Which keys each witness type accepts, as ONE table.
+ *
+ * This existed twice and the two copies disagreed: the parser allowed
+ * `['id','type','url','tier','key']` while @splitstick/witnesses read
+ * `calendars` and `self_hosted`, so an operator writing either in
+ * splitstick.yaml got `unknown witness key` for a knob the code supports. That
+ * is the fourth instance in this project of one shape — a setting the code
+ * reads and the parser will not pass — and the fix is a single table rather
+ * than a third careful list. A test in @splitstick/witnesses asserts every key
+ * the builder reads is declared here, so the drift cannot come back quietly.
+ */
+export const WITNESS_KEYS = Object.freeze({
+  /** Accepted on every type. */
+  common: Object.freeze(['id', 'type', 'url', 'tier', 'key']),
+  /** `qualified` is the operator DECLARING this TSA a qualified trust service
+   *  under eIDAS (LEG-13). It is a declaration and never a verification: the
+   *  EU trusted list is not reachable from here, and NFR-05 says it never will
+   *  be. What it changes is what the report is allowed to say. */
+  rfc3161: Object.freeze(['qualified']),
+  opentimestamps: Object.freeze(['calendars']),
+  rekor: Object.freeze(['self_hosted']),
+  splitstick: Object.freeze([]),
+});
+
+/** @param {string} type @returns {readonly string[]} */
+export function witnessKeysFor(type) {
+  const extra = /** @type {Record<string, readonly string[]>} */ (WITNESS_KEYS)[type];
+  return [...WITNESS_KEYS.common, ...(extra ?? [])];
+}
+
 export const DEFAULTS = Object.freeze({
   anchor_interval_ms: 10_000,
   rollup_interval_ms: 3_600_000,
@@ -98,6 +129,9 @@ function positive(key, ms) {
  * @property {string} [url]
  * @property {string} [tier]
  * @property {string} [key]
+ * @property {string[]} [calendars] opentimestamps only
+ * @property {boolean} [self_hosted] rekor only
+ * @property {boolean} [qualified] rfc3161 only — LEG-13, operator-DECLARED
  *
  * @typedef {object} Config
  * @property {number} version
@@ -229,10 +263,20 @@ export function parseConfig(text, baseDir = process.cwd()) {
       if (typeof e.type !== 'string' || !e.type) throw new ConfigError(`witness ${e.id} needs a type`);
       if (seen.has(e.id)) throw new ConfigError(`duplicate witness id ${e.id}`);
       seen.add(e.id);
+      const allowed = witnessKeysFor(e.type);
       for (const k of Object.keys(e)) {
-        if (!['id', 'type', 'url', 'tier', 'key'].includes(k)) {
-          throw new ConfigError(`unknown witness key ${JSON.stringify(k)} on ${e.id}`);
+        if (!allowed.includes(k)) {
+          // Named per type, so the message says what this type takes rather
+          // than leaving the operator to guess whether the key or the type is
+          // the mistake.
+          throw new ConfigError(
+            `unknown witness key ${JSON.stringify(k)} on ${e.id}: a ${e.type} witness takes `
+            + `${allowed.join(', ')}`,
+          );
         }
+      }
+      if (e.qualified !== undefined && typeof e.qualified !== 'boolean') {
+        throw new ConfigError(`qualified on ${e.id} is a boolean`);
       }
       witnesses.push(/** @type {Witness} */ (e));
     }

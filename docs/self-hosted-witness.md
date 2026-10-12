@@ -43,6 +43,27 @@ as well — see [the witness list](../spec/witnesses.json) — and for the eIDAS
 presumption specifically, a **qualified** TSA, which no self-hosted witness and no witness
 this project operates can provide.
 
+A qualified TSA goes in the witness set beside your own (LEG-13):
+
+```yaml
+witnesses:
+  - id: audit.internal
+    type: splitstick
+  - id: qtsa.example
+    type: rfc3161
+    url: https://tsa.example/tsr
+    qualified: true
+```
+
+`qualified: true` is **your declaration**, recorded so the deployment can be described and
+audited. It is not a verification and cannot be: qualified status lives in the EU trusted
+list, which verification does not consult and by NFR-05 never will. What the verifier
+reports rests on the *reader's* acceptance policy, where the same flag appears — because
+the presumption is a conclusion the reader draws, and a reader who has not checked the
+trusted list themselves has no business drawing it. A policy that labels a C2SP note
+witness `qualified` still gets nothing: the report computes this from the proof type, so
+mislabelling our own witness cannot produce the claim.
+
 ## Standing it up
 
 The witness is a library plus a directory. It holds its state on disk and signs with a key

@@ -54,12 +54,14 @@ const STATUS = Object.freeze({
  * @param {string[]} [o.anchors] PEM trust anchors. Supplied here ONLY so the
  *   adapter can refuse a token it can already tell is unusable; the reader's
  *   acceptance policy is what decides trust at verification time (FR-30).
+ * @param {boolean} [o.qualified] LEG-13 — the operator declaring this TSA a
+ *   qualified trust service under eIDAS. A declaration, never a verification.
  * @param {number} [o.timeout_ms]
  * @param {typeof globalThis.fetch} [o.fetchImpl] injected for tests, so the
  *   adapter's own tests never make a network call
  * @returns {import('@splitstick/core/anchor').WitnessAdapter}
  */
-export function tsaWitness({ id, url, anchors = [], timeout_ms = 10_000, fetchImpl }) {
+export function tsaWitness({ id, url, anchors = [], timeout_ms = 10_000, fetchImpl, qualified = false }) {
   if (typeof id !== 'string' || !id) throw new TsaError('a witness needs an id');
   if (typeof url !== 'string' || !/^https?:\/\//.test(url)) {
     throw new TsaError(`${JSON.stringify(url)} is not an http(s) TSA endpoint`);
@@ -74,6 +76,13 @@ export function tsaWitness({ id, url, anchors = [], timeout_ms = 10_000, fetchIm
     // statement a lie by configuration.
     establishes: ['time'],
     tier: 'anchor',
+    // LEG-13 — the operator saying this endpoint is a qualified trust service
+    // under eIDAS. A DECLARATION, carried so the deployment can be described
+    // and audited, and never a verification: the EU trusted list is not
+    // reachable from here and NFR-05 says it never will be. Nothing in the
+    // report rests on this flag; the Art. 41 statement rests on the READER's
+    // policy, because the presumption is a conclusion the reader draws.
+    qualified,
 
     /**
      * @param {string} note

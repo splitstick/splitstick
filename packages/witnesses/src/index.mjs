@@ -64,7 +64,7 @@ export const WITNESS_TYPES = Object.freeze(['rfc3161', 'opentimestamps', 'rekor'
 
 /**
  * @param {{ witnesses?: { id: string, type: string, url?: string, tier?: string,
- *   calendars?: string[], key?: string, self_hosted?: boolean }[] }} config
+ *   calendars?: string[], key?: string, self_hosted?: boolean, qualified?: boolean }[] }} config
  * @param {{ fetchImpl?: typeof globalThis.fetch }} [opts]
  * @returns {import('@splitstick/core/anchor').WitnessAdapter[]}
  */
@@ -92,6 +92,7 @@ export function witnessesFromConfig(config, opts = {}) {
         out.push(tsaWitness({
           id: w.id,
           url: /** @type {string} */ (w.url),
+          ...(w.qualified ? { qualified: true } : {}),
           ...(opts.fetchImpl ? { fetchImpl: opts.fetchImpl } : {}),
         }));
         break;

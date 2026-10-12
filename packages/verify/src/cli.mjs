@@ -166,6 +166,23 @@ export async function main(argv) {
   for (const c of report.capability.can.slice(1)) out.push('            ' + c);
   for (const c of report.capability.cannot) out.push('            NOT: ' + c);
   out.push('');
+  // Printed whether or not it attaches. An absent line is read as "probably
+  // fine" by a reader hoping for one, and this is the field most likely to be
+  // quoted at somebody outside the room.
+  const wrap = (/** @type {string} */ t) => {
+    /** @type {string[]} */
+    const lines = [];
+    let cur = '';
+    for (const word of t.split(' ')) {
+      if (cur !== '' && `${cur} ${word}`.length > 76) { lines.push(cur); cur = word; }
+      else cur = cur === '' ? word : `${cur} ${word}`;
+    }
+    if (cur !== '') lines.push(cur);
+    return lines.join('\n            ');
+  };
+  out.push(`eIDAS       ${report.presumption.attaches ? 'Art. 41 presumption ATTACHES' : 'no Art. 41 presumption'}`);
+  out.push(`            ${wrap(report.presumption.detail)}`);
+  out.push('');
   out.push('trusting    ' + report.trusting.join('\n            '));
   out.push('');
   process.stdout.write(out.join('\n') + '\n');
