@@ -242,7 +242,8 @@
         "FR-64",
         "FR-66"
       ],
-      "shipped": false
+      "shipped": true,
+      "gate_evidence": "local"
     },
     {
       "id": "M5",

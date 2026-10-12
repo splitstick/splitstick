@@ -45,6 +45,7 @@ import { Anchorer } from '@splitstick/core/anchor';
 import { StatefulWitness } from '@splitstick/witness-self/witness';
 import { SplitstickRunJournal } from '@splitstick/collect-oma';
 import { verifyStore } from '@splitstick/verify';
+import { coverageReport } from '@splitstick/core/coverage';
 import { evaluateGates, formatGates } from './gates.mjs';
 import { JOURNAL_PATH } from './generate.mjs';
 
@@ -100,6 +101,87 @@ async function build() {
 }
 
 /**
+ * A store built for the COVERAGE families — AC-6.
+ *
+ * Heartbeats at the configured five seconds across a five-minute window, with
+ * one agent action in the middle. The baseline above packs its records a
+ * second apart, where no removal can produce a gap wider than the tolerance;
+ * stopping a collector is only visible against a cadence, so these families
+ * need one.
+ */
+async function buildTimed({ suppress = false } = {}) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'splitstick-redteam-cov-'));
+  const signer = await generateDevSigner(ORIGIN);
+  const store = new Store(root, COLLECTOR);
+  let t = Date.parse('2026-10-11T10:00:00.000Z');
+  const collector = new Collector({
+    store, config: parseConfig('version: 1\nstore: ./s\nheartbeat_interval: 5s\n', root),
+    signer, collector: COLLECTOR, origin: ORIGIN,
+    build: `sha256:${'7f'.repeat(32)}`,            // the published build digest
+    now: () => new Date(t),
+  });
+  for (let i = 0; i < 30; i += 1) {
+    collector.heartbeat();
+    if (i === 15 && !suppress) {
+      collector.action({
+        run: 'run-1', tool: 'transfer_funds', consequential: true,
+        args: Buffer.from('{"amount":2000000}'), result: Buffer.from('OK ref=TX-77814'),
+        outcome: 'ok', attempt: 1, correlation: 'c-mid',
+      });
+    }
+    t += 5_000;
+  }
+  const checkpoint = await collector.checkpoint();
+  return {
+    root, store, signer, collector, checkpoint,
+    vkey: formatVkey(ORIGIN, signer.publicKey),
+    window: { from: '2026-10-11T10:00:00.000Z', to: '2026-10-11T10:02:25.000Z' },
+  };
+}
+
+/**
+ * A store whose anchoring policy was WEAKENED part way through — AC-7.
+ *
+ * Written under two independent sequence witnesses, then reopened under one.
+ * The collector refuses to write anything until the policy event is chained,
+ * so the downgrade is strictly earlier in the chain than everything after it,
+ * and the document it moved to is stored under its own digest.
+ */
+async function buildDowngraded() {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'splitstick-redteam-pol-'));
+  const signer = await generateDevSigner(ORIGIN);
+  const TWO = 'version: 1\nstore: ./s\nquorum: 2\nwitnesses:\n'
+    + '  - id: audit-a\n    type: rfc3161\n    url: https://a/\n'
+    + '  - id: audit-b\n    type: rfc3161\n    url: https://b/\n';
+  const ONE = 'version: 1\nstore: ./s\nquorum: 1\nwitnesses:\n'
+    + '  - id: audit-a\n    type: rfc3161\n    url: https://a/\n';
+  let t = Date.parse('2026-10-11T10:00:00.000Z');
+  const act = (/** @type {any} */ c, /** @type {string} */ id) => c.action({
+    run: 'run-1', tool: 'transfer_funds', consequential: true,
+    args: Buffer.from('{"amount":2000000}'), result: Buffer.from('OK ref=TX-77814'),
+    outcome: 'ok', attempt: 1, correlation: id,
+  });
+
+  let store = new Store(root, COLLECTOR);
+  let collector = new Collector({
+    store, config: parseConfig(TWO, root), signer, collector: COLLECTOR, origin: ORIGIN,
+    now: () => new Date((t += 1000)),
+  });
+  collector.heartbeat();
+  act(collector, 'c-1');
+  store.close();
+
+  store = new Store(root, COLLECTOR);
+  collector = new Collector({
+    store, config: parseConfig(ONE, root), signer, collector: COLLECTOR, origin: ORIGIN,
+    now: () => new Date((t += 1000)),
+  });
+  act(collector, 'c-2');                       // written under the weaker policy
+  const checkpoint = await collector.checkpoint();
+  return { root, store, signer, collector, checkpoint, vkey: formatVkey(ORIGIN, signer.publicKey) };
+}
+
+/**
  * The same store, with a stateful witness (FR-17) having countersigned the
  * checkpoint — and the witness's retained root kept OUT of the store, where the
  * operator cannot reach it.
@@ -111,8 +193,8 @@ async function build() {
  * remembers (FR-54, SEC-26) exactly as an auditor polling the witness would,
  * and the attacks that survive THAT are the ones M3a genuinely does not close.
  */
-async function buildWitnessed() {
-  const ctx = await build();
+async function buildWitnessed(base = build) {
+  const ctx = await base();
   const wdir = fs.mkdtempSync(path.join(os.tmpdir(), 'splitstick-witness-'));
   const wkey = await generateDevSigner(WITNESS);
   const witness = new StatefulWitness({ dir: wdir, signer: wkey });
@@ -365,6 +447,79 @@ const attacks = [
       await reSign(ctx.root, ctx.signer);
     },
   },
+
+  // ── AC-6 — stop or patch the collector, then claim quiet ─────────────────
+  {
+    id: 'G', gate: 'AC-6', expect: 'detected',
+    build: buildTimed, detect: 'coverage',
+    name: 'stop the collector for two minutes, repair the chain and re-sign',
+    note: 'The chain is left internally perfect — renumbered, re-chained and re-signed — so nothing a verifier checks about it objects. What the operator cannot repair is the CADENCE: the records that remain are 125 seconds apart where the attested heartbeat interval is five, and no record of any kind attests the interval between. This is the whole reason DES-10 has a heartbeat, and the reason it must run whether or not an agent is active.',
+    async apply(ctx) {
+      // Both counters renumbered, as F3 does, so the chain is genuinely
+      // internally perfect — nothing a verifier checks about it objects. An
+      // earlier version renumbered record_seq only, left a hole in source_seq,
+      // and was caught by SEQ_BROKEN: the family then read as DETECTED for a
+      // reason that had nothing to do with coverage, and would have credited
+      // AC-6 for catching something coverage does not catch.
+      erase(ctx.root, {
+        renumberSource: true,
+        drop: (/** @type {any} */ _l, /** @type {number} */ i) => i >= 4 && i < 28,
+      });
+      repairChain(ctx.root);
+      await reSign(ctx.root, ctx.signer);
+    },
+  },
+  {
+    id: 'G2', gate: 'AC-6', expect: 'undetected',
+    build: () => buildTimed({ suppress: true }), detect: 'coverage',
+    out_of_scope: 'SEC-11, FR-25 and DOC-10 (remote attestation, rejected by SCOPE-12)',
+    closes: 'NOTHING in this release — SEC-11, FR-25 and DOC-10 state the limit, and this attack is what they are about',
+    name: 'patch the collector to suppress one action, keeping the cadence and the build digest',
+    note: 'The declared limit, run as an attack so that it is a measured result rather than a sentence in a document. The heartbeats continue at their interval, the build digest is the published one, the chain recomputes, and the suppressed action is simply absent — a correct-looking, complete-looking record. A self-reported digest is not remote attestation: the patched process controls what it reports. Coverage proves the heartbeat was continuous and reports a digest; it proves nothing about whether the process emitting that digest was the artifact the digest names.',
+    async apply() {
+      // NOTHING TO APPLY, and that is the finding.
+      //
+      // An earlier version of this attack removed the action from an honest
+      // store and repaired the chain. That is a different attack — it leaves a
+      // hole in source_seq, which the verifier found, so the family was
+      // recorded as DETECTED and would have credited the gate for catching
+      // something it does not catch. A patched collector never allocates the
+      // number: the store it produces is the one built above, with the action
+      // absent from the start and nothing anywhere that remembers it existed.
+    },
+  },
+
+  // ── AC-7 — weaken the anchoring policy, then tamper ──────────────────────
+  {
+    id: 'H', gate: 'AC-7', expect: 'detected',
+    build: buildDowngraded,
+    name: 'weaken the policy, then tamper under it',
+    note: 'SEC-12. The weakening itself is permitted — an operator may change their witness set — and the defence is that it cannot be done quietly: the collector refuses to write anything until the policy event is chained, so the weakening is strictly earlier in the chain than whatever follows it. The tampering that follows is then caught by the ordinary chain checks, with the downgrade sitting in front of it as a timestamped, countersigned record.',
+    async apply(ctx) {
+      const ls = lines(ctx.root);
+      const last = ls[ls.length - 1];
+      // The cid only, keeping the field's shape — a content commitment is
+      // { cid, bytes }. An earlier version added a `digest` key that the schema
+      // does not declare, which was refused as FORMAT_UNSUPPORTED: a finding
+      // about a malformed record rather than about an altered one, so the
+      // family passed while testing something else.
+      last.record.args = { ...last.record.args, cid: `sha256:${'ff'.repeat(32)}` };
+      write(ctx.root, ls);
+    },
+  },
+  {
+    id: 'H2', gate: 'AC-7', expect: 'detected',
+    build: buildDowngraded,
+    name: 'weaken the policy and delete the policy record that says so',
+    note: 'The interesting half of AC-7. Hiding the downgrade means removing the record of it, and a removed record is a removed record: the sequence and the chain both contradict its absence. The operator is left choosing between a visible weakening and a broken chain, which is the point of making it a chain event rather than a configuration file nobody reads.',
+    async apply(ctx) {
+      const ls = lines(ctx.root);
+      const at = ls.findIndex((/** @type {any} */ l) => l.record.kind === 'policy');
+      if (at < 0) throw new Error('no policy record to delete: the downgrade was not recorded');
+      ls.splice(at, 1);
+      write(ctx.root, ls);
+    },
+  },
 ];
 
 /**
@@ -381,7 +536,11 @@ function erase(root, opts) {
   const saltFile = path.join(root, 'salts', `${COLLECTOR}.jsonl`);
   const salts = fs.readFileSync(saltFile, 'utf8').trim().split('\n').map((l) => JSON.parse(l));
   const bySeq = new Map(salts.map((e) => [e.record_seq, e.salt]));
-  const kept = ls.filter((_, i) => i !== 1);
+  // `drop` defaults to the second record, which is what the AC-5 families use.
+  // A predicate lets a family remove a RANGE and renumber both counters, which
+  // is what an operator covering a collector outage would actually do.
+  const drop = opts.drop ?? ((/** @type {any} */ _l, /** @type {number} */ i) => i === 1);
+  const kept = ls.filter((l, i) => !drop(l, i));
   const keptSalts = kept.map((l) => bySeq.get(l.record.record_seq));
 
   let source = 0;
@@ -432,24 +591,48 @@ const codesOf = (/** @type {any} */ report) =>
   [...new Set(report.findings.filter((/** @type {any} */ f) => f.verdict === 'fail')
     .map((/** @type {any} */ f) => f.code))].join(', ');
 
+/**
+ * Whether an attack was caught, by the instrument that is supposed to catch it.
+ *
+ * AC-6 is about stopping or patching the collector, which no amount of chain
+ * verification can see: the chain of a stopped collector recomputes perfectly.
+ * It is the COVERAGE report that answers it, so those families are measured
+ * there. Measuring them with verifyStore would have recorded them as undetected
+ * and credited the gate anyway, which is worse than not having the gate.
+ * @param {any} attack @param {any} ctx @param {any} report
+ */
+function detected(attack, ctx, report) {
+  if (attack.detect !== 'coverage') return report.summary.failed > 0;
+  const store = new Store(ctx.root, COLLECTOR);
+  try {
+    const cov = coverageReport(store, { ...ctx.window, collectors: store.collectors() });
+    return cov.findings.some((/** @type {any} */ f) => f.verdict === 'fail');
+  } finally { store.close(); }
+}
+
 for (const attack of attacks) {
   // Run 1 — files alone. What a reader with the store and nothing else sees.
-  const ctx = await build();
+  const ctx = await (attack.build ?? build)();
   await attack.apply(ctx);
   const report = await verifyStore(ctx.root, { collector: COLLECTOR, vkey: ctx.vkey });
-  const observed = report.summary.failed > 0 ? 'detected' : 'undetected';
+  const observed = detected(attack, ctx, report) ? 'detected' : 'undetected';
   const label = observed === 'detected' ? 'DETECTED    ' : 'UNDETECTED >>';
   const drift = observed === attack.expect ? '' : '   <-- CHANGED from expected: ' + attack.expect;
   if (observed !== attack.expect) mismatches += 1;
 
   // Run 2 — the same attack against a store a stateful witness countersigned,
   // verified by a reader holding the witness's retained heights.
-  const wctx = await buildWitnessed();
-  await attack.apply(wctx);
-  const wReport = await verifyStore(wctx.root, {
+  // The coverage families are about the collector rather than the record, and
+  // a witness countersigns the record. Running them against the witnessed
+  // store would measure the same thing twice and report it as corroboration.
+  const wctx = attack.detect === 'coverage' ? ctx : await buildWitnessed(attack.build ?? build);
+  if (wctx !== ctx) await attack.apply(wctx);
+  const wReport = attack.detect === 'coverage' ? report : await verifyStore(wctx.root, {
     collector: COLLECTOR, vkey: wctx.vkey, policy: wctx.policy, disclosed: wctx.disclosed,
   });
-  const wObserved = wReport.summary.failed > 0 ? 'detected' : 'undetected';
+  const wObserved = attack.detect === 'coverage'
+    ? observed
+    : (wReport.summary.failed > 0 ? 'detected' : 'undetected');
   const wExpect = attack.expect_witnessed ?? attack.expect;
   const wDrift = wObserved === wExpect ? '' : '   <-- CHANGED from expected: ' + wExpect;
   if (wObserved !== wExpect) mismatches += 1;
@@ -457,13 +640,24 @@ for (const attack of attacks) {
   observations.push({
     id: attack.id, gate: attack.gate, expect: attack.expect, observed,
     expect_witnessed: wExpect, observed_witnessed: wObserved,
+    ...(attack.out_of_scope ? { out_of_scope: attack.out_of_scope } : {}),
   });
 
   console.log(`${label}  ${attack.id}. ${attack.name}   [${attack.gate}]${drift}`);
   console.log(`               ${attack.note}`);
-  if (codesOf(report)) console.log(`               files alone:       ${codesOf(report)}`);
-  console.log(`               with a witness:    ${wObserved.toUpperCase()}`
-    + `${codesOf(wReport) ? '   ' + codesOf(wReport) : ''}${wDrift}`);
+  if (attack.detect === 'coverage') {
+    const store = new Store(ctx.root, COLLECTOR);
+    const cov = coverageReport(store, { ...ctx.window, collectors: store.collectors() });
+    store.close();
+    console.log(`               coverage verdict:  ${cov.verdict.toUpperCase()}`
+      + `${codesOf(cov) ? '   ' + codesOf(cov) : ''}`);
+  } else if (codesOf(report)) {
+    console.log(`               files alone:       ${codesOf(report)}`);
+  }
+  if (attack.detect !== 'coverage') {
+    console.log(`               with a witness:    ${wObserved.toUpperCase()}`
+      + `${codesOf(wReport) ? '   ' + codesOf(wReport) : ''}${wDrift}`);
+  }
   if (attack.closes) console.log(`               closed by:         ${attack.closes}`);
   console.log();
 }
