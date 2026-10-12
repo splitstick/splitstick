@@ -21,6 +21,7 @@ import { StoreBusy } from './writelock.mjs';
 import { newSalt } from './leaf.mjs';
 import { treeRoot } from './merkle.mjs';
 import { checkpointText, encodeNote } from './note.mjs';
+import { endorse, verifySuccession } from './succession.mjs';
 import { signNote } from './signer.mjs';
 import { extractRefs } from './content.mjs';
 import { SCHEMA_VERSION, SUITE } from './record.mjs';
@@ -53,6 +54,8 @@ export class Collector {
   #actions = new Map();
   /** @type {unknown} the failure that degraded this collector, or null */
   #degraded = null;
+  /** Whether epoch 0 is already in the succession journal. */
+  #rootEpochRecorded = false;
 
   /**
    * @param {object} o
@@ -91,6 +94,117 @@ export class Collector {
     this.sourceSeq = tip.source_seq;
     this.head = tip.record_seq === 0 ? genesis() : tip.head;
     this.checkpointSeq = store.lastCheckpointSeq();
+    this.rollupSeq = store.lastRollupSeq();
+
+    // The epoch comes off disk, never from memory — FR-11. A collector that
+    // remembered its epoch would start back at 0 after a restart and endorse a
+    // successor the chain already has, forking the succession.
+    //
+    // Reading only. The root entry is written on the first write instead, not
+    // here: a constructor that claimed the write lock made opening a store an
+    // act of writing to it, which broke handover between two instances and
+    // would have made a read-only reader mutate what it was reading.
+    const chain = store.readSuccession();
+    if (chain.length === 0) {
+      this.epoch = 0;
+      this.#rootEpochRecorded = false;
+    } else {
+      const root = chain[0];
+      if (!root || typeof root.public_key !== 'string') {
+        throw new Error('the succession journal has no readable root entry');
+      }
+      const walk = verifySuccession(Buffer.from(root.public_key, 'base64'), chain);
+      const live = walk.epochs[walk.epochs.length - 1];
+      if (!walk.ok || !live) {
+        throw new Error(
+          'the succession journal does not walk: '
+          + walk.findings.map(f => `${f.code} ${f.detail}`).join('; '),
+        );
+      }
+      if (live.public_key !== signer.publicKey.toString('base64')) {
+        // Signing with a key the chain says is retired would produce
+        // checkpoints no verifier could attribute to the live epoch, and the
+        // first anyone would hear of it is a verification months later.
+        throw new Error(
+          `the signer supplied is not the live epoch key: the succession journal's newest entry `
+          + `is epoch ${live.epoch}, whose public key is a different one. Pass the current `
+          + `epoch's signer, or rotate to this one deliberately.`,
+        );
+      }
+      this.epoch = live.epoch;
+      this.#rootEpochRecorded = true;
+    }
+  }
+
+  /**
+   * Record epoch 0 before anything it would have to account for exists.
+   *
+   * Called from the write paths rather than the constructor, so that opening a
+   * store stays a read. It must run before the first checkpoint: a signed note
+   * that no succession entry accounts for is exactly the gap a verifier would
+   * report as unattributable.
+   */
+  #ensureRootEpoch() {
+    if (this.#rootEpochRecorded) return;
+    this.store.appendEpoch({
+      epoch: 0,
+      public_key: this.signer.publicKey.toString('base64'),
+      custody: this.signer.custody,
+    });
+    this.#rootEpochRecorded = true;
+  }
+
+  /**
+   * Turn the ratchet — FR-11, SEC-08.
+   *
+   * The retiring epoch endorses its successor through the signer seam, the
+   * endorsement is journalled, and only then does the collector switch. The
+   * order matters: endorsing after switching would leave the successor
+   * unendorsed if the write failed, and a successor nobody endorsed cannot be
+   * attributed to the pinned root.
+   *
+   * What this does NOT do is destroy the retired private key. Splitstick never
+   * holds it (SEC-14), so it cannot. Destruction is the operator's act and
+   * their declaration; see SEC-17 and docs/key-custody.md.
+   *
+   * @param {import('./signer.mjs').Signer} next the incoming epoch's signer
+   * @param {{ declare?: boolean }} [opts] `declare` emits the FR-65 custody
+   *   record for the new epoch, so that an epoch is never undeclared
+   * @returns {Promise<{ epoch: number }>}
+   */
+  async rotate(next, opts = {}) {
+    const degraded = this.#degraded;
+    if (degraded) {
+      throw new CollectorDegraded(
+        'this collector is degraded and will not rotate: '
+        + (degraded instanceof Error ? degraded.message : String(degraded)),
+      );
+    }
+    if (next.algorithm !== 'ed25519' || next.publicKey?.length !== 32) {
+      throw new TypeError('the incoming epoch signer is not an Ed25519 signer with a 32-byte key');
+    }
+    if (next.name !== this.signer.name) {
+      throw new Error(
+        `the incoming signer's origin is ${next.name} but this log's origin is ${this.signer.name}: `
+        + 'rotating the origin is starting a different log, not succeeding this one',
+      );
+    }
+    this.#ensureRootEpoch();
+    const epoch = this.epoch + 1;
+    // endorse() refuses a successor equal to the endorsing key, so a repeated
+    // key is caught before anything is written.
+    const endorsement = await endorse(this.signer, next.publicKey, epoch);
+    this.store.appendEpoch({
+      epoch,
+      public_key: next.publicKey.toString('base64'),
+      custody: next.custody,
+      endorsement: endorsement.toString('base64'),
+    });
+    this.signer = next;
+    this.epoch = epoch;
+    // After the swap, so the declaration is about the epoch now in force.
+    if (opts.declare) this.custody();
+    return { epoch };
   }
 
   /** The log's tree size — the record count, always equal to record_seq. */
@@ -258,6 +372,7 @@ export class Collector {
     const salt = newSalt();
     const e = chainEntry(record, salt, this.head);   // validates; throws before any mutation
     try {
+      this.#ensureRootEpoch();
       this.store.append(e);
     } catch (err) {
       // A lock conflict is not local damage. The lock is claimed before any
@@ -415,6 +530,63 @@ export class Collector {
   }
 
   /**
+   * Anchor a periodic summary over many batches — FR-53, FR-22.
+   *
+   * The roll-up's leaves are the CHECKPOINT NOTES, not the records. A public or
+   * rate-limited witness then receives a handful of entries a day rather than
+   * thousands, which is the only way a trust-minimised tier is affordable or
+   * acceptable use at all: a Bitcoin commitment every 10 seconds is neither.
+   *
+   * It carries its own origin suffix and lives in its own directory, because a
+   * roll-up read as a per-batch checkpoint would look like a checkpoint whose
+   * root is not the root of this log — a false TREE_MISMATCH, which is the
+   * worst thing a verifier can say.
+   *
+   * A reader can prove a single batch is under the roll-up by an ordinary
+   * RFC 6962 inclusion proof over the same leaves, which is what makes the
+   * roll-up a commitment to the history rather than to a number.
+   *
+   * @returns {Promise<{ rollup_seq: number, covers: number, leaves: Buffer[], note: string }>}
+   */
+  async rollup() {
+    const notes = this.store.readCheckpoints();
+    if (notes.length === 0) {
+      throw new Error('no checkpoint to roll up: a roll-up over an empty tree commits to nothing');
+    }
+    const leaves = notes.map(n => Buffer.from(n.note, 'utf8'));
+    const text = checkpointText({
+      origin: `${this.origin}/rollup`,
+      tree_size: leaves.length,
+      root: treeRoot(leaves),
+      suite: SUITE,
+    });
+    const note = encodeNote(text, [await signNote(text, this.signer)]);
+    const rollup_seq = ++this.rollupSeq;
+    this.store.writeRollup(rollup_seq, note);
+    return { rollup_seq, covers: leaves.length, leaves, note };
+  }
+
+  /**
+   * Declare how this epoch's signing key is held — FR-65.
+   *
+   * The declaration goes in the chain so that altering it later breaks the
+   * chain, and so a countersignature over the checkpoint above it fixes when it
+   * was made. What it establishes is that the operator asserted a class; it
+   * does not establish the class, and the record says so in `custody_basis`.
+   *
+   * @returns {import('./chain.mjs').ChainEntry}
+   */
+  custody() {
+    return this.#write(this.#envelope({
+      run: null, source_seq: null, kind: 'custody',
+      epoch: this.epoch,
+      public_key: this.signer.publicKey.toString('base64'),
+      custody_class: this.signer.custody,
+      custody_basis: 'operator-declared',
+    }));
+  }
+
+  /**
    * Close the batch: compute the RFC 6962 root over the whole log, sign the
    * note, write it. The root is over every leaf so far, not over this batch —
    * a checkpoint says "this log now has tree_size entries", which is what makes
@@ -426,6 +598,7 @@ export class Collector {
     const leaves = this.store.readChain().map(e => e.leaf);
     if (leaves.length === 0) throw new Error('nothing to checkpoint: the log is empty');
     const root = treeRoot(leaves);
+    this.#ensureRootEpoch();
     const text = checkpointText({ origin: this.origin, tree_size: leaves.length, root, suite: SUITE });
     const note = encodeNote(text, [await signNote(text, this.signer)]);
     const checkpoint_seq = ++this.checkpointSeq;

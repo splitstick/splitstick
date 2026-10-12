@@ -71,8 +71,8 @@ h_i = H(h_(i-1) || leaf_i), the genesis value, sequence semantics, and what a ve
 |---|---|---|
 | `FR-08` | Predecessor chaining | ✅ |
 | `SEC-06` | Resist action alteration | ✅ |
-| `SEC-09` | Resist truncation | ☐ |
-| `SEC-10` | Resist erasure and renumbering | ☐ |
+| `SEC-09` | Resist truncation | ✅ |
+| `SEC-10` | Resist erasure and renumbering | ✅ |
 | `FR-56` | Collector instance identity | ✅ |
 
 ### [DES-05 — Batching and Merkle tree](../design/DES-05-batching-and-merkle.md)
@@ -86,7 +86,7 @@ Batch boundaries, tree shape, odd-leaf handling, and root computation — the co
 | `FR-32` | splitstick disclose | ☐ |
 | `FR-33` | Inclusion proof binds to countersigned root | ☐ |
 | `FR-34` | Optional batch padding | ☐ |
-| `FR-53` | Roll-up anchoring | ☐ |
+| `FR-53` | Roll-up anchoring | ✅ |
 | `PRIV-06` | Disclosure minimisation | ☐ |
 | `FR-69` | Padding is a record kind | ☐ |
 
@@ -99,15 +99,15 @@ What an epoch is, how the signing key evolves, how the predecessor is destroyed,
 | Requirement | | Status |
 |---|---|---|
 | `FR-10` | Batch signing with operator key | ✅ |
-| `FR-11` | Forward-secure epoch ratchet | ☐ |
+| `FR-11` | Forward-secure epoch ratchet | ✅ |
 | `NFR-09` | HSM/KMS support | ☐ |
-| `SEC-08` | Resist re-signing history | ☐ |
+| `SEC-08` | Resist re-signing history | ✅ |
 | `SEC-14` | Operator key never leaves operator | ✅ |
-| `SEC-17` | State the forward-secrecy precondition | ☐ |
+| `SEC-17` | State the forward-secrecy precondition | ✅ |
 | `SEC-24` | Key compromise recovery | ☐ |
-| `OPS-04` | Separation-of-duties guidance | ☐ |
-| `FR-65` | Operator-declared key custody | ☐ |
-| `FR-70` | Validate a provider custody attestation | ☐ |
+| `OPS-04` | Separation-of-duties guidance | ✅ |
+| `FR-65` | Operator-declared key custody | ✅ |
+| `FR-70` | Validate a provider custody attestation | ✅ |
 
 ### [DES-07 — Checkpoint format](../design/DES-07-checkpoint-format.md)
 
@@ -117,10 +117,10 @@ The C2SP tlog-witness conformant checkpoint, its signed preimage, and how the op
 
 | Requirement | | Status |
 |---|---|---|
-| `FR-12` | C2SP checkpoint emission | ☐ |
-| `FR-45` | Witness stamps its own clock | ☐ |
-| `INT-01` | C2SP conformance | ☐ |
-| `SEC-25` | Witness time source | ☐ |
+| `FR-12` | C2SP checkpoint emission | ✅ |
+| `FR-45` | Witness stamps its own clock | ✅ |
+| `INT-01` | C2SP conformance | ✅ |
+| `SEC-25` | Witness time source | ✅ |
 
 ### [DES-08 — Witness protocol](../design/DES-08-witness-protocol.md)
 
@@ -130,26 +130,26 @@ Submission and response, enrolment, per-operator sequence enforcement, countersi
 
 | Requirement | | Status |
 |---|---|---|
-| `FR-13` | Configurable witness set | ☐ |
-| `FR-14` | Rekor witness adapter | ☐ |
-| `FR-16` | RFC 3161 TSA adapter | ☐ |
-| `FR-17` | Operator-hosted witness adapter | ☐ |
-| `FR-19` | Configurable quorum | ☐ |
-| `FR-20` | Configurable anchor cadence | ☐ |
-| `FR-21` | Soft anchor tier | ☐ |
-| `FR-22` | Hard anchor tier | ☐ |
-| `FR-42` | Operator enrolment | ☐ |
-| `FR-43` | Witness verifies consistency, not increments | ☐ |
-| `FR-44` | Witness retains roots | ☐ |
-| `FR-50` | Witness publishes signed tree heads | ☐ |
+| `FR-13` | Configurable witness set | ✅ |
+| `FR-14` | Rekor witness adapter | ✅ |
+| `FR-16` | RFC 3161 TSA adapter | ✅ |
+| `FR-17` | Operator-hosted witness adapter | ✅ |
+| `FR-19` | Configurable quorum | ✅ |
+| `FR-20` | Configurable anchor cadence | ✅ |
+| `FR-21` | Soft anchor tier | ✅ |
+| `FR-22` | Hard anchor tier | ✅ |
+| `FR-42` | Operator enrolment | ✅ |
+| `FR-43` | Witness verifies consistency, not increments | ✅ |
+| `FR-44` | Witness retains roots | ✅ |
+| `FR-50` | Witness publishes signed tree heads | ✅ |
 | `FR-51` | Witness key rotation | ☐ |
 | `FR-15` | transparency-dev/witness adapter | ☐ |
-| `FR-48` | Shipped default witness configuration | ☐ |
-| `INT-02` | Verify third-party countersignatures | ☐ |
-| `SEC-15` | Witness sees roots only | ☐ |
-| `PRIV-01` | Zero content egress | ☐ |
-| `FR-26` | Gap declarations with an exact span | ☐ |
-| `FR-27` | Countersigned gap declarations | ☐ |
+| `FR-48` | Shipped default witness configuration | ✅ |
+| `INT-02` | Verify third-party countersignatures | ✅ |
+| `SEC-15` | Witness sees roots only | ✅ |
+| `PRIV-01` | Zero content egress | ✅ |
+| `FR-26` | Gap declarations with an exact span | ✅ |
+| `FR-27` | Countersigned gap declarations | ✅ |
 
 ### [DES-09 — Policy files](../design/DES-09-policy-files.md)
 
@@ -160,11 +160,11 @@ Two separate schemas: the collector's witness set, and the verifier's acceptance
 | Requirement | | Status |
 |---|---|---|
 | `FR-41` | Configuration file | ✅ |
-| `FR-30` | Acceptance policy as input | ☐ |
+| `FR-30` | Acceptance policy as input | ✅ |
 | `FR-23` | Policy changes as chain events | ☐ |
 | `SEC-12` | Resist policy downgrade | ☐ |
-| `SCOPE-15` | Hard anchor must be disableable | ☐ |
-| `NFR-03` | Default mutability window | ☐ |
+| `SCOPE-15` | Hard anchor must be disableable | ✅ |
+| `NFR-03` | Default mutability window | ✅ |
 
 ### [DES-10 — Coverage model](../design/DES-10-coverage-model.md)
 
@@ -190,7 +190,7 @@ The artifact an auditor receives: records, salts, inclusion paths, every counter
 
 | Requirement | | Status |
 |---|---|---|
-| `FR-31` | Evidence pack carries all countersignatures | ☐ |
+| `FR-31` | Evidence pack carries all countersignatures | ✅ |
 | `INT-03` | Documented evidence pack format | ☐ |
 
 ### [DES-12 — Verification algorithm](../design/DES-12-verification-algorithm.md)
@@ -205,10 +205,10 @@ The ordered checks, the verdict taxonomy including an inconclusive outcome, and 
 | `NFR-04` | Verification throughput | ☐ |
 | `NFR-05` | No network at verification | ☐ |
 | `NFR-06` | No credentials at verification | ☐ |
-| `SEC-03` | No trust in operator or vendor | ☐ |
-| `SEC-04` | One honest witness assumption | ☐ |
-| `FR-57` | Verifier states witness-set capabilities | ☐ |
-| `FR-63` | Pinned operator identity | ☐ |
+| `SEC-03` | No trust in operator or vendor | ✅ |
+| `SEC-04` | One honest witness assumption | ✅ |
+| `FR-57` | Verifier states witness-set capabilities | ✅ |
+| `FR-63` | Pinned operator identity | ✅ |
 | `FR-66` | Compare expected witnesses against proofs present | ☐ |
 
 ### [DES-13 — Storage and erasure](../design/DES-13-storage-and-erasure.md)
@@ -323,10 +323,10 @@ Two mechanisms that narrow attack classes 4 and 5 when no stateful witness is co
 
 | Requirement | | Status |
 |---|---|---|
-| `FR-54` | Cross-pack consistency verification | ☐ |
+| `FR-54` | Cross-pack consistency verification | ✅ |
 | `FR-55` | Counterparty reference capture | ✅ |
-| `SEC-26` | Resist truncation below a disclosed height | ☐ |
-| `DOC-09` | Reconciliation guidance | ☐ |
+| `SEC-26` | Resist truncation below a disclosed height | ✅ |
+| `DOC-09` | Reconciliation guidance | ✅ |
 
 ### [DES-20 — Countersignature envelope](../design/DES-20-countersignature-envelope.md)
 
@@ -336,9 +336,9 @@ How proofs in three incompatible formats — C2SP note signature lines, DER RFC 
 
 | Requirement | | Status |
 |---|---|---|
-| `FR-12` | C2SP checkpoint emission | ☐ |
-| `FR-31` | Evidence pack carries all countersignatures | ☐ |
-| `INT-02` | Verify third-party countersignatures | ☐ |
+| `FR-12` | C2SP checkpoint emission | ✅ |
+| `FR-31` | Evidence pack carries all countersignatures | ✅ |
+| `INT-02` | Verify third-party countersignatures | ✅ |
 
 ## Requirements with no design element
 

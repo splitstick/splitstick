@@ -171,7 +171,9 @@ test('FR-10: a checkpoint signs the note, and the note binds origin, size and ro
   const cp = await collector.checkpoint();
 
   assert.equal(cp.checkpoint_seq, 1, 'checkpoint_seq is an ordinal');
-  const blob = readFileSync(join(root, 'checkpoints', 'host-1', '1.note'), 'utf8');
+  // The artefact on disk is a DES-20 envelope; the note is inside it.
+  const blob = JSON.parse(
+    readFileSync(join(root, 'checkpoints', 'host-1', '1.json'), 'utf8')).note;
   const note = parseNote(blob);
   const text = parseCheckpointText(note.text);
   assert.equal(text.origin, 'splitstick.dev/host-1');
@@ -372,10 +374,12 @@ test('every record kind the collector emits validates', async () => {
   collector.gap({ from_source_seq: 3, to_source_seq: 7 });
   collector.gapUnknown({ last_checkpoint_source_seq: 2 });
   collector.policy({ previous: d('aa'), next: d('bb') });
+  collector.custody();
 
   const kinds = store.readChain().map(e => rec(e).kind);
   assert.deepEqual(kinds,
-    ['tool_call', 'approval', 'heartbeat', 'heartbeat', 'padding', 'gap', 'gap_unknown', 'policy']);
+    ['tool_call', 'approval', 'heartbeat', 'heartbeat', 'padding', 'gap', 'gap_unknown',
+      'policy', 'custody']);
   assert.deepEqual([...new Set(kinds)].sort(), [...RECORD_KINDS].sort(),
     'and between them they cover the whole enum, so none is unexercised');
   const r = recomputeChain(store.readChain());

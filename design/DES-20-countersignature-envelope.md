@@ -80,6 +80,28 @@ witnesses buys redundancy of *time*, not independence of *sequence*. The verifie
 quorum per capability class rather than as one number, because a single aggregate figure would
 let an operator look well-witnessed while being unable to detect truncation at all.
 
+## What a verifier concludes from a malformed envelope
+
+Three findings belong to the envelope itself rather than to any proof inside it.
+
+- **`ENVELOPE_DIGEST_MISMATCH`** — `note_digest` is not the digest of the note
+  beside it. Every countersignature `covers` that digest, so once it is wrong
+  they all vouch for bytes that are not present, and nothing in the envelope is
+  reported as verified. The digest is never recomputed from the note: the whole
+  point of storing it is that the proofs name it.
+
+- **`ENVELOPE_NOTE_MISMATCH`** — the envelope carries a different note than the
+  one it was checked against. The condition this catches in practice is an M1
+  `.note` file left beside an M3a `.json` envelope for the same ordinal, each
+  internally consistent and disagreeing with the other. One checkpoint with two
+  stories: a reader must never verify one artefact and report on another, and
+  silently preferring either format would hide it.
+
+- **`ENVELOPE_DUPLICATE_ISSUER`** — one issuer appears more than once. Both
+  entries are reported, because hiding one would hide a duplicate submission,
+  but the issuer counts once towards any quorum. A quorum satisfied by one party
+  submitting twice is not a quorum.
+
 ## Verification order
 
 Each countersignature is verified independently against the bytes its `covers` field names. An

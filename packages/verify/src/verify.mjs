@@ -32,6 +32,14 @@ import { recomputeChain } from '@splitstick/core/chain';
 import { treeRoot, consistencyProof, verifyConsistency } from '@splitstick/core/merkle';
 import { parseNote, parseCheckpointText, parseVkey, SUITES } from '@splitstick/core/note';
 import { verifyNoteSignature } from '@splitstick/core/signer';
+import { successionReport } from '@splitstick/core/succession';
+import { validateFindings, verdictFor } from '@splitstick/core/findings';
+import { CAPABILITY_CLASSES } from '@splitstick/core/anchor';
+import { verifyTimeStampToken } from '@splitstick/core/rfc3161';
+import { describeOtsProof } from '@splitstick/core/opentimestamps';
+import { parseEnvelope } from '@splitstick/core/envelope';
+
+import { noteKeyId } from '@splitstick/core/note';
 
 /** @typedef {'ok'|'fail'|'inconclusive'} Verdict */
 
@@ -55,14 +63,26 @@ function combine(vs) {
  * @param {object} [opts]
  * @param {string} [opts.collector] the collector instance whose chain to read
  * @param {string} [opts.vkey] the pinned operator identity, as a note vkey
+ * @param {{ quorum?: number, witnesses?: { id: string, public_key?: string,
+ *   establishes?: string[], anchors?: string[] }[] }} [opts.policy] FR-30 — the ACCEPTANCE POLICY,
+ *   supplied by the reader. Not a hardcoded trust store: two readers with
+ *   different trust must be able to reach different conclusions from one pack,
+ *   and a verifier that only accepted witnesses we operate would make
+ *   independence impossible to demonstrate (INT-02).
+ * @param {{ tree_size: number, root: string, issuers?: string[] }[]} [opts.disclosed]
+ *   FR-54, SEC-26 — heights already disclosed in another pack, for the
+ *   cross-pack comparison
  * @returns {Promise<{
  *   verdict: Verdict, tree_size: number, anchored_tree_size: number,
  *   summary: { passed: number, unanswered: number, failed: number },
  *   checks: { name: string, verdict: Verdict, detail?: string }[],
  *   findings: Finding[],
- *   witnesses: { id: string, type: string, establishes: string }[],
+ *   witnesses: { id: string, type: string, establishes: string, accepted: boolean,
+ *                verdict: Verdict, detail: string }[],
+ *   quorum: { required: number, observed: Record<string, number>, met: Record<string, boolean> },
  *   capability: { can: string[], cannot: string[] },
  *   trusting: string[],
+ *   succession: ReturnType<typeof successionReport>|null,
  * }>}
  */
 export async function verifyStore(root, opts = {}) {
@@ -128,7 +148,10 @@ export async function verifyStore(root, opts = {}) {
   for (const f of chain.findings) {
     findings.push({
       code: f.code,
-      verdict: f.code.endsWith('_INCONCLUSIVE') ? 'inconclusive' : 'fail',
+      // From the specification, not from the code's name. The name heuristic
+      // was right only by luck: TORN_WRITE is specified inconclusive and does
+      // not end in _INCONCLUSIVE.
+      verdict: verdictFor(f.code),
       ...(f.record_seq === undefined ? {} : { record_seq: f.record_seq }),
       detail: f.detail,
     });
@@ -175,9 +198,66 @@ export async function verifyStore(root, opts = {}) {
   const treeVs = [];
   /** @type {Verdict[]} */
   const sigVs = [];
+  /** @type {{ seq: number, epoch: number }[]} which epoch signed which checkpoint */
+  const signedBy = [];
+  /** @type {{ seq: number, env: ReturnType<typeof parseEnvelope> }[]} */
+  const envelopes = [];
   const pinned = opts.vkey ? parseVkey(opts.vkey) : null;
   const leaves = entries.map(e => e.leaf);
   let anchored = 0;
+
+  // FR-11 — the succession chain, walked from the pinned root before any
+  // signature is checked, because it decides WHICH keys may sign at all.
+  //
+  // In M1 a verifier pinned one key and demanded every checkpoint carry its
+  // signature. With a ratchet that is wrong: later checkpoints are signed by
+  // later epoch keys, and the pinned root's job is to endorse a path to them
+  // rather than to sign everything itself. One pinned key, every epoch
+  // attributed — that is the property, and it is what makes rotation possible
+  // without re-pinning.
+  const succRaw = store.readSuccessionDetailed();
+  /** @type {ReturnType<typeof successionReport>|null} */
+  let succession = null;
+  /** @type {Map<string, { epoch: number, publicKey: Buffer }>} keyId hex -> epoch */
+  const epochKeys = new Map();
+  if (succRaw.torn) {
+    findings.push({
+      code: 'TORN_WRITE', verdict: 'inconclusive',
+      detail: 'the succession journal ends mid-entry, so the newest epoch it was recording is not readable',
+    });
+  }
+  for (const line of succRaw.malformed) {
+    findings.push({
+      code: 'MALFORMED_RECORD', verdict: 'fail',
+      detail: `succession journal line ${line} is not readable, so the epoch chain cannot be walked past it`,
+    });
+  }
+  if (succRaw.entries.length === 0) {
+    check('SUCCESSION', 'inconclusive',
+      'no succession journal in this store: one epoch, or a store written before the ratchet (FR-11)');
+  } else if (!pinned) {
+    check('SUCCESSION', 'inconclusive',
+      'a succession chain is present but no operator identity was pinned, so it is walked from nothing');
+  } else {
+    succession = successionReport(pinned.publicKey, succRaw.entries);
+    for (const f of succession.findings) {
+      findings.push({
+        code: f.code,
+        verdict: 'fail',
+        detail: f.detail,
+      });
+    }
+    check('SUCCESSION', succession.ok ? 'ok' : 'fail',
+      succession.ok
+        ? `${succession.epochs.length} epoch(s) attributed to the pinned root`
+        : 'the epoch chain does not walk from the pinned root');
+    if (succession.ok) {
+      for (const e of succession.epochs) {
+        const publicKey = Buffer.from(e.public_key, 'base64');
+        epochKeys.set(noteKeyId(pinned.name, publicKey).toString('hex'), { epoch: e.epoch, publicKey });
+      }
+    }
+  }
 
   if (notes.length === 0) {
     treeVs.push('inconclusive');
@@ -185,13 +265,37 @@ export async function verifyStore(root, opts = {}) {
     findings.push({ code: 'UNANCHORED', verdict: 'inconclusive', detail: 'no checkpoint on disk: nothing commits to a tree size' });
   }
 
-  for (const { seq, blob } of notes) {
+  for (const { seq, blob, format, legacy_note } of notes) {
     /** @type {ReturnType<typeof parseNote>} */
     let note;
     /** @type {ReturnType<typeof parseCheckpointText>} */
     let cp;
+
+    // DES-20 — the envelope is checked before the note inside it, because the
+    // envelope is what says these countersignatures are over THESE bytes. A
+    // wrong note_digest makes every entry vouch for something that is not here,
+    // and reading the note first would verify the signature and miss that.
+    const env = parseEnvelope(blob, legacy_note === undefined ? {} : { expectNote: legacy_note });
+    for (const f of env.findings) {
+      // The verdict comes from the specification, not from this call site. It
+      // used to be a ternary whose branches were both 'fail' — which looked
+      // like a decision and was not one — and that made a duplicated witness
+      // retry fail the whole verification. A retry that landed twice is a
+      // benign operational event the witness itself treats as idempotent.
+      findings.push({
+        code: f.code,
+        verdict: verdictFor(f.code),
+        detail: `checkpoint ${seq}: ${f.detail}`,
+      });
+    }
+    if (!env.ok || env.note === null) {
+      treeVs.push('fail');
+      continue;
+    }
+    envelopes.push({ seq, env });
+
     try {
-      note = parseNote(blob);
+      note = parseNote(env.note);
       cp = parseCheckpointText(note.text);
     } catch (e) {
       treeVs.push('fail');
@@ -253,13 +357,58 @@ export async function verifyStore(root, opts = {}) {
     if (!sig) {
       sigVs.push('fail');
       findings.push({ code: 'OPSIG_INVALID', verdict: 'fail', detail: `checkpoint ${seq} carries no signature line for ${pinned.name}` });
-    } else if (await verifyNoteSignature(note.text, sig, { name: pinned.name, publicKey: pinned.publicKey, keyId: pinned.keyId })) {
+      continue;
+    }
+    // Which key signed this note is read off the note's own key id, then
+    // looked up in the walked chain. A signature by a key the chain does not
+    // contain is not a weaker signature: it is an unattributable one.
+    const attributed = epochKeys.size > 0
+      ? epochKeys.get(sig.keyId.toString('hex'))
+      : (sig.keyId.equals(pinned.keyId) ? { epoch: 0, publicKey: pinned.publicKey } : undefined);
+    if (!attributed) {
+      sigVs.push('fail');
+      findings.push({
+        code: 'OPSIG_INVALID', verdict: 'fail',
+        detail: epochKeys.size > 0
+          ? `checkpoint ${seq} is signed by a key that is not any epoch in the succession chain walked from the pinned root`
+          : `checkpoint ${seq} is not signed by the operator identity it claims`,
+      });
+      continue;
+    }
+    if (await verifyNoteSignature(note.text, sig,
+      { name: pinned.name, publicKey: attributed.publicKey, keyId: noteKeyId(pinned.name, attributed.publicKey) })) {
       sigVs.push('ok');
+      signedBy.push({ seq, epoch: attributed.epoch });
     } else {
       sigVs.push('fail');
       findings.push({
         code: 'OPSIG_INVALID', verdict: 'fail',
-        detail: `checkpoint ${seq} is not signed by the operator identity it claims`,
+        detail: `checkpoint ${seq} declares a key id from epoch ${attributed.epoch} but the signature does not verify under that epoch's key`,
+      });
+    }
+  }
+
+  // SEC-08 — epochs run forwards as ordinals do.
+  //
+  // A checkpoint re-signed with a later key is attributed to a later epoch
+  // than one that comes after it, which no honest sequence produces: an epoch
+  // is retired before its successor exists. Each signature is individually
+  // valid, so only the ordering across them shows the rewrite.
+  //
+  // This catches a PARTIAL re-sign. It does not catch re-signing everything
+  // with the live key, which leaves the epochs equal and is locally
+  // indistinguishable from rotating without checkpointing in between. That gap
+  // is AC-3, and it closes in M3a against a countersignature over the original
+  // root — not here. The capability statement says so rather than leaving a
+  // reader to assume this check reaches further than it does.
+  signedBy.sort((a, b) => a.seq - b.seq);
+  for (let i = 1; i < signedBy.length; i += 1) {
+    const prev = /** @type {{ seq: number, epoch: number }} */ (signedBy[i - 1]);
+    const cur = /** @type {{ seq: number, epoch: number }} */ (signedBy[i]);
+    if (cur.epoch < prev.epoch) {
+      findings.push({
+        code: 'OPSIG_EPOCH_REGRESSED', verdict: 'fail',
+        detail: `checkpoint ${cur.seq} is signed by epoch ${cur.epoch} but the earlier checkpoint ${prev.seq} is signed by epoch ${prev.epoch}: an epoch is retired before its successor exists, so signing order cannot run backwards unless a checkpoint was re-signed later`,
       });
     }
   }
@@ -268,7 +417,7 @@ export async function verifyStore(root, opts = {}) {
   // history that does not extend the earlier one, is a rollback. merkle.mjs had
   // implemented and tested consistency proofs that nothing called.
   const sized = notes
-    .map(n => { try { return { seq: n.seq, cp: parseCheckpointText(parseNote(n.blob).text) }; } catch { return null; } })
+    .map(n => { try { return { seq: n.seq, cp: parseCheckpointText(parseNote(n.note).text) }; } catch { return null; } })
     .filter(x => x !== null)
     .sort((a, b) => a.seq - b.seq);
   for (let i = 1; i < sized.length; i++) {
@@ -303,13 +452,45 @@ export async function verifyStore(root, opts = {}) {
   check('TREE', combine(treeVs));
   check('OP-SIG', combine(sigVs));
 
-  // 7-10 need evidence M1 does not produce. Reported, not skipped.
-  check('WITNESS', 'inconclusive', 'no countersignature in this store (DES-08 ships in M3a)');
-  check('ROLLUP', 'inconclusive', 'no roll-up checkpoint in this store (FR-53 ships in M3a)');
+  // 7 WITNESS — DES-08, DES-20, FR-19, FR-30, FR-31, INT-02.
+  const wit = await verifyWitnesses({
+    envelopes, policy: opts.policy, leaves, findings, anchored,
+  });
+  check('WITNESS', wit.verdict, wit.detail);
+
+  // 8 ROLLUP — FR-53. The roll-up's leaves are the CHECKPOINT NOTES, so it is
+  // checked against the notes on disk and not against the record log. A
+  // verifier that compared it to the records would report a mismatch on a
+  // perfectly good roll-up.
+  const rollup = await verifyRollups({ store, notes, pinned, epochKeys, findings });
+  check('ROLLUP', rollup.verdict, rollup.detail);
   check('COVERAGE', 'inconclusive', 'heartbeat continuity is not yet reconciled (DES-10 ships in M4)');
   check('POLICY', 'inconclusive', 'policy-change reconciliation ships with DES-09 enforcement');
 
-  return report(entries.length, anchored, checks, findings, notes, collector, opts.vkey);
+  // SEC-26, FR-54 — the cross-pack comparison. Checked here rather than inside
+  // verifyWitnesses because it is about a height disclosed ELSEWHERE, which is
+  // the one thing a single pack cannot contradict on its own.
+  for (const d of opts.disclosed ?? []) {
+    if (d.tree_size > entries.length) {
+      findings.push({
+        code: 'TRUNCATED_BELOW_DISCLOSED', verdict: 'fail',
+        detail: `a pack already disclosed holds a countersigned checkpoint at tree_size ${d.tree_size}, `
+          + `but this record ends at ${entries.length}. Truncation, caught without a stateful witness: `
+          + 'the operator cannot un-disclose what a counterparty already holds (DES-19)',
+      });
+      continue;
+    }
+    const here = treeRoot(leaves.slice(0, d.tree_size)).toString('base64');
+    if (here !== d.root) {
+      findings.push({
+        code: 'TREE_MISMATCH', verdict: 'fail',
+        detail: `a pack already disclosed holds a different root at tree_size ${d.tree_size} than this `
+          + 'one does: the two are forks of each other, and neither is preferred by this verifier',
+      });
+    }
+  }
+
+  return report(entries.length, anchored, checks, findings, notes, collector, opts.vkey, succession, wit, rollup);
 }
 
 /**
@@ -320,8 +501,11 @@ export async function verifyStore(root, opts = {}) {
  * @param {{ seq: number, blob: string }[]} notes
  * @param {string} collector
  * @param {string} [vkey]
+ * @param {ReturnType<typeof successionReport>|null} [succession]
+ * @param {Awaited<ReturnType<typeof verifyWitnesses>>} [wit]
+ * @param {Awaited<ReturnType<typeof verifyRollups>>} [rollup]
  */
-function report(tree_size, anchored, checks, findings, notes, collector, vkey) {
+function report(tree_size, anchored, checks, findings, notes, collector, vkey, succession = null, wit, rollup) {
   const verdict = combine([...checks.map(c => c.verdict), ...findings.map(f => f.verdict)]);
 
   // DES-12's own shape: a verdict is reported with how many checks could and
@@ -342,8 +526,12 @@ function report(tree_size, anchored, checks, findings, notes, collector, vkey) {
   // configuration. A verifier reads evidence, and the operator's config is not
   // evidence. There are no countersignatures in M1, so the honest answer is a
   // short list of what this evidence cannot do.
-  /** @type {{ id: string, type: string, establishes: string }[]} */
-  const witnesses = [];
+  const witnesses = wit?.witnesses ?? [];
+  const quorum = {
+    required: wit?.quorum ?? 1,
+    observed: wit?.observed ?? Object.fromEntries(CAPABILITY_CLASSES.map(c => [c, 0])),
+    met: wit?.met ?? Object.fromEntries(CAPABILITY_CLASSES.map(c => [c, false])),
+  };
 
   // An affirmative capability must rest on a check that actually passed. This
   // block used to assert chain integrity whenever any record existed, so a
@@ -363,24 +551,163 @@ function report(tree_size, anchored, checks, findings, notes, collector, vkey) {
     if (passed('CONTENT')) can.push('that every retained payload still reproduces the commitment in its record');
   }
   if (summary.failed === 0 && notes.length && vkey && passed('OP-SIG') && passed('TREE')) {
-    can.push(`that the operator identity ${collector} signed the tree size and root it claims`);
+    // The PINNED identity, not the collector id. They are different things —
+    // the collector scopes a chain within a store, the identity is what the
+    // reader pinned out of band — and naming the wrong one in the one sentence
+    // about identity is the sort of error a reader would reasonably rely on.
+    can.push(
+      `that the operator identity ${vkey.split('+')[0]} signed the tree size and root it claims`,
+    );
+    if (passed('SUCCESSION') && succession && succession.epochs.length > 1) {
+      can.push(
+        `that all ${succession.epochs.length} epochs of signing keys descend from the one root `
+        + 'key you pinned, each endorsed by its predecessor (FR-11)',
+      );
+    }
   }
-  // The height is the number a reader needs, and DES-12's own example prints
-  // it. Without it, DES-19's cross-pack comparison has nothing to key on.
-  cannot.push(anchored > 0
-    ? `no witness in this set maintains sequence state, so truncation above record_seq ${anchored} is NOT detectable from this evidence alone`
-    : 'no checkpoint commits to any height here, so truncation anywhere in this log is NOT detectable from this evidence alone');
-  cannot.push('no countersignature is present, so nothing here establishes WHEN any record was written — the ts field is self-asserted');
+
+  if (rollup && rollup.verdict === 'ok' && summary.failed === 0) {
+    can.push(
+      `that ${rollup.covers} checkpoint${rollup.covers === 1 ? '' : 's'} `
+      + `${rollup.covers === 1 ? 'is' : 'are'} covered by ${rollup.count} signed roll-up `
+      + `summar${rollup.count === 1 ? 'y' : 'ies'}, so a single batch can be shown to be under one `
+      + 'by an inclusion proof (FR-53)',
+    );
+  }
+
+  // SEC-17 — the forward-secrecy claim and its precondition in the same place.
+  //
+  // Not in a document beside the report: a reader acting on the report is the
+  // one who needs the precondition, and a claim whose caveat lives elsewhere
+  // is read without it. So the claim carries both declarations it rests on, or
+  // it is not made at all.
+  if (succession && succession.ok && succession.epochs.length > 0) {
+    const software = succession.epochs.filter(e => e.custody === 'software');
+    const retired = succession.epochs.filter(e => e.retired);
+    if (software.length > 0) {
+      cannot.push(
+        `forward secrecy is NOT claimed for this log: ${software.length === 1 ? 'epoch' : 'epochs'} `
+        + `${software.map(e => e.epoch).join(', ')} ${software.length === 1 ? 'is' : 'are'} `
+        + 'declared software-keyed, so the private key existed outside any module and may have been '
+        + 'copied before rotation. One such epoch is enough: the question a reader asks is whether '
+        + "yesterday's record can be re-signed with today's key, and for this log the answer is yes",
+      );
+    } else if (retired.length === 0) {
+      cannot.push(
+        'forward secrecy is NOT claimed: no epoch has been retired yet, and a key that is never '
+        + 'rotated has no forward secrecy whatever its custody class',
+      );
+    } else {
+      const classes = [...new Set(retired.map(e => e.custody))].join(' and ');
+      can.push(
+        `forward secrecy for ${retired.length} retired epoch(s), ONLY under its precondition: the `
+        + `operator DECLARES ${classes} custody with non-exportable keys, and DECLARES each retired `
+        + 'private key destroyed. Both are declarations. Key destruction is not externally '
+        + 'verifiable by anyone, and this claim is exactly as strong as those declarations',
+      );
+    }
+    cannot.push(
+      'the custody class of every epoch here is operator-declared, not established: an HSM '
+      + 'signature and a signature from a key file are byte-identical, and no provider attestation '
+      + 'is present to check against (FR-70)',
+    );
+    // Conditional, because with an accepted countersignature over the original
+    // note this gap is CLOSED: the operator can rewrite the note but not forge
+    // the witness's signature over what the witness was shown. Printing the
+    // unconditional version understated the evidence in a report that had the
+    // countersignature listed four lines above — and red-team C2 is detected in
+    // exactly this configuration.
+    const sequenceWitnessed = witnesses.some(w => w.accepted && /sequence/.test(w.establishes));
+    cannot.push(sequenceWitnessed
+      ? 'a wholesale re-sign is detectable here only for the checkpoints a witness actually '
+        + 'countersigned: above the highest countersigned height, re-signing everything with the '
+        + 'current key leaves the epochs equal and nothing local contradicts it'
+      : 'a wholesale re-sign — every checkpoint re-signed with the current key after rewriting the '
+        + 'records — leaves the epochs equal and is NOT detectable from this evidence alone; a '
+        + 'countersignature over the original root is what contradicts it, and there is none here');
+  } else if (succession === null && vkey) {
+    cannot.push(
+      'no succession journal is present, so nothing here says whether the signing key was ever '
+      + 'rotated; the epoch ratchet (FR-11) establishes no forward secrecy for this log',
+    );
+  }
+  // FR-57 — what the OBSERVED witness set can and cannot establish, derived
+  // from the proofs present rather than from configuration. The height is the
+  // number a reader needs, and DES-12's own example prints it; without it,
+  // DES-19's cross-pack comparison has nothing to key on.
+  const hasSequence = (quorum.observed.sequence ?? 0) > 0 && quorum.met.sequence;
+  if (hasSequence && anchored > 0) {
+    can.push(
+      `that truncation below record_seq ${anchored} is detectable: a witness maintaining sequence `
+      + `state countersigned a checkpoint at that height, and it cannot be un-signed`,
+    );
+  }
+  if (!hasSequence) {
+    cannot.push(anchored > 0
+      ? `no witness in this set maintains sequence state, so truncation above record_seq ${anchored} is NOT detectable from this evidence alone`
+      : 'no checkpoint commits to any height here, so truncation anywhere in this log is NOT detectable from this evidence alone');
+  }
+  if (witnesses.length > 0 && quorum.required > 0) {
+    // Three numbers, never one. An aggregate figure would let an operator look
+    // well-witnessed while being unable to detect truncation at all.
+    cannot.push(
+      'quorum is reported per capability class, not as one number: '
+      + CAPABILITY_CLASSES.map(c => `${c} ${quorum.observed[c] ?? 0}/${quorum.required}`).join(', ')
+      + '. Redundancy of time is not independence of sequence',
+    );
+  }
+  if (witnesses.length > 0 && witnesses.every(w => !w.accepted)) {
+    cannot.push(
+      'the acceptance policy names no witness that signed this pack, so no countersignature here '
+      + 'counts towards anything for this reader — which is a statement about the policy, not about '
+      + 'whether anyone signed',
+    );
+  }
+  if (witnesses.length > 0 && !witnesses.some(w => w.accepted) && quorum.required > 0
+    && witnesses.every(w => w.establishes === '(not accepted)')) {
+    cannot.push('this reader\'s acceptance policy names no witness at all');
+  }
+  const timeProofs = witnesses.filter(w => w.accepted && /time|existence/.test(w.establishes));
+  if (timeProofs.length === 0) {
+    // Distinguish "nobody countersigned" from "somebody did, and none of them
+    // bears a clock". Saying the first when the second is true is false in the
+    // report's own terms: the witnesses block above lists the countersignature
+    // it is denying exists.
+    cannot.push(witnesses.some(w => w.accepted)
+      ? 'no accepted countersignature here establishes TIME: the witnesses above establish sequence '
+        + 'or nothing, so nothing in this evidence says WHEN any record was written — the ts field '
+        + 'is self-asserted'
+      : 'no countersignature is present, so nothing here establishes WHEN any record was written — '
+        + 'the ts field is self-asserted');
+  } else {
+    cannot.push(
+      `${timeProofs.length} time-bearing proof(s) are present but NOT confirmed by this verifier: `
+      + 'an RFC 3161 token needs the TSA certificate chain and an OpenTimestamps commitment needs a '
+      + 'Bitcoin block header, and NFR-05 requires this verifier to retrieve neither. They are reported '
+      + 'as claimed',
+    );
+  }
   cannot.push('an action that was never observed leaves no trace here; this evidence speaks to what was recorded');
   if (!vkey) cannot.push('no operator identity was pinned, so the signature on the checkpoint was not checked against anything');
 
   const trusting = ['the cryptographic primitives (SHA-256, Ed25519)'];
   if (vkey) trusting.push(`the operator identity ${vkey.split('+')[0]} to be the one you meant`);
   trusting.push('the operator for the completeness of what was captured, until a witness is configured');
+  if (succession && succession.ok && succession.epochs.some(e => e.custody !== 'software')) {
+    trusting.push(
+      'the operator\'s declaration of key custody, and their declaration that retired private keys '
+      + 'were destroyed — neither is verifiable from this evidence',
+    );
+  }
 
   return {
     verdict, summary, tree_size, anchored_tree_size: anchored,
-    checks, findings, witnesses, capability: { can, cannot }, trusting,
+    checks,
+    // The last boundary before a reader. Everything forwarded from another
+    // layer passes through here, so an unrecognised code cannot be printed to
+    // someone deciding whether to rely on this evidence.
+    findings: validateFindings(findings, 'verifyStore'),
+    witnesses, quorum, capability: { can, cannot }, trusting, succession,
   };
 }
 
@@ -403,3 +730,438 @@ function commitments(record) {
 }
 
 
+
+/**
+ * Check the countersignatures in every checkpoint envelope against the
+ * reader's acceptance policy — FR-19, FR-30, FR-31, FR-57, INT-02, DES-20.
+ *
+ * Three things here are the whole point of the element:
+ *
+ * The policy is an INPUT. A verifier with a hardcoded trust store would make
+ * independence undemonstrable: the reader who matters is an auditor who trusts
+ * their own witness and not ours, and they must be able to say so and get a
+ * different, internally consistent answer from the same bytes.
+ *
+ * Quorum is counted PER CAPABILITY CLASS. Two time-only witnesses buy
+ * redundancy of time, not independence of sequence. A single aggregate number
+ * would let an operator look well-witnessed while being unable to detect
+ * truncation at all — DES-20's review named this, and it is the reason the
+ * report prints three numbers rather than one.
+ *
+ * An entry this verifier cannot check is INCONCLUSIVE, never a pass and never
+ * a failure. An RFC 3161 token needs CMS path validation and an OpenTimestamps
+ * proof needs a Bitcoin header, and NFR-05 requires this verifier to be
+ * offline by construction. So it reports what the proof claims and declines to
+ * confirm it, rather than reaching for the network or treating a format it
+ * cannot open as evidence of tampering.
+ *
+ * @param {object} o
+ * @param {{ seq: number, env: ReturnType<typeof parseEnvelope> }[]} o.envelopes
+ * @param {{ quorum?: number, witnesses?: { id: string, public_key?: string, establishes?: string[], anchors?: string[] }[] }} [o.policy]
+ * @param {Buffer[]} o.leaves
+ * @param {Finding[]} o.findings appended to
+ * @param {number} o.anchored
+ */
+async function verifyWitnesses({ envelopes, policy, leaves, findings, anchored }) {
+  /** @type {{ id: string, type: string, establishes: string, accepted: boolean, verdict: Verdict, detail: string }[]} */
+  const witnesses = [];
+  /** @type {Record<string, number>} */
+  const observed = Object.fromEntries(CAPABILITY_CLASSES.map(c => [c, 0]));
+  const quorum = policy?.quorum ?? 1;
+  const named = new Map((policy?.witnesses ?? []).map(w => [w.id, w]));
+  /** @type {Set<string>} */
+  const seen = new Set();
+  /** @type {Map<string, Set<string>>} issuer -> capability classes accepted */
+  const credited = new Map();
+
+  for (const { seq, env } of envelopes) {
+    for (const cs of env.countersignatures) {
+      seen.add(cs.issuer);
+      const spec = named.get(cs.issuer);
+      if (!spec) {
+        // Present, reported, counted for nothing. Dropping it would hide
+        // evidence a reader with a different policy could use.
+        witnesses.push({
+          id: cs.issuer, type: cs.type, establishes: '(not accepted)', accepted: false,
+          verdict: 'inconclusive',
+          detail: `checkpoint ${seq}: this reader's acceptance policy does not name ${cs.issuer}, so `
+            + 'its proof counts towards no quorum. It is in the pack, and a reader with a different '
+            + 'policy could use it.',
+        });
+        continue;
+      }
+      const classes = spec.establishes ?? [];
+      if (cs.verdict !== 'ok' || !cs.entry) {
+        witnesses.push({
+          id: cs.issuer, type: cs.type, establishes: classes.join('+'), accepted: false,
+          verdict: 'inconclusive', detail: `checkpoint ${seq}: ${cs.detail ?? 'the entry is not usable'}`,
+        });
+        continue;
+      }
+
+      if (cs.type === 'c2sp-note') {
+        // The only type checkable offline, and therefore the only one that can
+        // produce WITNESS_MISMATCH — the strongest finding available, because
+        // the operator could rewrite the note but not forge the signature over
+        // what the witness actually saw.
+        const r = await checkNoteLine(env.note ?? '', cs.entry, spec);
+        if (r === 'ok') {
+          credit(credited, cs.issuer, classes);
+          witnesses.push({
+            id: cs.issuer, type: cs.type, establishes: classes.join('+'), accepted: true,
+            verdict: 'ok', detail: `checkpoint ${seq}: countersigned by ${cs.issuer}`,
+          });
+          continue;
+        }
+        if (r === 'no-key') {
+          witnesses.push({
+            id: cs.issuer, type: cs.type, establishes: classes.join('+'), accepted: false,
+            verdict: 'inconclusive',
+            detail: `checkpoint ${seq}: the acceptance policy names ${cs.issuer} but supplies no `
+              + 'public key for it, so the signature was not checked against anything',
+          });
+          continue;
+        }
+        findings.push({
+          code: 'WITNESS_MISMATCH', verdict: 'fail',
+          detail: `checkpoint ${seq}: ${cs.issuer}'s countersignature does not verify over this `
+            + "checkpoint's note. A witness signs what it was shown; this is what it looks like when "
+            + 'history was rewritten after the witness saw it, because the signature could not be forged',
+        });
+        witnesses.push({
+          id: cs.issuer, type: cs.type, establishes: classes.join('+'), accepted: false,
+          verdict: 'fail', detail: `checkpoint ${seq}: the countersignature does not verify`,
+        });
+        continue;
+      }
+
+      if (cs.type === 'rfc3161') {
+        // FR-16 — actually verified, offline, when the reader supplies the trust
+        // anchors. Everything an RFC 3161 token needs is in the token plus an
+        // anchor; nothing has to be retrieved, so declining to check it would have
+        // been a choice rather than a constraint.
+        const imprint = Buffer.from(String(env.note_digest).slice('sha256:'.length), 'hex');
+        const r = await verifyTimeStampToken(
+          Buffer.from(String(cs.entry.token ?? ''), 'base64'),
+          { imprint, anchors: spec.anchors ?? [] },
+        );
+        if (r.ok) {
+          credit(credited, cs.issuer, classes);
+          witnesses.push({
+            id: cs.issuer, type: cs.type, establishes: classes.join('+'), accepted: true,
+            verdict: 'ok', detail: `checkpoint ${seq}: ${r.detail}`,
+          });
+          continue;
+        }
+        if (r.inconclusive) {
+          // Two different inconclusives, and the difference decides a quorum.
+          //
+          // A token that PARSES and is internally valid, where the reader
+          // simply named no anchor for this TSA, is credited: the operator did
+          // obtain a third-party timestamp, and whether this reader accepts
+          // that TSA is a statement about the policy rather than the token.
+          //
+          // A token that does not parse is credited with nothing. There is no
+          // evidence any timestamp was obtained at all, and counting it would
+          // let a quorum be met by submitting noise.
+          if (!r.malformed) credit(credited, cs.issuer, classes);
+          witnesses.push({
+            id: cs.issuer, type: cs.type, establishes: classes.join('+'),
+            accepted: !r.malformed,
+            verdict: 'inconclusive', detail: `checkpoint ${seq}: ${r.detail}`,
+          });
+          continue;
+        }
+        findings.push({
+          code: 'WITNESS_MISMATCH', verdict: 'fail',
+          detail: `checkpoint ${seq}: the RFC 3161 token from ${cs.issuer} does not verify — ${r.detail}`,
+        });
+        witnesses.push({
+          id: cs.issuer, type: cs.type, establishes: classes.join('+'), accepted: false,
+          verdict: 'fail', detail: `checkpoint ${seq}: ${r.detail}`,
+        });
+        continue;
+      }
+
+      // opentimestamps — FR-22. The proof is WALKED, which is the part that can
+      // be done offline: the operations are applied and the attestation read.
+      // What cannot be done offline is confirming the block header, so the
+      // result is a commitment reported rather than a fact confirmed.
+      const imprint = Buffer.from(String(env.note_digest).slice('sha256:'.length), 'hex');
+      const ots = describeOtsProof(Buffer.from(String(cs.entry.proof ?? ''), 'base64'), { imprint });
+      if (!ots.inconclusive) {
+        // Refuted: a valid proof about other bytes.
+        findings.push({
+          code: 'WITNESS_MISMATCH', verdict: 'fail',
+          detail: `checkpoint ${seq}: the OpenTimestamps proof from ${cs.issuer} commits a different `
+            + `digest — ${ots.detail}`,
+        });
+        witnesses.push({
+          id: cs.issuer, type: cs.type, establishes: classes.join('+'), accepted: false,
+          verdict: 'fail', detail: `checkpoint ${seq}: ${ots.detail}`,
+        });
+        continue;
+      }
+      witnesses.push({
+        id: cs.issuer, type: cs.type, establishes: classes.join('+'),
+        accepted: !ots.malformed,
+        verdict: 'inconclusive', detail: `checkpoint ${seq}: ${ots.detail}`,
+      });
+      // A mangled proof is credited with nothing, for the same reason an
+      // unparseable token is: there is no evidence anything was submitted.
+      if (!ots.malformed) credit(credited, cs.issuer, classes);
+    }
+  }
+
+  for (const [, classes] of credited) {
+    for (const c of classes) observed[c] = (observed[c] ?? 0) + 1;
+  }
+
+  // FR-66 — a policy witness with nothing in the pack. Absence is consistent
+  // with pending under fail-open, a slower roll-up tier, an unavailable
+  // witness, or a removed receipt, and nothing in the pack distinguishes them.
+  for (const [id] of named) {
+    if (seen.has(id)) continue;
+    findings.push({
+      code: 'WITNESS_MISSING', verdict: 'inconclusive',
+      detail: `the acceptance policy names ${id} but no proof from it is in this pack. That is `
+        + 'consistent with a submission still pending under fail-open, with a slower roll-up tier, '
+        + 'with the witness having been unavailable, and with a receipt having been removed — '
+        + 'nothing here distinguishes them',
+    });
+  }
+
+  const met = Object.fromEntries(
+    CAPABILITY_CLASSES.map(c => [c, (observed[c] ?? 0) >= quorum]),
+  );
+
+  if (named.size === 0) {
+    return {
+      verdict: /** @type {Verdict} */ ('inconclusive'),
+      detail: envelopes.some(e => !e.env.unwitnessed)
+        ? 'countersignatures are present but this reader named no witness to accept'
+        : 'no countersignature in this store',
+      witnesses, observed, met, quorum,
+    };
+  }
+  if (CAPABILITY_CLASSES.every(c => (observed[c] ?? 0) === 0)) {
+    return {
+      verdict: /** @type {Verdict} */ ('fail'),
+      detail: 'no proof in this pack is from a witness the acceptance policy accepts',
+      witnesses, observed, met, quorum,
+    };
+  }
+  const short = CAPABILITY_CLASSES.filter(c => (observed[c] ?? 0) > 0 && !met[c]);
+  if (short.length > 0) {
+    findings.push({
+      code: 'WITNESS_SHORT', verdict: 'fail',
+      detail: `the acceptance policy requires a quorum of ${quorum}, and this pack holds `
+        + short.map(c => `${observed[c]} ${c}`).join(', ')
+        + '. A quorum short of its requirement is not a weaker quorum, it is an unmet one',
+    });
+    return {
+      verdict: /** @type {Verdict} */ ('fail'),
+      detail: `quorum of ${quorum} not met for ${short.join(', ')}`,
+      witnesses, observed, met, quorum,
+    };
+  }
+  return {
+    verdict: /** @type {Verdict} */ ('ok'),
+    detail: CAPABILITY_CLASSES.filter(c => met[c]).map(c => `${c} quorum ${observed[c]}/${quorum}`).join(', '),
+    witnesses, observed, met, quorum,
+  };
+}
+
+/**
+ * @param {Map<string, Set<string>>} credited
+ * @param {string} issuer
+ * @param {string[]} classes
+ */
+function credit(credited, issuer, classes) {
+  // One issuer, one vote per class, however many checkpoints it signed.
+  const set = credited.get(issuer) ?? new Set();
+  for (const c of classes) set.add(c);
+  credited.set(issuer, set);
+}
+
+/**
+ * @param {string} noteBlob
+ * @param {import('@splitstick/core/envelope').Countersignature} cs
+ * @param {{ id: string, public_key?: string }} spec
+ * @returns {Promise<'ok'|'bad'|'no-key'>}
+ */
+async function checkNoteLine(noteBlob, cs, spec) {
+  if (!spec.public_key) return 'no-key';
+  try {
+    const text = parseNote(noteBlob).text;
+    const parsed = parseNote(`${text}\n${cs.line}\n`);
+    const line = parsed.signatures.find(s => s.name === cs.issuer);
+    if (!line) return 'bad';
+    const pub = Buffer.from(spec.public_key, 'base64');
+    // Synchronous shape check first: a key id that does not match cannot be a
+    // signature by this key, and saying "does not verify" would be vaguer.
+    if (!line.keyId.equals(noteKeyId(cs.issuer, pub))) return 'bad';
+    return await verifyNoteSignature(text, line, {
+      name: cs.issuer, publicKey: pub, keyId: noteKeyId(cs.issuer, pub),
+    }) ? 'ok' : 'bad';
+  } catch {
+    return 'bad';
+  }
+}
+
+
+/**
+ * Check the roll-up summaries — FR-53.
+ *
+ * A roll-up commits to a tree of CHECKPOINT NOTES, so it is verified against
+ * the notes on disk rather than against the record log. Getting that wrong
+ * would make a verifier report TREE_MISMATCH on a perfectly good roll-up, which
+ * is worse than not checking it: a false accusation from the component whose
+ * only product is credibility.
+ *
+ * Its origin carries a `/rollup` suffix for the same reason, and the suffix is
+ * CHECKED here rather than assumed — a roll-up presented under a different
+ * origin is a different log's summary, and FR-63 says a reader who pinned an
+ * identity is told when they are shown another.
+ *
+ * @param {object} o
+ * @param {import('@splitstick/core/store').Store} o.store
+ * @param {{ seq: number, note: string }[]} o.notes the checkpoints on disk
+ * @param {ReturnType<typeof parseVkey>|null} o.pinned
+ * @param {Map<string, { epoch: number, publicKey: Buffer }>} o.epochKeys
+ * @param {Finding[]} o.findings appended to
+ */
+async function verifyRollups({ store, notes, pinned, epochKeys, findings }) {
+  const rollups = store.readRollups();
+  if (rollups.length === 0) {
+    return {
+      verdict: /** @type {Verdict} */ ('inconclusive'),
+      detail: 'no roll-up in this store (FR-53); nothing here is anchored to a party that cannot '
+        + 'withdraw it',
+      count: 0,
+      covers: 0,
+    };
+  }
+  const leaves = notes
+    .slice()
+    .sort((a, b) => a.seq - b.seq)
+    .map(n => Buffer.from(n.note, 'utf8'));
+
+  /** @type {Verdict[]} */
+  const vs = [];
+  let covers = 0;
+  for (const { seq, blob } of rollups) {
+    const env = parseEnvelope(blob);
+    if (!env.ok || env.note === null) {
+      for (const f of env.findings) {
+        findings.push({ code: f.code, verdict: 'fail', detail: `roll-up ${seq}: ${f.detail}` });
+      }
+      vs.push('fail');
+      continue;
+    }
+    /** @type {ReturnType<typeof parseCheckpointText>} */
+    let cp;
+    /** @type {ReturnType<typeof parseNote>} */
+    let note;
+    try {
+      note = parseNote(env.note);
+      cp = parseCheckpointText(note.text);
+    } catch (e) {
+      findings.push({
+        code: 'FORMAT_UNSUPPORTED', verdict: 'fail',
+        detail: `roll-up ${seq}: ${e instanceof Error ? e.message : String(e)}`,
+      });
+      vs.push('fail');
+      continue;
+    }
+
+    if (pinned && cp.origin !== `${pinned.name}/rollup`) {
+      findings.push({
+        code: 'IDENTITY_UNPINNED', verdict: 'fail',
+        detail: `roll-up ${seq} declares origin ${cp.origin}; this reader pinned ${pinned.name}, `
+          + `so the roll-up should be ${pinned.name}/rollup. A summary of a log you did not pin is `
+          + 'a summary of another log',
+      });
+      vs.push('fail');
+      continue;
+    }
+    if (cp.tree_size > leaves.length) {
+      findings.push({
+        code: 'SIZE_REGRESSED', verdict: 'fail',
+        detail: `roll-up ${seq} covers ${cp.tree_size} checkpoints but ${leaves.length} are on disk: `
+          + 'checkpoints have been removed below a count already summarised',
+      });
+      vs.push('fail');
+      continue;
+    }
+    if (!treeRoot(leaves.slice(0, cp.tree_size)).equals(cp.root)) {
+      findings.push({
+        code: 'TREE_MISMATCH', verdict: 'fail',
+        detail: `roll-up ${seq}'s root is not the root of this store's first ${cp.tree_size} `
+          + 'checkpoint notes, so it summarises a different set of batches',
+      });
+      vs.push('fail');
+      continue;
+    }
+
+    if (!pinned) {
+      vs.push('inconclusive');
+      findings.push({
+        code: 'OPSIG_UNCHECKED', verdict: 'inconclusive',
+        detail: `roll-up ${seq} is signed, but no operator identity was pinned`,
+      });
+      continue;
+    }
+    // The signature line's NAME is the operator's key identity, which is not
+    // the roll-up's origin: a C2SP note's origin and its signers are separate,
+    // and here the origin carries a `/rollup` suffix that the key does not.
+    // Looking the line up by origin found nothing and reported an unsigned
+    // roll-up — a false accusation from a lookup bug.
+    const sig = note.signatures.find(x => x.name === pinned.name);
+    const attributed = sig
+      ? (epochKeys.size > 0
+        ? [...epochKeys.values()].find(e => noteKeyId(pinned.name, e.publicKey).equals(sig.keyId))
+        : (noteKeyId(pinned.name, pinned.publicKey).equals(sig.keyId)
+          ? { epoch: 0, publicKey: pinned.publicKey }
+          : undefined))
+      : undefined;
+    if (!sig || !attributed) {
+      findings.push({
+        code: 'OPSIG_INVALID', verdict: 'fail',
+        detail: `roll-up ${seq} is not signed by a key in the succession chain walked from the `
+          + 'pinned root',
+      });
+      vs.push('fail');
+      continue;
+    }
+    if (!await verifyNoteSignature(note.text, sig,
+      { name: pinned.name, publicKey: attributed.publicKey, keyId: noteKeyId(pinned.name, attributed.publicKey) })) {
+      findings.push({
+        code: 'OPSIG_INVALID', verdict: 'fail',
+        detail: `roll-up ${seq} declares a key id from epoch ${attributed.epoch} but the signature `
+          + "does not verify under that epoch's key",
+      });
+      vs.push('fail');
+      continue;
+    }
+    vs.push('ok');
+    if (cp.tree_size > covers) covers = cp.tree_size;
+  }
+
+  const verdict = combine(vs);
+  const failed = vs.filter(v => v === 'fail').length;
+  return {
+    verdict,
+    // Three branches, not two. With one roll-up present and no identity pinned
+    // the verdict is inconclusive and nothing failed, and the two-branch
+    // version printed "0 roll-up(s) do not check out" — a sentence that is both
+    // false and meaningless.
+    detail: verdict === 'ok'
+      ? `${rollups.length} roll-up(s) covering ${covers} checkpoint(s)`
+      : failed > 0
+        ? `${failed} of ${rollups.length} roll-up(s) do not check out`
+        : `${rollups.length} roll-up(s) present, but not checkable by this reader`,
+    count: rollups.length,
+    covers,
+  };
+}

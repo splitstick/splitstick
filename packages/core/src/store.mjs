@@ -4,6 +4,8 @@
  *   chain/<collector>.jsonl       records, leaves, heads.  NEVER DELETED
  *   salts/<collector>.jsonl       record_seq -> salt.      DELETABLE per record
  *   checkpoints/<collector>/<n>.note   C2SP notes                 [DES-07]
+ *   succession/<collector>.jsonl  the epoch chain.         NEVER DELETED
+ *   rollups/<collector>/<n>.json  roll-up envelopes        [FR-53]
  *   content/<collector>/      payloads, encrypted.      DELETABLE
  *   keys/<collector>/         per-content keys.         DELETABLE
  *   queue/                    unwitnessed batches                 [DES-15]
@@ -24,9 +26,11 @@
  * takes nothing away.
  */
 
-import { mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync, openSync, writeSync, closeSync } from 'node:fs';
+import { mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync, openSync, writeSync, closeSync, renameSync, unlinkSync } from 'node:fs';
+import { randomBytes } from 'node:crypto';
 import { join } from 'node:path';
 import { ContentStore } from './content.mjs';
+import { buildEnvelope, parseEnvelope } from './envelope.mjs';
 import { WriteLock } from './writelock.mjs';
 
 export class Store {
@@ -42,7 +46,7 @@ export class Store {
   constructor(root, collector) {
     this.root = root;
     this.collector = collector;
-    for (const d of ['chain', 'salts', 'queue']) {
+    for (const d of ['chain', 'salts', 'queue', 'succession']) {
       mkdirSync(join(root, d), { recursive: true });
     }
     // Checkpoints are scoped to the collector, like the chain and the salts.
@@ -51,8 +55,17 @@ export class Store {
     // notes — and the ordinals collided besides.
     this.checkpointDir = join(root, 'checkpoints', collector);
     mkdirSync(this.checkpointDir, { recursive: true });
+    // Roll-ups live apart from checkpoints. A roll-up among them would be read
+    // as a checkpoint whose root is not the root of this log — a false
+    // TREE_MISMATCH, which is the worst possible thing for a verifier to say.
+    this.rollupDir = join(root, 'rollups', collector);
+    mkdirSync(this.rollupDir, { recursive: true });
     this.chainPath = join(root, 'chain', `${collector}.jsonl`);
     this.saltsPath = join(root, 'salts', `${collector}.jsonl`);
+    // Never deleted, like the chain. A retired epoch's public key is what keeps
+    // its old signatures verifiable, so erasing the succession journal would
+    // destroy the ability to check history rather than the history's content.
+    this.successionPath = join(root, 'succession', `${collector}.jsonl`);
     // One lock per collector, covering the journals AND the content store.
     // Holding it only inside ContentStore.putGroup() left every record that
     // externalises nothing — heartbeat, gap, policy, padding — unprotected, so
@@ -93,6 +106,51 @@ export class Store {
 
     this.#writeAll(this.#saltsFd, salt, this.saltsPath);
     this.#writeAll(this.#chainFd, line, this.chainPath);
+  }
+
+  /**
+   * Append one epoch to the succession journal — FR-11.
+   *
+   * Not under the journal descriptors: this is written once per epoch, not once
+   * per record, so there is nothing to amortise and an open descriptor would
+   * only widen the window in which a crash could tear it.
+   * @param {import('./succession.mjs').SuccessionEntry} entry
+   */
+  appendEpoch(entry) {
+    this.lock.claim();
+    const fd = openSync(this.successionPath, 'a', 0o600);
+    try {
+      this.#writeAll(fd, JSON.stringify(entry) + '\n', this.successionPath);
+    } finally {
+      closeSync(fd);
+    }
+  }
+
+  /** @returns {import('./succession.mjs').SuccessionEntry[]} */
+  readSuccession() { return this.readSuccessionDetailed().entries; }
+
+  /**
+   * The newline is the commit marker here as it is for the chain: an entry
+   * without one was being written when the process died, and parsing half of
+   * it would invent an epoch.
+   * @returns {{ entries: import('./succession.mjs').SuccessionEntry[],
+   *             torn: boolean, malformed: number[] }}
+   */
+  readSuccessionDetailed() {
+    if (!existsSync(this.successionPath)) return { entries: [], torn: false, malformed: [] };
+    const raw = readFileSync(this.successionPath, 'utf8');
+    const torn = raw.length > 0 && !raw.endsWith('\n');
+    const lines = raw.split('\n');
+    if (torn) lines.pop();
+    /** @type {import('./succession.mjs').SuccessionEntry[]} */
+    const entries = [];
+    /** @type {number[]} */
+    const malformed = [];
+    lines.forEach((line, i) => {
+      if (line === '') return;
+      try { entries.push(JSON.parse(line)); } catch { malformed.push(i + 1); }
+    });
+    return { entries, torn, malformed };
   }
 
   /**
@@ -320,20 +378,136 @@ export class Store {
 
   /** @param {number} seq @param {string} blob */
   writeCheckpoint(seq, blob) {
-    writeFileSync(join(this.checkpointDir, `${seq}.note`), blob, { mode: 0o600 });
+    // The artefact on disk is a DES-20 envelope, with the note inside it. A
+    // bare note has nowhere to carry an RFC 3161 token or a .ots proof, and
+    // retrofitting one later would mean rewriting signed files.
+    this.writeCheckpointEnvelope(seq, buildEnvelope(blob));
   }
 
-  /** @returns {{ seq: number, blob: string }[]} this collector's checkpoints, in order */
+  /** @param {number} seq @returns {string} */
+  checkpointPath(seq) { return join(this.checkpointDir, `${seq}.json`); }
+
+  /**
+   * Replace a checkpoint envelope atomically — staging file, then rename.
+   *
+   * Anchoring updates an envelope that already exists, often while a verifier
+   * could be reading it. A reader must see the old envelope or the new one and
+   * never a prefix of either, because a truncated envelope is indistinguishable
+   * from a tampered one.
+   * @param {number} seq
+   * @param {import('./envelope.mjs').Envelope} env
+   */
+  writeCheckpointEnvelope(seq, env) {
+    const path = this.checkpointPath(seq);
+    const tmp = `${path}.${randomBytes(6).toString('hex')}.staging`;
+    try {
+      writeFileSync(tmp, JSON.stringify(env, null, 1) + '\n', { mode: 0o600 });
+      renameSync(tmp, path);
+    } catch (e) {
+      try { unlinkSync(tmp); } catch { /* the staging file may not exist */ }
+      throw e;
+    }
+  }
+
+  /** @param {number} seq @returns {string|null} the envelope JSON, or null */
+  readCheckpointEnvelope(seq) {
+    return this.readCheckpoints().find(c => c.seq === seq)?.blob ?? null;
+  }
+
+  /** @param {number} seq @returns {string} */
+  rollupPath(seq) { return join(this.rollupDir, `${seq}.json`); }
+
+  /** @param {number} seq @param {import('./envelope.mjs').Envelope} env */
+  writeRollupEnvelope(seq, env) {
+    const path = this.rollupPath(seq);
+    const tmp = `${path}.${randomBytes(6).toString('hex')}.staging`;
+    try {
+      writeFileSync(tmp, JSON.stringify(env, null, 1) + '\n', { mode: 0o600 });
+      renameSync(tmp, path);
+    } catch (e) {
+      try { unlinkSync(tmp); } catch { /* the staging file may not exist */ }
+      throw e;
+    }
+  }
+
+  /** @param {number} seq @param {string} blob a signed note */
+  writeRollup(seq, blob) { this.writeRollupEnvelope(seq, buildEnvelope(blob)); }
+
+  /** @returns {{ seq: number, blob: string, note: string }[]} in order */
+  readRollups() {
+    if (!existsSync(this.rollupDir)) return [];
+    /** @type {{ seq: number, blob: string, note: string }[]} */
+    const out = [];
+    for (const f of readdirSync(this.rollupDir)) {
+      const m = /^([0-9]+)\.json$/.exec(f);
+      if (m === null) continue;
+      const raw = readFileSync(join(this.rollupDir, f), 'utf8');
+      out.push({ seq: Number(m[1]), blob: raw, note: parseEnvelope(raw).note ?? '' });
+    }
+    return out.sort((a, b) => a.seq - b.seq);
+  }
+
+  /** @param {number} seq @returns {string|null} */
+  readRollupEnvelope(seq) {
+    return this.readRollups().find(r => r.seq === seq)?.blob ?? null;
+  }
+
+  /** The highest roll-up ordinal written. An ordinal only. */
+  lastRollupSeq() {
+    return this.readRollups().reduce((max, r) => Math.max(max, r.seq), 0);
+  }
+
+  /**
+   * This collector's checkpoints, in order.
+   *
+   * `blob` is always envelope JSON and `note` always the note bytes, whichever
+   * format is on disk. An M1 store holds bare `.note` files; those are wrapped
+   * on read rather than migrated, because DES-16 says an older format is not
+   * retroactively invalid and rewriting signed files to change their shape is
+   * the last thing this project should do.
+   *
+   * When BOTH formats exist for one ordinal, the envelope is authoritative and
+   * `legacy_note` carries the bare file beside it, so the verifier can compare
+   * them. Two artefacts for one checkpoint that disagree is exactly the "verify
+   * one thing and report on another" failure, and silently preferring either
+   * would hide it.
+   *
+   * @returns {{ seq: number, blob: string, note: string, format: 'envelope'|'note',
+   *             legacy_note?: string }[]}
+   */
   readCheckpoints() {
     if (!existsSync(this.checkpointDir)) return [];
-    return readdirSync(this.checkpointDir)
-      .map(f => ({ m: /^([0-9]+)\.note$/.exec(f), f }))
-      .filter(x => x.m !== null)
-      .map(x => ({
-        seq: Number(/** @type {RegExpExecArray} */ (x.m)[1]),
-        blob: readFileSync(join(this.checkpointDir, x.f), 'utf8'),
-      }))
-      .sort((a, b) => a.seq - b.seq);
+    /** @type {Map<number, string>} */
+    const bare = new Map();
+    for (const f of readdirSync(this.checkpointDir)) {
+      const m = /^([0-9]+)\.note$/.exec(f);
+      if (m) bare.set(Number(m[1]), readFileSync(join(this.checkpointDir, f), 'utf8'));
+    }
+    /** @type {{ seq: number, blob: string, note: string, format: 'envelope'|'note', legacy_note?: string }[]} */
+    const out = [];
+    for (const f of readdirSync(this.checkpointDir)) {
+      const m = /^([0-9]+)\.(note|json)$/.exec(f);
+      if (m === null) continue;
+      const seq = Number(m[1]);
+      const raw = readFileSync(join(this.checkpointDir, f), 'utf8');
+      if (m[2] === 'note') {
+        // Skipped when an envelope exists for the same ordinal: it is reported
+        // through that entry's legacy_note instead of as a second checkpoint.
+        if (existsSync(this.checkpointPath(seq))) continue;
+        out.push({ seq, blob: JSON.stringify(buildEnvelope(raw)), note: raw, format: 'note' });
+        continue;
+      }
+      // A damaged envelope still has to reach the verifier, which is the thing
+      // that knows how to report it. Returning the raw bytes and an empty note
+      // lets it emit a finding instead of this code deciding to drop evidence.
+      const p = parseEnvelope(raw);
+      const legacy = bare.get(seq);
+      out.push({
+        seq, blob: raw, note: p.note ?? '', format: 'envelope',
+        ...(legacy === undefined ? {} : { legacy_note: legacy }),
+      });
+    }
+    return out.sort((a, b) => a.seq - b.seq);
   }
 
   /**
@@ -345,7 +519,7 @@ export class Store {
   unattributedCheckpoints() {
     const dir = join(this.root, 'checkpoints');
     if (!existsSync(dir)) return [];
-    return readdirSync(dir).filter(f => f.endsWith('.note'));
+    return readdirSync(dir).filter(f => /\.(note|json)$/.test(f));
   }
 
   /**

@@ -1,0 +1,12 @@
+{
+  "name": "@splitstick/witness-rekor",
+  "version": "0.1.0",
+  "type": "module",
+  "license": "Apache-2.0",
+  "description": "Rekor transparency-log witness adapter. Opt-in: a 10-second cadence against a public instance is not acceptable use.",
+  "publishConfig": { "access": "public", "provenance": true },
+  "exports": { ".": "./src/index.mjs" },
+  "files": ["src", "README.md"],
+  "engines": { "node": ">=20" },
+  "dependencies": { "@splitstick/core": "0.1.0" }
+}

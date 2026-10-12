@@ -1,7 +1,7 @@
 {
   "gates": {
     "AC-1": {
-      "class": "Alter the recorded action \u2014 arguments, result, approval decision",
+      "class": "Alter the recorded action — arguments, result, approval decision",
       "redteam": "A",
       "kind": "local"
     },
@@ -14,7 +14,7 @@
       "class": "Re-sign rewritten history with the current key",
       "redteam": "ratchet suite",
       "kind": "local + HSM",
-      "note": "Carried from M2 to M3a. The ratchet makes yesterday's record unforgeable with today's key, but an operator holding the current key can still re-sign a rewritten history within the current epoch \u2014 and nothing local can refuse that. The countersignature over the original root is the half that contradicts it, so the class closes only when both exist. The red-team suite names both for attack C2 and always did; M2 claiming the gate alone would have been the plan disagreeing with the suite."
+      "note": "Carried from M2 to M3a. The ratchet makes yesterday's record unforgeable with today's key, but an operator holding the current key can still re-sign a rewritten history within the current epoch — and nothing local can refuse that. The countersignature over the original root is the half that contradicts it, so the class closes only when both exist. The red-team suite names both for attack C2 and always did; M2 claiming the gate alone would have been the plan disagreeing with the suite."
     },
     "AC-4": {
       "class": "Truncate the record's tail",
@@ -73,7 +73,7 @@
         "AC-2"
       ],
       "weeks": "3-4",
-      "exit": "Red-team A and C both DETECTED by splitstick verify; baseline still passes. p99 append overhead measured under 1 ms and run latency under 2% \u2014 measured, not assumed. Chain files contain no plaintext. First package published with a provenance attestation and an SBOM, so the build digest M4 relies on can be traced to its source.",
+      "exit": "Red-team A and C both DETECTED by splitstick verify; baseline still passes. p99 append overhead measured under 1 ms and run latency under 2% — measured, not assumed. Chain files contain no plaintext. First package published with a provenance attestation and an SBOM, so the build digest M4 relies on can be traced to its source.",
       "ids": [
         "FR-01",
         "FR-02",
@@ -105,7 +105,8 @@
         "FR-59",
         "FR-62"
       ],
-      "shipped": true
+      "shipped": true,
+      "gate_evidence": "local"
     },
     {
       "id": "M2",
@@ -121,7 +122,7 @@
         "SEC-17",
         "OPS-04"
       ],
-      "shipped": false
+      "shipped": true
     },
     {
       "id": "M3a",
@@ -177,11 +178,13 @@
       "carries": [
         {
           "id": "NFR-09",
-          "why": "M2 built and covered the AWS KMS signer, which satisfies the KMS half. The HSM half is blocked by evidence rather than effort: of the products that sign Ed25519, AWS KMS issues no per-key attestation and GCP offers the algorithm at software protection level only, so independently-supported custody requires hardware \u2014 and the YubiHSM 2 purchase is held until its attestation capability is confirmed. See docs/kms-capability-matrix.md.",
-          "closes": "A hardware signer behind the same sign(bytes) seam, with an integration test proving its signature verifies under an independent Ed25519 implementation, and FR-70's five checks exercised against a real attestation document rather than a constructed one. M3a is the right home because FR-65 and FR-70 already land there."
+          "why": "Carried into M3a from M2 and NOT closed here. The KMS half is built and covered (packages/signer-aws-kms) and needs only the operator's key to run. The HSM half is blocked by evidence rather than effort and nothing in M3a changed that: of the products that sign Ed25519, AWS KMS issues no per-key attestation and GCP offers the algorithm at software protection level only, so independently-supported custody still requires hardware, and the YubiHSM 2 purchase is held. FR-70's validator now exists and is correct, but it has only ever been run against documents this project constructed — every result carries provider_untested: true to say so. See docs/kms-capability-matrix.md and docs/m3a-failure-modes.md.",
+          "closes": "A hardware signer behind the same sign(bytes) seam, with an integration test proving its signature verifies under an independent Ed25519 implementation, and FR-70's five checks exercised against a REAL provider attestation rather than a constructed one. M7 is the right home because the launch gate is where every published claim has to have evidence behind it, and 'operate with a KMS or HSM' is a published claim."
         }
       ],
-      "shipped": false
+      "shipped": true,
+      "gate_evidence": "witnessed",
+      "gate_evidence_note": "AC-3, AC-4 and AC-5 cannot be closed by anything local, which is the project's thesis rather than a shortfall. They are claimed in the configuration M3a delivers: a stateful witness (FR-17) countersigning checkpoints, and its retained heights in the reader's hands (FR-54). The SHIPPED DEFAULT (FR-48: TSA + OpenTimestamps) does NOT provide this — a TSA signs your hash and forgets you — so an operator who leaves the default in place has not closed 4 and 5, and DES-08 says so. The gate records that the mechanism works when configured, not that every deployment has it."
     },
     {
       "id": "M3b",
@@ -362,6 +365,11 @@
           "id": "NFR-02",
           "why": "The 2 percent budget is established against a scripted model and an assumed 400 ms per model call. Both assumptions are recorded in the result, and neither has been tested against a real provider.",
           "closes": "Re-measure the interleaved paired A/B against a real provider once one is in the loop, and confirm the 95 percent interval still clears the budget at that model latency."
+        },
+        {
+          "id": "NFR-09",
+          "why": "Re-carried from M3a. The KMS half is delivered and awaits a key; the HSM half is blocked on hardware whose attestation capability is unconfirmed. Deciding it at the launch gate is the honest place: that is where a published claim must have evidence.",
+          "closes": "Either a real HSM attestation through FR-70's five checks, or the claim narrowed in the published text to what the KMS half actually supports. One of those two, explicitly, and not a third option where the claim stands unevidenced."
         }
       ],
       "shipped": false

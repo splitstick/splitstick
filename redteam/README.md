@@ -53,8 +53,11 @@ npm test
 `npm run generate` writes `out/journal.jsonl` through OMA's real orchestrator and
 asserts the baseline verifies. `npm run redteam` applies the six tampers above.
 `npm run redteam:splitstick` then builds a real Splitstick store from that same
-journal and applies twelve tampers to it, asking `splitstick verify` for a
-verdict on each.
+journal and applies thirteen tampers to it, asking `splitstick verify` for a
+verdict on each — **twice**. Once for a reader holding the store and nothing
+else, and once for a reader who also holds a stateful witness's retained
+heights. The difference between those two runs is the whole argument of the
+project.
 
 Every attack declares the outcome currently observed, and both suites **exit
 non-zero when an observation changes** — so they are regression canaries in both
@@ -91,16 +94,44 @@ that marking M3a shipped today fails AC-3, AC-4 and AC-5 on exactly C2, D and
 F3.
 
 ```
-gate AC-1   HELD      (A1, A2, A3, B, E)
-gate AC-2   HELD      (C)
+10 of 13 tampers are detected from files alone.
+3 are not: C2, D, F3.
+With a stateful witness configured and its retained heights in the reader's
+hands, 13 of 13 are detected.
+That difference is the whole argument: none of it is new cryptography, all of it
+is a second party. A notary you supply to yourself is not a notary.
 
-scheduled   AC-3 (M3a), AC-4 (M3a), AC-5 (M3a), AC-6 (M4), AC-7 (M4)
+gate AC-1   HELD from files alone   (A1, A2, A3, B, E)
+gate AC-2   HELD from files alone   (C)
+gate AC-3   HELD with a witness configured   (C2, C3)
+gate AC-4   HELD with a witness configured   (D, D2)
+gate AC-5   HELD with a witness configured   (F, F2, F3)
 
-9 of 12 tampers are detected by splitstick verify from files alone.
-3 are not, and each names the milestone that closes it: C2, D, F3.
-None of those needs new cryptography. Each needs a second party, which is the
-shape of the problem.
+scheduled   AC-6 (M4), AC-7 (M4)
 ```
+
+### "With a witness configured" is doing real work in that output
+
+The witness's retained roots are deliberately kept **outside** the store. A
+countersignature inside an envelope is evidence only until the operator deletes
+the envelope; what they cannot delete is what a second party retained and a
+counterparty already holds. So the witnessed run hands the verifier the heights
+the witness remembers, exactly as an auditor polling it would.
+
+And the **shipped default does not provide this.** FR-48 ships an RFC 3161 TSA
+plus an OpenTimestamps roll-up: real independent time, and no sequence memory
+at all. A TSA signs your hash and forgets you, so it cannot tell you that a
+checkpoint it signed last week is missing from the log you show it today. An
+operator who leaves the default in place has **not** closed classes 4 and 5, and
+`describeWitnessSet()` says so at startup rather than leaving them to read
+DES-08.
+
+The gates therefore attest that the mechanism works when configured — not that
+every deployment has it. `requirements/milestones.json` records which run each
+milestone's gates are read from (`gate_evidence`), the field defaults to
+`local` so a milestone cannot acquire the witnessed run by omission, and
+[test/gates.test.mjs](test/gates.test.mjs) asserts that M3a's gates fail if
+evaluated from files alone.
 
 ## Is this a vulnerability?
 

@@ -10,6 +10,7 @@ import { parseConfig } from '@splitstick/core/config';
 import { generateDevSigner } from '@splitstick/core/signer-file';
 import { formatVkey } from '@splitstick/core/note';
 import { verifyStore } from '../src/verify.mjs';
+import { code as sharedCode } from '../../../tools/code-text.mjs';
 
 const CFG = 'version: 1\nstore: ./s\n';
 const ORIGIN = 'splitstick.dev/host-1';
@@ -48,14 +49,16 @@ test('a clean store has no failures and is inconclusive only for what it cannot 
   assert.equal(r.summary.failed, 0, JSON.stringify(r.findings, null, 1));
   assert.equal(r.verdict, 'inconclusive');
   assert.equal(r.tree_size, 4);
-  for (const name of ['FORMAT', 'SEQUENCE', 'CHAIN', 'LEAF', 'CONTENT', 'TREE', 'OP-SIG']) {
+  // SUCCESSION passes on a one-epoch log: the chain walks from the pinned root
+  // and has nothing else in it, which is a true answer rather than an absent one.
+  for (const name of ['FORMAT', 'SEQUENCE', 'CHAIN', 'LEAF', 'CONTENT', 'TREE', 'OP-SIG', 'SUCCESSION']) {
     assert.equal(r.checks.find(c => c.name === name).verdict, 'ok', name);
   }
   assert.deepEqual(
     r.checks.filter(c => c.verdict === 'inconclusive').map(c => c.name),
     ['WITNESS', 'ROLLUP', 'COVERAGE', 'POLICY'],
     'and exactly the checks that need a second party are the unanswered ones');
-  assert.equal(r.summary.passed, 7);
+  assert.equal(r.summary.passed, 8);
   assert.equal(r.summary.unanswered, 4);
 });
 
@@ -152,7 +155,7 @@ test('TREE_MISMATCH: a checkpoint root that is not the root of this log', async 
   const { checkpointText, encodeNote } = await import('@splitstick/core/note');
   const { signNote } = await import('@splitstick/core/signer');
   const text = checkpointText({ origin: ORIGIN, tree_size: 4, root: Buffer.alloc(32, 7) });
-  writeFileSync(join(root, 'checkpoints', 'host-1', '1.note'), encodeNote(text, [await signNote(text, signer)]));
+  new Store(root, 'host-1').writeCheckpoint(1, encodeNote(text, [await signNote(text, signer)]));
   const r = await verifyStore(root, { collector: 'host-1', vkey });
   assert.equal(r.verdict, 'fail');
   assert.ok(r.findings.some(f => f.code === 'TREE_MISMATCH'), JSON.stringify(r.findings));
@@ -168,10 +171,12 @@ test('truncation above the last checkpoint is not detected, and the report says 
   assert.ok(below.findings.some(f => f.code === 'TREE_MISMATCH' || f.code === 'SIZE_REGRESSED'));
 
   // Now a log whose tail was never checkpointed.
-  const { root: r2, vkey: v2, store } = await evidence(4);
+  const { root: r2, vkey: v2, store, signer: s2 } = await evidence(4);
   let t = Date.parse('2026-10-11T11:00:00.000Z');
+  // The same epoch key: a reopened collector must present the live one, and a
+  // fresh key here would be refused rather than silently signing unendorsed.
   const c2 = new Collector({ store, config: parseConfig(CFG, r2),
-    signer: await generateDevSigner(ORIGIN), collector: 'host-1', origin: ORIGIN,
+    signer: s2, collector: 'host-1', origin: ORIGIN,
     now: () => new Date(t += 1000) });
   c2.action(tx({ correlation: 'c-tail' }));
   const full = await verifyStore(r2, { collector: 'host-1', vkey: v2 });
@@ -272,19 +277,43 @@ function reachableFromVerifier() {
   return seen;
 }
 
+/**
+ * Comments stripped before scanning for network use.
+ *
+ * The check matched the word `fetch` in a comment explaining that this verifier
+ * does NOT fetch — so prose saying the right thing failed the test asserting
+ * it. That is the third instrument in this project to read its own
+ * documentation as code; the other two are tools/lint-failure-codes.mjs and
+ * tools/lint-claims.mjs. Stripping comments is the fix in all three.
+ * @param {string} t
+ */
+const code = sharedCode;
+
 test('NFR-05: nothing the verifier reaches imports a network module', () => {
   const reached = reachableFromVerifier();
   assert.ok(reached.size >= 8, `the walk should reach core, not just verify: ${reached.size} modules`);
   assert.ok([...reached].some(f => f.includes('/core/src/')), 'core must be in the graph');
 
   for (const file of reached) {
-    const text = readFileSync(file, 'utf8');
+    const text = code(readFileSync(file, 'utf8'));
     for (const m of NETWORK_MODULES) {
       assert.ok(!text.includes(m), `${file} imports ${m}`);
     }
     assert.ok(!/\bfetch\s*\(/.test(text), `${file} calls fetch`);
     assert.ok(!/@aws-sdk\//.test(text), `${file} imports an AWS SDK — the verifier must not`);
   }
+});
+
+test('NFR-05: the offline scan still catches a real network call in code', () => {
+  // The instrument, proved. Stripping comments must not have stripped the
+  // check's teeth: a fetch in code still has to fail, and a fetch in a comment
+  // must not.
+  const real = code('import https from "node:https";\nawait fetch("https://x");');
+  assert.match(real, /\bfetch\s*\(/);
+  assert.ok(real.includes('node:https'));
+  const prose = code('// this verifier never calls fetch( ) and imports no node:https\nconst a = 1;');
+  assert.ok(!/\bfetch\s*\(/.test(prose));
+  assert.ok(!prose.includes('node:https'));
 });
 
 test('NFR-05: the offline scan would notice a network import in core', () => {
@@ -336,7 +365,8 @@ test('DES-14: the OMA adapter contains no cryptography', () => {
 // either knows it or refuses the batch.
 test('the checkpoint declares its algorithm suite and the verifier reads it', async () => {
   const { root, vkey } = await evidence();
-  const note = readFileSync(join(root, 'checkpoints', 'host-1', '1.note'), 'utf8');
+  const note = JSON.parse(
+    readFileSync(join(root, 'checkpoints', 'host-1', '1.json'), 'utf8')).note;
   assert.match(note, /\nsuite SS1\n/);
   const r = await verifyStore(root, { collector: 'host-1', vkey });
   assert.equal(r.summary.failed, 0);
@@ -353,7 +383,7 @@ test('an unknown suite is FORMAT_UNSUPPORTED, never partially verified', async (
   // Hand-built, because checkpointText refuses to emit an unknown suite — the
   // case under test is a note written by something else, or by a later release.
   const text = `${ORIGIN}\n${leaves.length}\n${treeRoot(leaves).toString('base64')}\nsuite SS9\n`;
-  writeFileSync(join(root, 'checkpoints', 'host-1', '1.note'), encodeNote(text, [await signNote(text, signer)]));
+  new Store(root, 'host-1').writeCheckpoint(1, encodeNote(text, [await signNote(text, signer)]));
 
   const r = await verifyStore(root, { collector: 'host-1', vkey });
   assert.equal(r.verdict, 'fail');
@@ -370,7 +400,7 @@ test('a checkpoint with no suite line is inconclusive, not assumed current', asy
   const { Store } = await import('@splitstick/core/store');
   const leaves = new Store(root, 'host-1').readChain().map(e => e.leaf);
   const text = checkpointText({ origin: ORIGIN, tree_size: leaves.length, root: treeRoot(leaves) });
-  writeFileSync(join(root, 'checkpoints', 'host-1', '1.note'), encodeNote(text, [await signNote(text, signer)]));
+  new Store(root, 'host-1').writeCheckpoint(1, encodeNote(text, [await signNote(text, signer)]));
 
   const r = await verifyStore(root, { collector: 'host-1', vkey });
   assert.equal(r.summary.failed, 0, 'an undeclared suite is not a contradiction');
@@ -430,7 +460,7 @@ test('a later checkpoint that does not extend an earlier one is CONSISTENCY_BROK
   const leaves = store.readChain().map(e => e.leaf);
   const forged = [Buffer.alloc(32, 9), ...leaves.slice(1)];
   const text = checkpointText({ origin: ORIGIN, tree_size: forged.length, root: treeRoot(forged), suite: 'SS1' });
-  writeFileSync(join(root, 'checkpoints', 'host-1', '2.note'), encodeNote(text, [await signNote(text, signer)]));
+  new Store(root, 'host-1').writeCheckpoint(2, encodeNote(text, [await signNote(text, signer)]));
 
   const r = await verifyStore(root, { collector: 'host-1', vkey });
   assert.equal(r.verdict, 'fail');
@@ -446,7 +476,7 @@ test('checkpoints must not go backwards in tree_size', async () => {
   const leaves = store.readChain().map(e => e.leaf);
   // Checkpoint 2 commits to fewer records than checkpoint 1 — a rollback.
   const text = checkpointText({ origin: ORIGIN, tree_size: 2, root: treeRoot(leaves.slice(0, 2)), suite: 'SS1' });
-  writeFileSync(join(root, 'checkpoints', 'host-1', '2.note'), encodeNote(text, [await signNote(text, signer)]));
+  new Store(root, 'host-1').writeCheckpoint(2, encodeNote(text, [await signNote(text, signer)]));
 
   const r = await verifyStore(root, { collector: 'host-1', vkey });
   assert.equal(r.verdict, 'fail');

@@ -1,0 +1,28 @@
+#!/bin/sh
+# GOV-02 — every commit carries a Signed-off-by matching its author.
+#
+# CI already enforces this, which means an unsigned commit is discoverable only
+# after it is pushed and the DCO check fails; fixing it then requires rewriting
+# published history. Catching it here costs nothing and leaves nothing to undo.
+#
+# The trailer must match the commit author, not merely be present: a sign-off is
+# a statement by a specific person under the Developer Certificate of Origin, so
+# a sign-off naming someone else certifies nothing.
+name=$(git var GIT_AUTHOR_IDENT | sed 's/^\(.*\) <.*/\1/')
+mail=$(git var GIT_AUTHOR_IDENT | sed 's/^.*<\([^>]*\)>.*/\1/')
+want="Signed-off-by: $name <$mail>"
+
+if grep -qxF "$want" "$1"; then
+  exit 0
+fi
+
+if grep -qi '^Signed-off-by:' "$1"; then
+  echo "commit-msg: the Signed-off-by trailer does not match the author." >&2
+  echo "  found:  $(grep -i '^Signed-off-by:' "$1" | head -1)" >&2
+  echo "  wanted: $want" >&2
+  exit 1
+fi
+
+echo "commit-msg: missing the Signed-off-by trailer GOV-02 requires." >&2
+echo "  commit with -s, or add this line: $want" >&2
+exit 1

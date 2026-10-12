@@ -40,6 +40,9 @@ import { signNote } from '@splitstick/core/signer';
 import { leafDigest } from '@splitstick/core/leaf';
 import { chainHead, genesis } from '@splitstick/core/chain';
 import { treeRoot } from '@splitstick/core/merkle';
+import { noteDigest } from '@splitstick/core/envelope';
+import { Anchorer } from '@splitstick/core/anchor';
+import { StatefulWitness } from '@splitstick/witness-self/witness';
 import { SplitstickRunJournal } from '@splitstick/collect-oma';
 import { verifyStore } from '@splitstick/verify';
 import { evaluateGates, formatGates } from './gates.mjs';
@@ -51,6 +54,7 @@ if (!fs.existsSync(JOURNAL_PATH)) {
 }
 
 const ORIGIN = 'splitstick.dev/redteam';
+const WITNESS = 'audit.internal';
 const COLLECTOR = 'redteam';
 const FORGED = 'OK: transferred EUR 25 to ACME-9931. ref=TX-77814';
 const events = fs.readFileSync(JOURNAL_PATH, 'utf8').trim().split('\n').map((l) => JSON.parse(l));
@@ -95,6 +99,64 @@ async function build() {
   return { root, store, signer, collector, checkpoint, vkey: formatVkey(ORIGIN, signer.publicKey) };
 }
 
+/**
+ * The same store, with a stateful witness (FR-17) having countersigned the
+ * checkpoint — and the witness's retained root kept OUT of the store, where the
+ * operator cannot reach it.
+ *
+ * That second part is the whole mechanism. A countersignature inside the
+ * envelope is evidence only until the operator deletes the envelope; what they
+ * cannot delete is what a second party retained and a counterparty already
+ * holds. So the witnessed run hands the verifier the heights the witness
+ * remembers (FR-54, SEC-26) exactly as an auditor polling the witness would,
+ * and the attacks that survive THAT are the ones M3a genuinely does not close.
+ */
+async function buildWitnessed() {
+  const ctx = await build();
+  const wdir = fs.mkdtempSync(path.join(os.tmpdir(), 'splitstick-witness-'));
+  const wkey = await generateDevSigner(WITNESS);
+  const witness = new StatefulWitness({ dir: wdir, signer: wkey });
+  witness.enrol(ORIGIN, ctx.signer.publicKey);
+
+  const adapter = {
+    id: WITNESS,
+    proof_type: 'c2sp-note',
+    establishes: ['sequence'],
+    tier: 'anchor',
+    async submit(note) {
+      const res = await witness.addCheckpoint({ note, old_size: 0 });
+      const lines = parseNoteLines(res.note);
+      return { type: 'c2sp-note', issuer: WITNESS, covers: 'note', line: lines.at(-1) };
+    },
+  };
+  const anchorer = new Anchorer({
+    store: ctx.store, witnesses: [adapter], quorum: 1,
+    acceptance: { [WITNESS]: wkey.publicKey },
+  });
+  // Every checkpoint, not only the first. Anchoring one exercises the easy half
+  // of the witness protocol and hides the sequence path entirely — which is how
+  // a missing consistency proof survived until a test wired the two together
+  // across four batches.
+  for (const { seq } of ctx.store.readCheckpoints()) {
+    const r = await anchorer.anchor(seq);
+    if (r.attached.length !== 1) {
+      throw new Error(`the witnessed baseline did not anchor checkpoint ${seq}: ${JSON.stringify(r.failed)}`);
+    }
+  }
+  // What the auditor independently holds, retained by the witness.
+  const disclosed = witness.roots(ORIGIN).map((x) => ({ tree_size: x.tree_size, root: x.root }));
+  const policy = {
+    quorum: 1,
+    witnesses: [{ id: WITNESS, establishes: ['sequence'], public_key: wkey.publicKey.toString('base64') }],
+  };
+  return { ...ctx, witness, wkey, disclosed, policy };
+}
+
+/** @param {string} blob */
+function parseNoteLines(blob) {
+  return blob.trimEnd().split('\n');
+}
+
 const chainPath = (root) => path.join(root, 'chain', `${COLLECTOR}.jsonl`);
 const lines = (root) => fs.readFileSync(chainPath(root), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
 const write = (root, ls) => fs.writeFileSync(chainPath(root), ls.map((l) => JSON.stringify(l)).join('\n') + '\n');
@@ -121,13 +183,44 @@ function repairChain(root) {
   write(root, ls);
 }
 
+/**
+ * Re-sign ONE checkpoint at its own committed size, leaving the others alone.
+ * reSign() below rewrites it at the log's current size, which is a different
+ * attack: this one keeps the note's claim and changes only who signed it.
+ */
+async function reSignAt(root, signer, seq) {
+  const env = JSON.parse(
+    fs.readFileSync(path.join(root, 'checkpoints', COLLECTOR, `${seq}.json`), 'utf8'));
+  const { parseNote } = await import('@splitstick/core/note');
+  const text = parseNote(env.note).text;
+  writeCheckpointBlob(root, seq, encodeNote(text, [await signNote(text, signer)]));
+}
+
+/**
+ * Replace a checkpoint's note, keeping the DES-20 envelope around it. The
+ * attacker controls the directory, so they can do this; what they cannot do is
+ * make the envelope's digest agree with a note they did not also rewrite.
+ */
+function writeCheckpointBlob(root, seq, blob) {
+  const p = path.join(root, 'checkpoints', COLLECTOR, `${seq}.json`);
+  // Attack D deletes the directory's contents first, so the envelope may be
+  // gone. An attacker writing a fresh one is exactly as able as an attacker
+  // editing one, and pretending otherwise would weaken the attack.
+  const env = fs.existsSync(p)
+    ? JSON.parse(fs.readFileSync(p, 'utf8'))
+    : { note: blob, note_digest: '', countersignatures: [] };
+  env.note = blob;
+  env.note_digest = noteDigest(blob);
+  fs.writeFileSync(p, JSON.stringify(env, null, 1) + '\n');
+}
+
 /** Re-sign the current log under the same key — the AC-3 escalation. */
 async function reSign(root, signer, seq = 1) {
   const leaves = lines(root).map((l) => Buffer.from(l.leaf, 'hex'));
   const text = checkpointText({ origin: ORIGIN, tree_size: leaves.length, root: treeRoot(leaves) });
-  fs.writeFileSync(path.join(root, 'checkpoints', COLLECTOR, `${seq}.note`),
-    encodeNote(text, [await signNote(text, signer)]));
+  writeCheckpointBlob(root, seq, encodeNote(text, [await signNote(text, signer)]));
 }
+
 
 const attacks = [
   {
@@ -185,7 +278,7 @@ const attacks = [
     },
   },
   {
-    id: 'C2', gate: 'AC-3', expect: 'undetected', closes: 'M2 (non-exportable custody) + M3a (countersignature)',
+    id: 'C2', gate: 'AC-3', expect: 'undetected', expect_witnessed: 'detected', closes: 'M2 (non-exportable custody) + M3a (countersignature)',
     name: 'consistent edit + repaired chain + re-signed checkpoint',
     note: 'The operator holds the signing key, so they can sign the rewritten history. Nothing local can refuse this. A countersignature over the original root is what contradicts it, which is why AC-3 is not an M1 gate.',
     async apply(ctx) {
@@ -194,7 +287,24 @@ const attacks = [
     },
   },
   {
-    id: 'D', gate: 'AC-4', expect: 'undetected', closes: 'M3a (stateful witness) + DES-19 cross-pack comparison',
+    id: 'C3', gate: 'AC-3', expect: 'detected',
+    name: 'rewrite history and re-sign only the older checkpoint with the current epoch key',
+    note: 'What M2 actually buys, demonstrated. The operator rotated twice, so the retired keys are gone and they can only re-sign with today\'s. Doing it to one checkpoint leaves the epochs running backwards as the ordinals run forwards, which no honest sequence produces. Doing it to ALL of them — C2 — leaves the epochs equal and is still undetected locally.',
+    async apply(ctx) {
+      // Two rotations, with a checkpoint taken from the middle epoch, so the
+      // re-signed note is attributable to an epoch LATER than the one after it.
+      const second = await generateDevSigner(ORIGIN);
+      await ctx.collector.rotate(second);
+      ctx.collector.heartbeat();
+      await ctx.collector.checkpoint();
+      const third = await generateDevSigner(ORIGIN);
+      await ctx.collector.rotate(third);
+      await attacks.find((a) => a.id === 'C').apply(ctx);
+      await reSignAt(ctx.root, third, 1);
+    },
+  },
+  {
+    id: 'D', gate: 'AC-4', expect: 'undetected', expect_witnessed: 'detected', closes: 'M3a (stateful witness) + DES-19 cross-pack comparison',
     name: 'truncate the tail and drop the checkpoints above it',
     note: 'A chain over a prefix is internally perfect. The attacker controls the directory, so the stale checkpoint goes too — leaving it behind is what makes D2 detectable, and nothing forces them to.',
     async apply(ctx) {
@@ -246,7 +356,7 @@ const attacks = [
     },
   },
   {
-    id: 'F3', gate: 'AC-5', expect: 'undetected', closes: 'M3a (countersignature) + DES-19 counterparty reconciliation',
+    id: 'F3', gate: 'AC-5', expect: 'undetected', expect_witnessed: 'detected', closes: 'M3a (countersignature) + DES-19 counterparty reconciliation',
     name: 'erase a record, renumber BOTH counters, repair and re-sign',
     note: 'The thorough version of F2. The action never appears at all and nothing internal remembers it did. Reconciliation from the counterparty side is the answer here, not cryptography.',
     async apply(ctx) {
@@ -297,32 +407,79 @@ if (baseReport.summary.failed !== 0) {
   process.exit(1);
 }
 
+/**
+ * The witnessed baseline, so the second run's "detected" means something: if
+ * the witnessed configuration failed to verify on an untampered store, every
+ * attack would read as detected for the wrong reason.
+ */
+const wBase = await buildWitnessed();
+const wBaseReport = await verifyStore(wBase.root, {
+  collector: COLLECTOR, vkey: wBase.vkey, policy: wBase.policy, disclosed: wBase.disclosed,
+});
+if (wBaseReport.summary.failed !== 0) {
+  console.error('The WITNESSED baseline does not verify, so no witnessed result below means anything.');
+  console.error(JSON.stringify(wBaseReport.findings, null, 2));
+  process.exit(1);
+}
+console.log(`witnessed baseline  VERIFIES   (sequence quorum `
+  + `${wBaseReport.quorum.observed.sequence}/${wBaseReport.quorum.required}, `
+  + `${wBase.disclosed.length} height(s) independently retained)\n`);
+
 let mismatches = 0;
 /** @type {import('./gates.mjs').Observation[]} */
 const observations = [];
+const codesOf = (/** @type {any} */ report) =>
+  [...new Set(report.findings.filter((/** @type {any} */ f) => f.verdict === 'fail')
+    .map((/** @type {any} */ f) => f.code))].join(', ');
+
 for (const attack of attacks) {
+  // Run 1 — files alone. What a reader with the store and nothing else sees.
   const ctx = await build();
   await attack.apply(ctx);
   const report = await verifyStore(ctx.root, { collector: COLLECTOR, vkey: ctx.vkey });
   const observed = report.summary.failed > 0 ? 'detected' : 'undetected';
-  const codes = [...new Set(report.findings.filter((f) => f.verdict === 'fail').map((f) => f.code))].join(', ');
   const label = observed === 'detected' ? 'DETECTED    ' : 'UNDETECTED >>';
   const drift = observed === attack.expect ? '' : '   <-- CHANGED from expected: ' + attack.expect;
   if (observed !== attack.expect) mismatches += 1;
-  observations.push({ id: attack.id, gate: attack.gate, expect: attack.expect, observed });
+
+  // Run 2 — the same attack against a store a stateful witness countersigned,
+  // verified by a reader holding the witness's retained heights.
+  const wctx = await buildWitnessed();
+  await attack.apply(wctx);
+  const wReport = await verifyStore(wctx.root, {
+    collector: COLLECTOR, vkey: wctx.vkey, policy: wctx.policy, disclosed: wctx.disclosed,
+  });
+  const wObserved = wReport.summary.failed > 0 ? 'detected' : 'undetected';
+  const wExpect = attack.expect_witnessed ?? attack.expect;
+  const wDrift = wObserved === wExpect ? '' : '   <-- CHANGED from expected: ' + wExpect;
+  if (wObserved !== wExpect) mismatches += 1;
+
+  observations.push({
+    id: attack.id, gate: attack.gate, expect: attack.expect, observed,
+    expect_witnessed: wExpect, observed_witnessed: wObserved,
+  });
 
   console.log(`${label}  ${attack.id}. ${attack.name}   [${attack.gate}]${drift}`);
   console.log(`               ${attack.note}`);
-  if (codes) console.log(`               splitstick verify: ${codes}`);
+  if (codesOf(report)) console.log(`               files alone:       ${codesOf(report)}`);
+  console.log(`               with a witness:    ${wObserved.toUpperCase()}`
+    + `${codesOf(wReport) ? '   ' + codesOf(wReport) : ''}${wDrift}`);
   if (attack.closes) console.log(`               closed by:         ${attack.closes}`);
   console.log();
 }
 
-const detected = attacks.filter((a) => a.expect === 'detected');
-const open = attacks.filter((a) => a.expect === 'undetected');
-console.log(`${detected.length} of ${attacks.length} tampers are detected by splitstick verify from files alone.`);
-console.log(`${open.length} are not, and each names the milestone that closes it: ${open.map((a) => a.id).join(', ')}.`);
-console.log('None of those needs new cryptography. Each needs a second party, which is the shape of the problem.\n');
+const localDetected = observations.filter((o) => o.observed === 'detected');
+const localOpen = observations.filter((o) => o.observed !== 'detected');
+const witnessedOpen = observations.filter((o) => o.observed_witnessed !== 'detected');
+console.log(`${localDetected.length} of ${attacks.length} tampers are detected from files alone.`);
+console.log(`${localOpen.length} are not: ${localOpen.map((o) => o.id).join(', ')}.`);
+console.log(`With a stateful witness configured and its retained heights in the reader's hands, `
+  + `${attacks.length - witnessedOpen.length} of ${attacks.length} are detected.`);
+if (witnessedOpen.length > 0) {
+  console.log(`Still open even then: ${witnessedOpen.map((o) => o.id).join(', ')}.`);
+}
+console.log('That difference is the whole argument: none of it is new cryptography, all of it is a');
+console.log('second party. A notary you supply to yourself is not a notary.\n');
 
 // Which gates must hold is read from the plan, and whether they hold is read
 // from what the attacks actually did — not from what they declare. Both were

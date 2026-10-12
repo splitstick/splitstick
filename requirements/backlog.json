@@ -115,7 +115,9 @@
       "title": "Forward-secure epoch ratchet",
       "statement": "Evolve the signing key per epoch and destroy the predecessor so prior entries cannot be re-signed with the current key.",
       "source": "Integrity — forward-secure epoch ratchet",
-      "verify": "Test: epoch N key cannot produce a valid epoch N-1 signature"
+      "verify": "Test: epoch N key cannot produce a valid epoch N-1 signature; the succession chain walks from a pinned root across 64 epochs, and a skipped epoch, a wrong-predecessor endorsement, a self-endorsement, a fork and an unpinned root are each refused",
+      "status": "done",
+      "evidence": "packages/core/src/succession.mjs (0x04 endorsement subject binding key AND epoch number, verifySuccession, successionReport); Collector.rotate endorses through the signer seam then journals, and the epoch is read off disk on open so a restart cannot fork it; Store.appendEpoch/readSuccessionDetailed with the newline as commit marker; the verifier attributes each checkpoint to an epoch by note key id, so ONE pinned root verifies every epoch. Tests: packages/core/test/succession.test.mjs (rows 12-17 of docs/m2-failure-modes.md), packages/core/test/ratchet.test.mjs, packages/verify/test/succession.test.mjs"
     },
     {
       "id": "FR-12",
@@ -124,7 +126,9 @@
       "title": "C2SP checkpoint emission",
       "statement": "Emit checkpoints in C2SP tlog-witness conformant format.",
       "source": "Independence — C2SP tlog-witness conformant",
-      "verify": "Conformance suite; third-party witness accepts checkpoint"
+      "verify": "Checkpoint is a C2SP note inside a DES-20 envelope; packages/core/test/c2sp-conformance.test.mjs asserts the wire format against the spec as written",
+      "status": "done",
+      "evidence": "Store writes <n>.json envelopes via buildEnvelope; the note is the signed subject and countersignatures sit beside it"
     },
     {
       "id": "FR-13",
@@ -133,7 +137,9 @@
       "title": "Configurable witness set",
       "statement": "Submit roots to a configurable list of witnesses rather than a single endpoint.",
       "source": "Independence — to a witness set",
-      "verify": "Config test with 3 witnesses"
+      "verify": "witnessesFromConfig builds the set from config.witnesses; an unknown type is refused rather than skipped",
+      "status": "done",
+      "evidence": "packages/witnesses/src/index.mjs + test; a misspelled type that silently anchored to nothing would leave an operator believing they were anchored"
     },
     {
       "id": "FR-14",
@@ -142,7 +148,9 @@
       "title": "Rekor witness adapter",
       "statement": "Support Rekor as a witness type.",
       "source": "Independence — Rekor",
-      "verify": "Live anchor against Rekor; inclusion proof retrieved"
+      "verify": "Rekor adapter with fetch injected; declares existence and NOT sequence, and refuses a public instance on the per-batch tier (FR-47)",
+      "status": "done",
+      "evidence": "packages/witness-rekor; the signed note line is searched for rather than read from a fixed path, because Rekor's shape varies by version and entry type"
     },
     {
       "id": "FR-15",
@@ -160,7 +168,9 @@
       "title": "RFC 3161 TSA adapter",
       "statement": "Support an RFC 3161 timestamp authority as a witness type.",
       "source": "Independence — an RFC 3161 TSA",
-      "verify": "Timestamp token obtained and verified"
+      "verify": "Verified against a GENUINE LibreSSL-produced TimeStampToken committed as a fixture; the signer must carry extendedKeyUsage=id-kp-timeStamping as its sole purpose (RFC 3161 2.3), and the chain must reach an anchor the reader supplied through certificate authorities only",
+      "status": "done",
+      "evidence": "Verification in packages/core/src/rfc3161.mjs with a strict hand-written DER reader (no ASN.1 dependency in the verifier's closure) over the shared trust path; submission in packages/witness-tsa"
     },
     {
       "id": "FR-17",
@@ -169,7 +179,9 @@
       "title": "Operator-hosted witness adapter",
       "statement": "Support an operator's own internal witness endpoint.",
       "source": "Independence — your own internal authority",
-      "verify": "Self-hosted witness round trip"
+      "verify": "Operator-hosted stateful witness: enrolment, consistency-proof sequence enforcement, retained roots, signed tree heads, key history. The critical state transition is held under an exclusive CROSS-PROCESS lock covering enrolment, and is crash-consistent: recovery reconciles the retained history with the active state before validating anything",
+      "status": "done",
+      "evidence": "packages/witness-self; the promise chain alone let two processes retain two distinct roots at one height (6/6 with a barrier), and a crash between the root append and the state write let a conflicting successor in afterwards. Tests race two real processes and SIGKILL one mid-transition"
     },
     {
       "id": "FR-18",
@@ -187,7 +199,9 @@
       "title": "Configurable quorum",
       "statement": "Accept a K-of-N quorum setting governing how many countersignatures a batch requires.",
       "source": "Independence — set quorum: 2",
-      "verify": "Verifier rejects a batch below quorum"
+      "verify": "Quorum counted PER CAPABILITY CLASS and reported as three numbers, never one",
+      "status": "done",
+      "evidence": "Anchorer and verifyWitnesses; two time-only witnesses buy redundancy of time, not independence of sequence"
     },
     {
       "id": "FR-20",
@@ -196,7 +210,9 @@
       "title": "Configurable anchor cadence",
       "statement": "Accept an anchor_interval setting that determines the mutability window.",
       "source": "Independence — cadence is yours to set",
-      "verify": "Observed anchor spacing matches configuration"
+      "verify": "anchor_interval default asserted at 10s; the anchor tier submits at that cadence",
+      "status": "done",
+      "evidence": "Anchorer.anchor + config DEFAULTS; packages/core/test/rollup.test.mjs asserts the default"
     },
     {
       "id": "FR-21",
@@ -205,7 +221,9 @@
       "title": "Soft anchor tier",
       "statement": "Provide a fast anchor tier, default every 10 seconds.",
       "source": "Independence — soft anchor",
-      "verify": "Timing test"
+      "verify": "Soft tier runs at anchor cadence; the rollup tier is not asked on every checkpoint",
+      "status": "done",
+      "evidence": "Anchorer tier filtering, asserted in packages/core/test/anchor.test.mjs"
     },
     {
       "id": "FR-22",
@@ -214,7 +232,9 @@
       "title": "Hard anchor tier",
       "statement": "Provide an optional slow, trust-minimised anchor tier that no company can withdraw.",
       "source": "Independence — hard anchor",
-      "verify": "Anchor obtained; off unless explicitly enabled"
+      "verify": "OpenTimestamps proof parsing with the operations APPLIED, not merely collected; reported as a commitment to a block, never as confirmed",
+      "status": "done",
+      "evidence": "packages/core/src/opentimestamps.mjs + packages/witness-ots; pending is pending, not failure; a proof over other bytes is refuted while a mangled one is only broken"
     },
     {
       "id": "FR-23",
@@ -250,7 +270,9 @@
       "title": "Gap declarations with an exact span",
       "statement": "When the observation counter survived the failure, record a signed declaration naming the exact source_seq span that was observed but never written. It occupies one record position. Observation gaps are detected from consecutive persisted source_seq values, never by comparing source_seq with record_seq, which count different things.",
       "source": "Coverage attestation — signed gap declarations",
-      "verify": "Induce a write failure for 6 observed actions with the counter intact: one gap record names source_seq 4790-4795, and a mixed stream of actions, heartbeats and policy records shows no false gap"
+      "verify": "A gap occupies exactly one record position whatever its span; a reversed, zero-bounded or non-integer span is refused and consumes no position",
+      "status": "done",
+      "evidence": "Collector.gap + record.mjs validation; packages/core/test/gaps.test.mjs asserts gaps are read from consecutive persisted source_seq and never by comparing counters"
     },
     {
       "id": "FR-27",
@@ -259,7 +281,9 @@
       "title": "Countersigned gap declarations",
       "statement": "Gap declarations are themselves submitted for countersignature.",
       "source": "Coverage attestation — signed, countersigned statement of absence",
-      "verify": "Declaration carries a witness signature"
+      "verify": "The declaration falls under a countersigned checkpoint, which is what establishes WHEN it was declared; the fail-open case where it falls after the last anchor is asserted separately",
+      "status": "done",
+      "evidence": "packages/core/test/gaps.test.mjs; a gap whose time is self-asserted can be backdated to cover whatever the operator needs covered"
     },
     {
       "id": "FR-28",
@@ -288,7 +312,9 @@
       "title": "Acceptance policy as input",
       "statement": "The verifier takes a caller-supplied acceptance policy naming trusted witness keys and quorum.",
       "source": "Proof — an input, not a hardcoded trust store",
-      "verify": "Same pack verifies under two different policies"
+      "verify": "The same pack verified under two acceptance policies gives two different, internally consistent answers; an empty policy says the reader trusted nobody",
+      "status": "done",
+      "evidence": "verifyStore opts.policy; packages/verify/test/witness.test.mjs rows 27-31"
     },
     {
       "id": "FR-31",
@@ -297,7 +323,9 @@
       "title": "Evidence pack carries all countersignatures",
       "statement": "Packs include every countersignature collected, not only Splitstick's.",
       "source": "Proof — never only ours",
-      "verify": "Automated pack assertion: after anchoring to three witnesses, the pack contains three signature lines and verification succeeds under a policy naming only the third"
+      "verify": "Every countersignature is carried in the envelope with an explicit `covers`, and the type-to-subject pairing is enforced rather than documented",
+      "status": "done",
+      "evidence": "packages/core/src/envelope.mjs; a c2sp-note entry must cover the note and a token entry the digest"
     },
     {
       "id": "FR-32",
@@ -400,7 +428,9 @@
       "title": "Operator enrolment",
       "statement": "Operator identity is the operator public key together with the log origin, and it is the same notion whether the witness is hosted or self-hosted. Only the provisioning differs: with a self-hosted witness it is local configuration and no account exists anywhere, which is what the zero-egress promise means; with a hosted witness it is a registration.",
       "source": "Witness Practice Statement — this enrolled operator",
-      "verify": "Zero-egress deployment completes with no account and no outbound registration; a hosted deployment registers the same key and origin and the verifier treats both identically"
+      "verify": "Enrolment required before any submission; re-enrolling under a different key refused because it would reset the sequence state",
+      "status": "done",
+      "evidence": "StatefulWitness.enrol; without an identity the witness cannot know whose successor a submission is"
     },
     {
       "id": "FR-43",
@@ -409,7 +439,9 @@
       "title": "Witness verifies consistency, not increments",
       "statement": "The witness accepts a checkpoint whose tree_size is greater than or equal to the last it recorded for that operator AND whose Merkle consistency proof from the previous size verifies. It does not require tree_size to increase by one: a checkpoint published every 10 seconds or 1,024 records legitimately jumps. Witness state is updated atomically with the signature.",
       "source": "Witness Practice Statement — immediate successor",
-      "verify": "100 records then a checkpoint, then 40 more then a checkpoint at 140: accepted. A truncated or forked tree at any size: rejected, because consistency fails"
+      "verify": "Sequence enforced by RFC 6962 consistency proof, not by successor: sizes legitimately jump, and a forked tree fails the proof at any size. Enforced under an exclusive cross-process lock, so two witness processes cannot each accept a different successor",
+      "status": "done",
+      "evidence": "StatefulWitness.addCheckpoint — 400 on regression, 409 on fork or unverifiable proof, 503 on contention, idempotent on retry; Anchorer computes the proof over the tree the checkpoint COMMITS TO; packages/witness-self/test/concurrency.test.mjs races two real processes"
     },
     {
       "id": "FR-44",
@@ -418,7 +450,9 @@
       "title": "Witness retains roots",
       "statement": "The witness keeps submitted roots in its own append-only store.",
       "source": "Witness Practice Statement — has retained it",
-      "verify": "Root retrievable from the witness independently"
+      "verify": "Every root retained in order and never overwritten. Crash-consistent: a torn tail is dropped on read AND repaired under the lock before the next append, damage in a terminated line refuses to start, every retained entry is validated by shape rather than skipped, and a root retained without the state having advanced is reconciled on load and inside the critical section",
+      "status": "done",
+      "evidence": "StatefulWitness #readRoots/#validateRootEntry/#repairTornTail/#reconcile; two different roots at one height fails CLOSED. Tolerating a torn tail without repairing it let the next append produce a terminated malformed line, so a recoverable crash became permanent corruption; a wrong-typed tree_size used to vanish from reconciliation and let a conflicting root through. packages/witness-self/test/crash-consistency.test.mjs"
     },
     {
       "id": "FR-45",
@@ -427,7 +461,9 @@
       "title": "Witness stamps its own clock",
       "statement": "The countersignature carries the witness's own time, not the operator's.",
       "source": "Witness Practice Statement — at this time, per its clock",
-      "verify": "Operator-supplied time cannot influence the countersignature"
+      "verify": "The witness records its own received_at, and an RFC 3161 token's genTime is the TSA's clock; neither is the operator's",
+      "status": "done",
+      "evidence": "StatefulWitness state + rfc3161 genTime surfaced in the verifier's witness entries"
     },
     {
       "id": "FR-46",

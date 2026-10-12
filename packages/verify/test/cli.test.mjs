@@ -45,7 +45,7 @@ test('a clean store exits 1 for inconclusive, with no failures', async () => {
   const { root, vkey } = await evidence();
   const r = await run([root, '--collector', 'host-1', '--key', vkey]);
   assert.equal(r.code, 1);
-  assert.match(r.stdout, /verdict\s+INCONCLUSIVE\s+\(7 checks passed, 4 could not be answered, 0 failed\)/);
+  assert.match(r.stdout, /verdict\s+INCONCLUSIVE\s+\(8 checks passed, 4 could not be answered, 0 failed\)/);
   assert.match(r.stdout, /\[ ok \] CHAIN/);
   assert.match(r.stdout, /\[ ok \] OP-SIG/);
   assert.match(r.stdout, /\[ \?\? \] WITNESS/);
@@ -112,4 +112,57 @@ test('NFR-05: the CLI runs with an empty environment', async () => {
   });
   assert.equal(r.code, 1, r.stderr);
   assert.match(r.stdout, /verdict\s+INCONCLUSIVE/);
+});
+
+
+// ── The flags, and the one that used to be ignored ──────────────────────────
+
+test('an unknown flag is refused, not ignored', async () => {
+  // `--vkey` is a plausible misremembering of `--key`, the flag that pins the
+  // identity everything else depends on. It used to be accepted and skipped,
+  // producing a clean-looking report that said no identity was pinned —
+  // silently answering a different question than the one asked.
+  const { root, vkey } = await evidence();
+  const r = await run([root, '--collector', 'host-1', '--vkey', vkey]);
+  assert.equal(r.code, 3);
+  assert.match(r.stderr, /not a flag this reads/);
+  assert.match(r.stderr, /--key/);
+  assert.equal(r.stdout, '', 'and no report is printed at all');
+});
+
+test('--policy makes the acceptance policy reachable from the command line', async () => {
+  // FR-30's whole point is that the policy is an input. It existed in the API
+  // and had no flag, so a reader using the CLI could not supply one.
+  const path = join(mkdtempSync(join(tmpdir(), 'ss-pol-')), 'policy.json');
+  // A policy NAMING a witness, so the assertion is that the file was read and
+  // acted on. An empty policy would have proved nothing: with no
+  // countersignatures in the pack the report says so either way, and the test
+  // would pass whether or not the flag worked.
+  writeFileSync(path, JSON.stringify({
+    quorum: 1, witnesses: [{ id: 'audit.internal', establishes: ['sequence'] }],
+  }));
+  const { root, vkey } = await evidence();
+  const r = await run([root, '--collector', 'host-1', '--key', vkey, '--policy', path]);
+  assert.notEqual(r.code, 3);
+  assert.match(r.stdout, /WITNESS_MISSING/);
+  assert.match(r.stdout, /audit\.internal/);
+});
+
+test('a --policy that cannot be read is refused rather than treated as absent', async () => {
+  const { root, vkey } = await evidence();
+  const r = await run([root, '--collector', 'host-1', '--key', vkey, '--policy', '/nonexistent/p.json']);
+  assert.equal(r.code, 3);
+  assert.match(r.stderr, /--policy could not be read/);
+  // Treating it as absent would make the report say the reader trusted nobody,
+  // which is a different and much weaker answer than the one they asked for.
+  assert.equal(r.stdout, '');
+});
+
+test('--disclosed makes the cross-pack comparison reachable', async () => {
+  const path = join(mkdtempSync(join(tmpdir(), 'ss-disc-')), 'd.json');
+  writeFileSync(path, JSON.stringify([{ tree_size: 9999, root: Buffer.alloc(32).toString('base64') }]));
+  const { root, vkey } = await evidence();
+  const r = await run([root, '--collector', 'host-1', '--key', vkey, '--disclosed', path]);
+  assert.equal(r.code, 2);
+  assert.match(r.stdout, /TRUNCATED_BELOW_DISCLOSED/);
 });

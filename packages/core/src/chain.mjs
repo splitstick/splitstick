@@ -18,6 +18,7 @@
 
 import { createHash } from 'node:crypto';
 import { leafDigest } from './leaf.mjs';
+import { validateFindings } from './findings.mjs';
 import { validateRecord } from './record.mjs';
 
 /** 0x02 — chain. Distinct from 0x00 (leaf) and 0x01 (Merkle node). */
@@ -80,7 +81,7 @@ export function chainEntry(record, salt, prev) {
 }
 
 /**
- * @typedef {object} Finding
+ * @typedef {object} ChainFinding
  * @property {string} code a DES-12 failure code
  * @property {number} [record_seq]
  * @property {string} detail what a reader may conclude
@@ -93,10 +94,10 @@ export function chainEntry(record, salt, prev) {
  *
  * Returns findings rather than throwing: a contradiction is a verdict.
  * @param {ChainEntry[]} entries
- * @returns {{ ok: boolean, tree_size: number, findings: Finding[] }}
+ * @returns {{ ok: boolean, tree_size: number, findings: ChainFinding[] }}
  */
 export function recomputeChain(entries) {
-  /** @type {Finding[]} */
+  /** @type {ChainFinding[]} */
   const findings = [];
   let prev = genesis();
   let lastSeq = 0;
@@ -185,6 +186,6 @@ export function recomputeChain(entries) {
     // itself; a boolean cannot carry three.
     ok: findings.length === 0,
     tree_size: entries.length,
-    findings,
+    findings: validateFindings(findings, 'recomputeChain'),
   };
 }

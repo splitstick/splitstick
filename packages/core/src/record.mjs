@@ -23,7 +23,7 @@ export const SUITE = 'SS1';
 
 /** Closed enum. An unknown kind makes a record unverifiable, not ignorable. */
 export const RECORD_KINDS = Object.freeze(
-  ['tool_call', 'approval', 'heartbeat', 'gap', 'gap_unknown', 'policy', 'padding']);
+  ['tool_call', 'approval', 'heartbeat', 'gap', 'gap_unknown', 'policy', 'custody', 'padding']);
 
 /** Kinds that represent an observation and therefore carry a source_seq. */
 const OBSERVATION_KINDS = new Set(['tool_call', 'approval']);
@@ -53,8 +53,35 @@ const ALLOWED = Object.freeze({
   gap: [...ENVELOPE, 'from_source_seq', 'to_source_seq', 'reason'],
   gap_unknown: [...ENVELOPE, 'from_ts', 'to_ts', 'last_checkpoint_source_seq'],
   policy: [...ENVELOPE, 'previous_policy', 'next_policy'],
+  // FR-65 — the operator's declaration of how the epoch's key is held.
+  //
+  // It is a RECORD rather than a field on the checkpoint because a verifier
+  // cannot tell custody from a signature: an HSM signature and one produced
+  // from a PEM file on disk are byte-identical. Putting the declaration in the
+  // chain means altering it later breaks the chain, and countersigning the
+  // checkpoint above it fixes when it was made.
+  //
+  // It establishes that the operator ASSERTED a class. It does not establish
+  // the class. `custody_basis` is therefore constrained to the single value
+  // 'operator-declared': 'independently-supported' is a conclusion a verifier
+  // reaches by validating a provider attestation (FR-70), never something the
+  // operator writes about themselves.
+  custody: [...ENVELOPE, 'epoch', 'public_key', 'custody_class', 'custody_basis'],
   padding: [...ENVELOPE, 'pad'],
 });
+
+/**
+ * The only basis a custody RECORD may declare. See the `custody` allowlist
+ * above for why there is exactly one.
+ */
+export const CUSTODY_BASES = Object.freeze(['operator-declared']);
+
+/**
+ * Mirrors signer.mjs's list. Imported rather than duplicated would be cleaner,
+ * but record.mjs is the one module a pack validator can be handed on its own,
+ * and it must not pull in the signer seam to check a string.
+ */
+const CUSTODY_CLASSES = Object.freeze(['software', 'kms', 'hsm']);
 
 /** Fields an approval object may carry. */
 const APPROVAL_FIELDS = ['decision', 'reviewer', 'request'];
@@ -67,6 +94,8 @@ const HEX32 = /^[0-9a-f]{32}$/;
 // the bytes move, and 16 bits of collision resistance does not carry it.
 const CID = /^sha256:[0-9a-f]{64}$/;
 const RFC3339 = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+/** Exactly 32 bytes, base64 — 43 characters and one '=' of padding. */
+const B64_32 = /^[A-Za-z0-9+/]{43}=$/;
 const DIGEST = /^sha256:[0-9a-f]{64}$/;
 
 /** @param {Record<string, unknown>} r @param {string} f */
@@ -207,6 +236,12 @@ export function validateRecord(rec) {
     for (const f of ['from_source_seq', 'to_source_seq']) {
       req(r, f);
       if (!Number.isInteger(r[f])) throw new RecordError(`${f} must be an integer`);
+      // source_seq starts at 1 (DES-01), so a span bounded by 0 names an
+      // observation that cannot exist — and a gap's whole value is that its
+      // span is exact.
+      if (/** @type {number} */ (r[f]) < 1) {
+        throw new RecordError(`${f} must be at least 1: source_seq counts observations from 1`);
+      }
     }
     if (/** @type {number} */ (r.from_source_seq) > /** @type {number} */ (r.to_source_seq)) {
       throw new RecordError('a gap span must not end before it starts');
@@ -239,6 +274,28 @@ export function validateRecord(rec) {
       if (typeof r[f] !== 'string' || !DIGEST.test(/** @type {string} */ (r[f]))) {
         throw new RecordError(`${f} must be a full sha256 digest of the effective policy`);
       }
+    }
+  }
+
+  if (kind === 'custody') {
+    for (const f of ['epoch', 'public_key', 'custody_class', 'custody_basis']) req(r, f);
+    if (!Number.isSafeInteger(r.epoch) || /** @type {number} */ (r.epoch) < 0) {
+      throw new RecordError(`epoch ${JSON.stringify(r.epoch)} is not a non-negative integer`);
+    }
+    if (typeof r.public_key !== 'string' || !B64_32.test(r.public_key)) {
+      throw new RecordError('public_key must be a 32-byte Ed25519 key, base64');
+    }
+    if (!CUSTODY_CLASSES.includes(/** @type {string} */ (r.custody_class))) {
+      throw new RecordError(
+        `custody_class ${JSON.stringify(r.custody_class)} is not one of ${CUSTODY_CLASSES.join(', ')}`,
+      );
+    }
+    if (!CUSTODY_BASES.includes(/** @type {string} */ (r.custody_basis))) {
+      throw new RecordError(
+        `custody_basis ${JSON.stringify(r.custody_basis)} is refused: a record may only declare `
+        + `${CUSTODY_BASES.join(', ')}. Independent support is a conclusion a verifier reaches by `
+        + 'validating a provider attestation (FR-70), not a claim an operator makes about itself',
+      );
     }
   }
 

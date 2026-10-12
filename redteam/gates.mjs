@@ -27,14 +27,19 @@
  * @typedef {object} Observation
  * @property {string} id
  * @property {string} gate
- * @property {'detected'|'undetected'} expect what the suite declares
- * @property {'detected'|'undetected'} observed what the run actually produced
+ * @property {'detected'|'undetected'} expect what the suite declares for a
+ *   reader holding the store and nothing else
+ * @property {'detected'|'undetected'} observed what that run actually produced
+ * @property {'detected'|'undetected'} [expect_witnessed] what the suite declares
+ *   for a reader who also holds a stateful witness's retained heights
+ * @property {'detected'|'undetected'} [observed_witnessed] what THAT run produced
  */
 
 /**
  * @typedef {object} Gate
  * @property {string} gate
  * @property {string} milestone
+ * @property {'local'|'witnessed'} evidence the configuration it is claimed in
  * @property {boolean} held
  * @property {boolean} missing true when no attack exercises the class at all
  * @property {string[]} detected
@@ -42,7 +47,8 @@
  */
 
 /**
- * @param {{ milestones: { id: string, gate?: string[], shipped?: boolean }[] }} plan
+ * @param {{ milestones: { id: string, gate?: string[], shipped?: boolean,
+ *   gate_evidence?: 'local'|'witnessed' }[] }} plan
  * @param {Observation[]} observations
  * @returns {{ due: Gate[], scheduled: { gate: string, milestone: string }[], unmet: number }}
  */
@@ -55,12 +61,26 @@ export function evaluateGates(plan, observations) {
   for (const m of plan.milestones) {
     for (const gate of m.gate ?? []) {
       if (!m.shipped) { scheduled.push({ gate, milestone: m.id }); continue; }
+      // Which configuration a gate is evaluated in is declared by the
+      // milestone, never inferred. AC-1 and AC-2 are local properties: M1
+      // closed them with files alone. AC-3, AC-4 and AC-5 cannot be closed
+      // locally by anything — that is the thesis, not a shortfall — so M3a
+      // declares `gate_evidence: "witnessed"` and the gate reads the run in
+      // which a second party's retained heights are in the reader's hands.
+      //
+      // Reading the witnessed run for a gate that did not ask for it would
+      // launder a local claim into one that needs an operator to stand up a
+      // witness, so the field is required to be explicit and defaults to local.
+      const evidence = m.gate_evidence ?? 'local';
       const assigned = observations.filter(o => o.gate === gate);
-      const detected = assigned.filter(o => o.observed === 'detected').map(o => o.id);
-      const outstanding = assigned.filter(o => o.observed !== 'detected').map(o => o.id);
+      const result = (/** @type {Observation} */ o) =>
+        (evidence === 'witnessed' ? (o.observed_witnessed ?? o.observed) : o.observed);
+      const detected = assigned.filter(o => result(o) === 'detected').map(o => o.id);
+      const outstanding = assigned.filter(o => result(o) !== 'detected').map(o => o.id);
       due.push({
         gate,
         milestone: m.id,
+        evidence,
         // A class with no attack at all is not closed either: a gate nothing
         // exercises cannot be evidence of anything.
         missing: assigned.length === 0,
@@ -79,9 +99,10 @@ export function formatGates(result) {
   const lines = result.due
     .sort((a, b) => a.gate.localeCompare(b.gate))
     .map(g => {
+      const how = g.evidence === 'witnessed' ? ' with a witness configured' : ' from files alone';
       if (g.missing) return `gate ${g.gate}   NOT MET   (${g.milestone} claims it and no attack exercises it)`;
-      if (g.held) return `gate ${g.gate}   HELD      (${g.detected.join(', ')})`;
-      return `gate ${g.gate}   NOT MET   (still undetected: ${g.outstanding.join(', ')})`;
+      if (g.held) return `gate ${g.gate}   HELD${how}   (${g.detected.join(', ')})`;
+      return `gate ${g.gate}   NOT MET${how}   (still undetected: ${g.outstanding.join(', ')})`;
     });
   if (result.scheduled.length) {
     lines.push('', 'scheduled   ' + result.scheduled

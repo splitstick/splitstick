@@ -6,7 +6,9 @@
     "title": "Shipped default witness configuration",
     "statement": "Ship a default the project neither operates nor overloads: an RFC 3161 timestamp authority for the per-batch countersignature and clock, plus a trust-minimised roll-up anchor on a slow interval. A transparency log such as Rekor is opt-in — for operators self-hosting one, or whose volume suits a public instance — and never the shipped default, because a 10-second cadence against a public good is not acceptable use.",
     "source": "Independence — the shipped default anchors to a log we do not run",
-    "verify": "Default config asserted in test; a day of operation produces no more than the configured roll-up count against any public service"
+    "verify": "The canonical default-config.yaml is read by the test, so the shipped default cannot drift from what is asserted; defaultWitnessWarning() states that it does NOT close classes 4 and 5",
+    "status": "done",
+    "evidence": "packages/witnesses; TSA plus OpenTimestamps roll-up, Rekor commented out with FR-47's reason"
   },
   {
     "id": "FR-49",
@@ -24,7 +26,9 @@
     "title": "Witness publishes signed tree heads",
     "statement": "The witness publishes its own signed tree head so an operator or third party can detect a rolled-back or equivocating witness.",
     "source": "Durability — losing a witness must not lose the evidence",
-    "verify": "Rollback simulation: a witness serving an earlier head is detected"
+    "verify": "The witness publishes its own signed tree head; detectRollback compares two observed heads and says which contradicts which",
+    "status": "done",
+    "evidence": "StatefulWitness.treeHead + client.detectRollback; the earlier head must have been RETAINED by whoever polled it, which the module says"
   },
   {
     "id": "FR-51",
@@ -73,7 +77,9 @@
     "title": "Witness time source",
     "statement": "The witness clock derives from a documented, traceable time source, and the verifier surfaces the witness's declared time discipline.",
     "source": "Durability — the clock the witness stamps with",
-    "verify": "Time source documented; drift monitored and alerted"
+    "verify": "Every witness type declares its time discipline, including that OpenTimestamps is not a clock at all and a TSA's clock is disciplined as its practice statement says and no better",
+    "status": "done",
+    "evidence": "TIME_DISCIPLINE in packages/witnesses"
   },
   {
     "id": "OPS-06",
@@ -160,7 +166,9 @@
     "title": "Roll-up anchoring",
     "statement": "Anchor a periodic summary checkpoint covering many batches, separately from the per-batch soft anchor, so a public or rate-limited witness receives a handful of entries per day rather than thousands.",
     "source": "Independence — tiered anchoring",
-    "verify": "A day of 10-second batches produces one roll-up entry per configured interval, and the roll-up proves inclusion of every batch beneath it"
+    "verify": "A roll-up commits to the CHECKPOINT NOTES; a single batch is provable under it by an ordinary inclusion proof, and successive roll-ups are prefixes of each other",
+    "status": "done",
+    "evidence": "Collector.rollup + Anchorer.anchorRollup + verifyRollups; kept in their own directory because a roll-up read as a checkpoint is a false TREE_MISMATCH"
   },
   {
     "id": "FR-54",
@@ -169,7 +177,9 @@
     "title": "Cross-pack consistency verification",
     "statement": "Given two or more evidence packs, detect a record inconsistent with a checkpoint already countersigned in an earlier pack — so a record truncated below a height previously disclosed is contradicted offline, with no live service.",
     "source": "Proof — offline verification; Durability",
-    "verify": "Disclose at seq 5000, truncate to 4799, compare the two packs: the earlier countersigned checkpoint contradicts the later record"
+    "verify": "A pack disclosed earlier holding a countersigned height above where this record ends emits TRUNCATED_BELOW_DISCLOSED; a differing root at the same height is reported as a fork with neither preferred",
+    "status": "done",
+    "evidence": "verifyStore opts.disclosed"
   },
   {
     "id": "FR-55",
@@ -189,7 +199,9 @@
     "title": "Resist truncation below a disclosed height",
     "statement": "A record truncated below a sequence already disclosed in a countersigned pack must be detectable by comparing the two, without any stateful witness.",
     "source": "Attack class table, rows 4 and 5",
-    "verify": "Red-team class I: truncate below a disclosed height; cross-pack comparison fails closed"
+    "verify": "TRUNCATED_BELOW_DISCLOSED emitted from a height a counterparty already holds",
+    "status": "done",
+    "evidence": "verifyStore opts.disclosed + spec/failure-codes.json"
   },
   {
     "id": "DOC-09",
@@ -198,7 +210,9 @@
     "title": "Reconciliation guidance",
     "statement": "Document reconciliation against counterparty records as a detection method for erasure and omission, with its limits stated: it requires access to the counterparty and it is a procedure an auditor performs, not a guarantee the software makes.",
     "source": "Durability; Threat model — residual risk",
-    "verify": "Guidance published; the limits appear wherever the method is claimed"
+    "verify": "docs/reconciliation.md states the procedure and five limits: it needs access to the counterparty, it is a procedure with a procedure's failure modes, its coverage is bounded by the counterparty's completeness, it is retrospective, and it does not establish WHEN",
+    "status": "done",
+    "evidence": "docs/reconciliation.md, with the preference order putting it last because it is the most expensive and least verifiable"
   },
   {
     "id": "FR-56",
@@ -227,7 +241,9 @@
     "title": "Verifier states witness-set capabilities",
     "statement": "The verifier prints what the configured or observed witness set can and cannot establish — in particular whether any witness maintains operator sequence state, and therefore whether truncation above the last disclosed height is detectable at all.",
     "source": "Proof — offline verification; Independence",
-    "verify": "Test asserts a stateless witness set yields an explicit \"truncation not detectable above <height>\" line, and a stateful one does not"
+    "verify": "The capability statement is derived from the proofs actually present, not from configuration, and prints quorum per class",
+    "status": "done",
+    "evidence": "report() in packages/verify/src/verify.mjs"
   },
   {
     "id": "FR-58",
@@ -285,7 +301,9 @@
     "title": "Pinned operator identity",
     "statement": "The acceptance policy names the operator identity the reader expects, and the verifier reports any pack presented under a different key or origin rather than silently accepting it. Nothing prevents an operator maintaining a second log; the guarantee is that a reader who pinned an identity is told when they are shown another.",
     "source": "Proof — offline verification; Threat model",
-    "verify": "A pack under an unpinned key yields IDENTITY_UNPINNED; a pack under the pinned key verifies; the limit is documented as detection rather than prevention"
+    "verify": "A pack under another origin emits IDENTITY_UNPINNED; the right origin with the wrong key is also reported; pinning nothing reads as pinning nothing rather than as a pass",
+    "status": "done",
+    "evidence": "packages/verify/test/assumptions.test.mjs"
   },
   {
     "id": "FR-64",
@@ -303,7 +321,9 @@
     "title": "Operator-declared key custody",
     "statement": "The key custody class — non-exportable KMS or HSM, versus a software key — is declared in a chained record per epoch, because an HSM signature and a file-key signature are byte-identical and a verifier cannot otherwise tell them apart. The declaration proves the operator declared it, not that the key was non-exportable or later destroyed. Custody is reported as operator-declared unless a provider attestation document is supplied alongside, which is the only path to independently supported custody.",
     "source": "Integrity — forward-secure epoch ratchet",
-    "verify": "A verifier prints the declared class per epoch, labels it operator-declared, and refuses to claim forward secrecy for an epoch declared software-keyed; a supplied provider attestation is reported as independently supported"
+    "verify": "A `custody` record kind, chained; custody_basis admits only 'operator-declared' and the validator refuses 'independently-supported' outright",
+    "status": "done",
+    "evidence": "record.mjs allowlist + Collector.custody; rotate(next, {declare:true}) means an epoch is never undeclared"
   },
   {
     "id": "FR-66",
@@ -348,6 +368,8 @@
     "title": "Validate a provider custody attestation",
     "statement": "Before reporting custody as independently supported, validate the attestation: issuer chains to a provider root named in the acceptance policy, document signature valid over the bytes presented, attested key is the one that signed this epoch, attestation period covers the epoch, and the document actually asserts non-exportability. Even all five together do not establish historical key destruction, which remains operator-declared.",
     "source": "Integrity — forward-secure epoch ratchet",
-    "verify": "Five negative tests, one per check, each rejecting the attestation; a valid attestation yields independently-supported custody; destruction is still reported as operator-declared"
+    "verify": "All five checks reported separately, each with a test that breaks only it. Check 5 reads YubiHSM 2's own Origin and Capabilities BIT STRINGs at the OIDs Yubico publishes, and requires BOTH that the key was generated on the device (not imported, not imported under wrap) and that it lacks exportable-under-wrap. Fixtures are vendor FORMAT; no real provider document has ever been put through it, and every result carries provider_untested: true",
+    "status": "done",
+    "evidence": "packages/core/src/attestation.mjs over the shared packages/core/src/trustpath.mjs; an end-entity certificate cannot act as a CA; bit indexing follows Yubico's own reference parser (docs.yubico.com/hardware/oid/oid-product-arc.html, YubicoLabs/yubihsm-parse-attestation); establishes_destruction is hard-coded false with a test asserting it"
   }
 ]

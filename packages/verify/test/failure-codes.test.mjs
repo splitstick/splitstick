@@ -7,7 +7,7 @@ import { Collector } from '@splitstick/core/collector';
 import { Store } from '@splitstick/core/store';
 import { parseConfig } from '@splitstick/core/config';
 import { generateDevSigner } from '@splitstick/core/signer-file';
-import { formatVkey, checkpointText, encodeNote } from '@splitstick/core/note';
+import { formatVkey, checkpointText, encodeNote, parseNote } from '@splitstick/core/note';
 import { signNote } from '@splitstick/core/signer';
 import { treeRoot } from '@splitstick/core/merkle';
 import { verifyStore } from '../src/verify.mjs';
@@ -57,8 +57,10 @@ async function writeCheckpoint(ctx, seq, tree_size, root, suite = 'SS1') {
   const text = suite
     ? checkpointText({ origin: ORIGIN, tree_size, root, suite })
     : checkpointText({ origin: ORIGIN, tree_size, root });
-  writeFileSync(join(ctx.root, 'checkpoints', 'host-1', `${seq}.note`),
-    encodeNote(text, [await signNote(text, ctx.signer)]));
+  // Through the store, so the artefact is a DES-20 envelope. Writing a bare
+  // `.note` beside an existing envelope is now its own finding
+  // (ENVELOPE_NOTE_MISMATCH) and would mask the code each scenario is for.
+  ctx.store.writeCheckpoint(seq, encodeNote(text, [await signNote(text, ctx.signer)]));
 }
 
 /**
@@ -129,8 +131,127 @@ const SCENARIOS = {
     const other = await generateDevSigner(ORIGIN);
     const leaves = ctx.store.readChain().map(e => e.leaf);
     const text = checkpointText({ origin: ORIGIN, tree_size: leaves.length, root: treeRoot(leaves), suite: 'SS1' });
+    ctx.store.writeCheckpoint(1, encodeNote(text, [await signNote(text, other)]));
+  },
+  async SUCCESSION_BROKEN(ctx) {
+    // Rotate twice, then remove the middle epoch from the journal. Every
+    // remaining endorsement is valid; the chain simply no longer walks.
+    const second = await generateDevSigner(ORIGIN);
+    await ctx.collector.rotate(second);
+    const third = await generateDevSigner(ORIGIN);
+    await ctx.collector.rotate(third);
+    await ctx.collector.checkpoint();
+    const p = join(ctx.root, 'succession', 'host-1.jsonl');
+    const es = readFileSync(p, 'utf8').trim().split('\n').map(l => JSON.parse(l));
+    writeFileSync(p, [es[0], es[2]].map(e => JSON.stringify(e)).join('\n') + '\n');
+  },
+  async OPSIG_EPOCH_REGRESSED(ctx) {
+    // Checkpoint 1 is signed by epoch 0 and checkpoint 2 by epoch 1. Re-signing
+    // checkpoint 1 with epoch 2's key makes the ordinals run forwards while the
+    // epochs run backwards. Two rotations are needed, not one: re-signing with
+    // the immediate successor would make both checkpoints epoch 1, and equal
+    // epochs are not a regression — which is the wholesale case this check
+    // deliberately does not claim to catch.
+    const second = await generateDevSigner(ORIGIN);
+    await ctx.collector.rotate(second);
+    ctx.collector.action(tx({ correlation: 'c-after-rotation' }));
+    await ctx.collector.checkpoint();
+    const third = await generateDevSigner(ORIGIN);
+    await ctx.collector.rotate(third);
+    const first = ctx.store.readCheckpoints().find((/** @type {any} */ n) => n.seq === 1);
+    const { parseNote } = await import('@splitstick/core/note');
+    const text = parseNote(first.note).text;
+    ctx.store.writeCheckpoint(1, encodeNote(text, [await signNote(text, third)]));
+  },
+  async ENVELOPE_DIGEST_MISMATCH(ctx) {
+    const env = JSON.parse(String(ctx.store.readCheckpointEnvelope(1)));
+    env.note_digest = 'sha256:' + 'ab'.repeat(32);
+    ctx.store.writeCheckpointEnvelope(1, env);
+  },
+  async ENVELOPE_NOTE_MISMATCH(ctx) {
+    // An M1 `.note` left beside an M3a `.json` envelope for the same ordinal,
+    // holding a DIFFERENT note. Both are internally consistent — the envelope's
+    // digest matches its own note — so only comparing the two artefacts catches
+    // it, which is the point: one checkpoint, two stories.
+    const stale = checkpointText({
+      origin: ORIGIN, tree_size: 2, root: Buffer.alloc(32, 3), suite: 'SS1',
+    });
     writeFileSync(join(ctx.root, 'checkpoints', 'host-1', '1.note'),
-      encodeNote(text, [await signNote(text, other)]));
+      encodeNote(stale, [await signNote(stale, ctx.signer)]));
+  },
+  async ENVELOPE_DUPLICATE_ISSUER(ctx) {
+    const env = JSON.parse(String(ctx.store.readCheckpointEnvelope(1)));
+    const entry = {
+      type: 'rfc3161', issuer: 'tsa.example', covers: 'note_digest',
+      token: Buffer.from('token').toString('base64'),
+    };
+    env.countersignatures = [entry, { ...entry }];
+    ctx.store.writeCheckpointEnvelope(1, env);
+  },
+  async WITNESS_MISSING(ctx) {
+    return {
+      policy: { quorum: 1, witnesses: [{ id: 'audit.internal', establishes: ['sequence'] }] },
+    };
+  },
+  async WITNESS_SHORT(ctx) {
+    // One CHECKABLE time proof, and a policy demanding two of them.
+    //
+    // The first version of this used a placeholder RFC 3161 token, which was
+    // credited when nothing verified tokens. Now that FR-16 does, an
+    // unparseable token is credited with nothing — the class count stays at
+    // zero and the "short of quorum" branch is never reached, because "no
+    // accepted proof at all" is a different finding. A quorum can only be
+    // short if something counted.
+    const witness = await generateDevSigner('audit.internal');
+    const env = JSON.parse(String(ctx.store.readCheckpointEnvelope(1)));
+    const text = parseNote(env.note).text;
+    env.countersignatures = [{
+      type: 'c2sp-note', issuer: 'audit.internal', covers: 'note',
+      line: encodeNote(text, [await signNote(text, witness)]).trim().split('\n').at(-1),
+    }];
+    ctx.store.writeCheckpointEnvelope(1, env);
+    return {
+      policy: {
+        quorum: 2,
+        witnesses: [
+          {
+            id: 'audit.internal', establishes: ['time'],
+            public_key: witness.publicKey.toString('base64'),
+          },
+          { id: 'audit.secondary', establishes: ['time'] },
+        ],
+      },
+    };
+  },
+  async WITNESS_MISMATCH(ctx) {
+    const witness = await generateDevSigner('audit.internal');
+    const env = JSON.parse(String(ctx.store.readCheckpointEnvelope(1)));
+    // A line signed over OTHER bytes by the right witness key: the shape a
+    // rewritten history leaves, because the signature cannot be forged.
+    const elsewhere = checkpointText({
+      origin: ORIGIN, tree_size: 99, root: Buffer.alloc(32, 7), suite: 'SS1',
+    });
+    env.countersignatures = [{
+      type: 'c2sp-note', issuer: 'audit.internal', covers: 'note',
+      line: encodeNote(elsewhere, [await signNote(elsewhere, witness)]).trim().split('\n').at(-1),
+    }];
+    ctx.store.writeCheckpointEnvelope(1, env);
+    return {
+      policy: {
+        quorum: 1,
+        witnesses: [{
+          id: 'audit.internal', establishes: ['sequence'],
+          public_key: witness.publicKey.toString('base64'),
+        }],
+      },
+    };
+  },
+  async TRUNCATED_BELOW_DISCLOSED(ctx) {
+    // A pack already in a counterparty's hands holds a height above where this
+    // record ends. The operator cannot un-disclose it (DES-19).
+    return {
+      disclosed: [{ tree_size: 99, root: Buffer.alloc(32).toString('base64') }],
+    };
   },
   async OPSIG_UNCHECKED() {
     return { vkey: undefined };          // nothing pinned
