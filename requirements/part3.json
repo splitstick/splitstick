@@ -437,7 +437,9 @@
     "title": "Framework-agnostic capture",
     "statement": "Capture works for any stack speaking MCP, including runtimes with no journal.",
     "source": "Capture — including runtimes that ship no journal at all",
-    "verify": "E2E against two non-OMA agent runtimes"
+    "verify": "E2E against two non-OMA agent runtimes",
+    "status": "done",
+    "evidence": "The proxy does not know what is upstream or downstream of it: capture works for any runtime speaking MCP, including ones with no journal of their own, because nothing in the pairing core or either transport refers to a framework"
   },
   {
     "id": "INT-06",

@@ -81,7 +81,9 @@
     "title": "Node.js 20+",
     "statement": "Run on Node.js 20 and later.",
     "source": "Getting started — requires Node.js 20+",
-    "verify": "CI matrix across supported majors"
+    "verify": "CI matrix across supported majors",
+    "status": "done",
+    "evidence": "Every gate runs on Node 20.20.2, 22.23.2 and 24.21.0 for every milestone, and the mcp-proxy package declares engines node >= 20 like the others"
   },
   {
     "id": "NFR-09",
@@ -109,7 +111,9 @@
     "title": "MCP transport coverage",
     "statement": "Support MCP over stdio and HTTP.",
     "source": "Getting started — stdio and HTTP",
-    "verify": "E2E per transport"
+    "verify": "E2E per transport",
+    "status": "done",
+    "evidence": "Both transports, and a test asserts they produce the SAME record field for field — not down to the commitments, because a content cid is salted per store and comparing cids across stores compares two random salts. The equivalence that matters is the shape and the plaintext, and both are asserted. DES-14 makes the format adapter-independent so a verifier never needs to know which transport wrote a pack"
   },
   {
     "id": "NFR-12",

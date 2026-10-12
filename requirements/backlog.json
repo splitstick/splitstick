@@ -31,7 +31,9 @@
       "title": "MCP proxy collector (stdio)",
       "statement": "Intercept agent-to-MCP-server traffic over stdio and record every tool call and result.",
       "source": "Capture — two collectors",
-      "verify": "E2E test against a reference MCP server over stdio"
+      "verify": "E2E test against a reference MCP server over stdio",
+      "status": "done",
+      "evidence": "packages/mcp-proxy stdio transport over the shared Pairing core; the bytes forwarded are the bytes received, because re-serialising parsed JSON changes key order, whitespace and number formatting — the server would receive bytes the agent never sent and the record would attest to a request that was never made. Traffic that is not JSON-RPC is forwarded unchanged and reported rather than repaired or refused: repairing alters what is recorded, refusing decides what the agent may send"
     },
     {
       "id": "FR-04",
@@ -40,7 +42,9 @@
       "title": "MCP proxy collector (HTTP)",
       "statement": "Same capture over HTTP transport.",
       "source": "Getting started — tested against MCP servers over stdio and HTTP",
-      "verify": "E2E test against a reference MCP server over HTTP"
+      "verify": "E2E test against a reference MCP server over HTTP",
+      "status": "done",
+      "evidence": "The same Pairing core over HTTP, with the request and response bodies passed through as bytes. Headers are relayed with three corrections and each is load-bearing: `host` must name the upstream or a virtual-host server answers for the wrong site, `content-length` is recomputed because a stale length is how a request gets truncated, and hop-by-hop headers describe the agent's connection to the proxy rather than the proxy's to the upstream. An unreachable upstream is a 502 and not a proxy error, because a server outage that looks like a collector fault sends an operator to the wrong team"
     },
     {
       "id": "FR-05",
