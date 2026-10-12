@@ -148,6 +148,28 @@ Keyed by where the commitment sits on the record: `agent`, `args`, `result`,
 | `base64` | the plaintext, when `present` |
 | `salt` | the **content salt**, 32 hex characters, when `present` |
 
+**THE RECORD IS THE AUTHORITY, NOT THE CONTENT ENTRY.** The expected locations
+and their cids come from `record` — `agent`, `args`, `result`,
+`approval.reviewer`, `approval.request` — because the record is the only
+authenticated object in the pack: its leaf is bound to the countersigned root,
+so what it commits to cannot change without breaking the proof. Everything in
+`content` is a claim until it has been checked against that.
+
+Comparing a payload to the cid **in its own content entry** is not enough, and
+both implementations of this format got it wrong from an earlier version of this
+document. Replacing the bytes, the salt *and* the cid together produces an entry
+that is internally consistent and has nothing to do with the record the root
+committed to — a recipient then reads a payload from one record under a Merkle
+proof for another. So:
+
+- every location the record commits to **must** have an entry;
+- the entry's `cid` **must** equal the record's cid for that location;
+- the recomputation is against the **record's** cid, never the entry's;
+- an entry at a location the record commits to nothing for **must** be refused,
+  because nothing authenticates those bytes;
+- a committed location with **no entry** is reported as *omitted*, which is not
+  the same fact as *erased* and must not be reported as though it were.
+
 **`salt` is not optional when `present` is true, and a pack without it proves
 nothing about the payload.** A content cid is
 `SHA-256(0x05 ‖ salt ‖ plaintext)`, so a recipient handed the plaintext and the
@@ -195,9 +217,11 @@ the manifest would tell the reader they are looking at a record they are not.
 7. **Recompute the leaf** from `record` and its salt. Do not take the pack's
    word for which leaf this is. Where the salt is absent, use `proof.leaf` and
    report that the leaf-to-record binding is unchecked.
-8. **Recompute each present payload's commitment** as
-   `SHA-256(0x05 ‖ salt ‖ plaintext)` and compare it to `cid`. Refuse a payload
-   flagged absent that carries bytes anyway.
+8. **Resolve the expected payloads from the record**, then for each: require an
+   entry, require its `cid` to equal the record's, and recompute
+   `SHA-256(0x05 ‖ salt ‖ plaintext)` against **the record's** cid. Refuse an
+   entry the record commits to nothing for, and one flagged absent that carries
+   bytes anyway. Report a committed location with no entry as omitted.
 9. **Verify the audit path** reaches `proof.root`, then check that
    `proof.root` is the root **the checkpoint commits to**. Stopping after the
    first half would let an operator prove inclusion in a tree nobody

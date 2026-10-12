@@ -49,6 +49,35 @@ export class DiscloseError extends Error {
 }
 
 /**
+ * Where a record commits to a payload, and to what — FR-32.
+ *
+ * ONE definition, used by the builder and by the verifier, because two would
+ * eventually disagree about which locations exist and the disagreement would
+ * land on the recipient. The keys are the paths the pack's `content` object
+ * uses and the spec's table lists.
+ *
+ * The RECORD is the authenticated object: its leaf is bound to the
+ * countersigned root. Everything in `pack.content` is unauthenticated until it
+ * has been checked against this.
+ *
+ * @param {Record<string, any>} record
+ * @returns {Map<string, string>} where -> cid the record commits to
+ */
+export function committedContent(record) {
+  /** @type {Map<string, string>} */
+  const out = new Map();
+  for (const f of ['agent', 'args', 'result']) {
+    const cid = record?.[f]?.cid;
+    if (typeof cid === 'string') out.set(f, cid);
+  }
+  for (const f of ['reviewer', 'request']) {
+    const cid = record?.approval?.[f]?.cid;
+    if (typeof cid === 'string') out.set(`approval.${f}`, cid);
+  }
+  return out;
+}
+
+/**
  * Build a disclosure pack for one record — FR-32.
  *
  * @param {import('@splitstick/core/store').Store} store
@@ -259,10 +288,7 @@ function collectContent(store, record) {
         salt: salt.toString('hex'),
       };
   };
-  for (const f of ['agent', 'args', 'result']) one(f, record[f]);
-  if (record.approval) {
-    for (const f of ['reviewer', 'request']) one(`approval.${f}`, record.approval[f]);
-  }
+  for (const [where, cid] of committedContent(record)) one(where, { cid });
   return out;
 }
 
@@ -443,28 +469,47 @@ export async function verifyDisclosure(pack, o = {}) {
       'the proof reaches a root the countersigned checkpoint does not commit to'));
   }
 
-  // ── the record's own payloads, CHECKED against their commitments ─────────
+  // ── the payloads, CHECKED AGAINST THE AUTHENTICATED RECORD ──────────────
   //
-  // A content cid is SHA-256(0x05 ‖ salt ‖ plaintext) — CONTENT_DOMAIN. The
-  // first version of this block computed an UNSALTED digest and compared it to
-  // the salted cid, a comparison that can never be true, so substituting the
-  // payload entirely produced a verdict of ok with no findings. A check that
-  // cannot fire is worse than no check, because the report reads as though the
-  // payload had been verified.
-  for (const [where, c] of Object.entries(pack.content ?? {})) {
-    const held = /** @type {any} */ (c);
-    if (typeof held?.cid !== 'string') {
-      findings.push(finding('FORMAT_UNSUPPORTED', 'fail',
-        `${where} carries no commitment to check anything against`));
+  // The record is the only authenticated object here: its leaf is bound to the
+  // countersigned root, so what it commits to cannot be changed without
+  // breaking the proof. Everything in `pack.content` is a claim until it has
+  // been checked against that.
+  //
+  // The first version recomputed each payload's commitment and compared it to
+  // the cid IN THE CONTENT ENTRY — so replacing the bytes, the salt and the cid
+  // together produced a self-consistent entry that passed, while the record
+  // still committed to something else entirely. Verdict ok, no findings, and
+  // the recipient had a Merkle proof over a record whose payload they were
+  // reading from a different one.
+  //
+  // So the expected locations and cids come from the record, and the content
+  // object is checked for being exactly that set: no omissions, no extras.
+  const committed = committedContent(/** @type {any} */ (record));
+  const supplied = new Set(Object.keys(pack.content ?? {}));
+  for (const [where, cid] of committed) {
+    const held = /** @type {any} */ ((pack.content ?? {})[where]);
+    supplied.delete(where);
+    if (held === undefined) {
+      // OMITTED, which is not the same as erased. The record commits to a
+      // payload and the pack simply does not mention it, so a recipient would
+      // otherwise have no way to know the evidence was left out of a pack
+      // somebody chose to build.
+      findings.push(finding('CONTENT_ABSENT', 'inconclusive',
+        `the record commits to a payload at ${where} and this pack carries no entry for it at `
+        + 'all — omitted rather than erased, which a recipient cannot tell apart without being '
+        + 'told'));
+      continue;
+    }
+    if (held.cid !== cid) {
+      findings.push(finding('CONTENT_MISMATCH', 'fail',
+        `${where} carries a commitment the record does not hold: the record commits to ${cid} `
+        + `and the pack presents ${JSON.stringify(held.cid)}. A self-consistent payload under a `
+        + 'different commitment is still a payload the countersigned root never committed to'));
       continue;
     }
     if (held.present !== true) {
-      // Erased. The commitment is carried and the bytes are not, which is what
-      // a shredded payload looks like and is not a failure.
       if (held.base64 !== undefined) {
-        // A contradiction: flagged absent and carrying bytes anyway. Accepting
-        // it meant the bytes were silently ignored, so a pack could hand over
-        // a payload nothing would ever check.
         findings.push(finding('FORMAT_UNSUPPORTED', 'fail',
           `${where} is flagged absent and carries bytes anyway; the two cannot both be true`));
         continue;
@@ -480,12 +525,21 @@ export async function verifyDisclosure(pack, o = {}) {
         + 'payload cannot be verified against its commitment'));
       continue;
     }
+    // Recomputed against the RECORD's cid, never the entry's.
     const recomputed = contentCid(Buffer.from(held.salt, 'hex'), Buffer.from(held.base64, 'base64'));
-    if (recomputed !== held.cid) {
+    if (recomputed !== cid) {
       findings.push(finding('CONTENT_MISMATCH', 'fail',
         `${where}'s bytes do not match the commitment the record holds: the record commits to `
-        + `${held.cid} and these bytes salt to ${recomputed}`));
+        + `${cid} and these bytes salt to ${recomputed}`));
     }
+  }
+  for (const where of supplied) {
+    // A payload at a location the record has no commitment for. Nothing
+    // authenticates it, and carrying it alongside a verified proof invites a
+    // reader to treat it as part of the disclosure.
+    findings.push(finding('CONTENT_MISMATCH', 'fail',
+      `this pack carries content at ${where} and the record commits to no payload there, so `
+      + 'nothing authenticates those bytes'));
   }
 
   return done(findings, witnesses, [seq]);

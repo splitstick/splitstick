@@ -552,3 +552,146 @@ test('M5 review 4: content flagged absent while carrying bytes is a contradictio
   assert.equal(r.verdict, 'fail');
   assert.ok(r.findings.some(f => /cannot both be true/.test(f.detail)));
 });
+
+// ── PR #10 review: the record is the only authenticated object ─────────────
+
+test('PR10 review P1: a SELF-CONSISTENT payload replacement is caught', async () => {
+  // The same defect as M5 review finding 1, one level up — and the fix for
+  // that one is what made this reachable.
+  //
+  // Finding 1 was "the bytes are not checked against a cid". This is "the cid
+  // is not checked against the record": the commitment was read from
+  // `pack.content`, which nothing authenticates. Replacing the bytes, the salt
+  // AND the cid together produces an entry that is internally consistent and
+  // has nothing to do with the record the countersigned root committed to —
+  // verdict ok, no findings, and the recipient reads a payload from one record
+  // under a Merkle proof for another.
+  //
+  // The record is the only authenticated object in the pack: its leaf is bound
+  // to the root, so what it commits to cannot change without breaking the
+  // proof.
+  const { randomBytes } = await import('node:crypto');
+  const { contentCid } = await import('@splitstick/core/content');
+  const { root, vkey, policy } = await rig();
+  const p = pack(root, 2);
+
+  const bytes = Buffer.from('{"amount":999999999}');
+  const salt = randomBytes(16);
+  const cid = contentCid(salt, bytes);
+  assert.notEqual(cid, p.record.args.cid, 'a genuinely different commitment');
+
+  const forged = {
+    ...p,
+    content: {
+      ...p.content,
+      args: { cid, present: true, base64: bytes.toString('base64'), salt: salt.toString('hex') },
+    },
+  };
+  const r = await verifyDisclosure(forged, { vkey, policy });
+  assert.equal(r.verdict, 'fail');
+  const f = r.findings.find(x => x.code === 'CONTENT_MISMATCH');
+  assert.notEqual(f, undefined, JSON.stringify(r.findings));
+  assert.match(String(f?.detail), /the record commits to/);
+  assert.match(String(f?.detail), /the pack presents/);
+
+  // And the honest half: the pack as built still verifies, so the check is
+  // binding content to the record rather than refusing content.
+  assert.equal((await verifyDisclosure(p, { vkey, policy })).verdict, 'ok');
+});
+
+test('PR10 review P2: a committed payload with no entry is reported as omitted', async () => {
+  // A record referencing args.cid with no content entry performed no content
+  // checks at all, and the report did not distinguish that from a record with
+  // no payloads. A recipient could receive an apparently valid disclosure
+  // without being told that evidence the record references was left out.
+  const { root, vkey, policy } = await rig();
+  const p = pack(root, 2);
+
+  const stripped = { ...p, content: {} };
+  const r = await verifyDisclosure(stripped, { vkey, policy });
+  assert.equal(r.verdict, 'inconclusive');
+  assert.equal(r.findings.filter(f => f.code === 'CONTENT_ABSENT').length, 2,
+    'one for args and one for result');
+  for (const f of r.findings) {
+    assert.match(String(f.detail), /omitted rather than erased/,
+      'omitted and erased are different facts and the report says which');
+  }
+
+  // Each location individually, including the nested approval ones.
+  const { Store: S } = await import('@splitstick/core/store');
+  const { Collector: Col } = await import('@splitstick/core/collector');
+  const dir = mkdtempSync(join(tmpdir(), 'ss-disc-omit-'));
+  const signer = await generateDevSigner(ORIGIN);
+  const wk = await generateDevSigner('audit.example');
+  const store = new S(dir, 'host-1');
+  let t = Date.parse('2026-10-12T10:00:00.000Z');
+  const c = new Col({
+    store, config: parseConfig('version: 1\nstore: ./s\n', dir), signer,
+    collector: 'host-1', origin: ORIGIN, now: () => new Date(t += 1000),
+  });
+  c.action({
+    run: 'r-1', tool: 'transfer_funds', consequential: true,
+    agent: Buffer.from('alice@example.com'),
+    args: Buffer.from('{"amount":1}'), result: Buffer.from('OK'),
+    outcome: 'ok', attempt: 1, correlation: 'c-1',
+    approval: {
+      decision: 'approve', reviewer: Buffer.from('bob@example.com'),
+      request: Buffer.from('please'),
+    },
+  });
+  const cp2 = await c.checkpoint();
+  await witness(store, cp2.checkpoint_seq, wk, '2026-10-12T10:00:05.000Z');
+  store.close();
+  const full = pack(dir, 1);
+  assert.deepEqual(Object.keys(full.content).sort(),
+    ['agent', 'approval.request', 'approval.reviewer', 'args', 'result'],
+    'every location the record commits to has an entry');
+
+  const pol = {
+    witnesses: [{ id: 'audit.example', public_key: Buffer.from(wk.publicKey).toString('base64') }],
+  };
+  const key = formatVkey(ORIGIN, signer.publicKey);
+  for (const where of Object.keys(full.content)) {
+    const { [where]: dropped, ...rest } = full.content;
+    const r2 = await verifyDisclosure({ ...full, content: rest }, { vkey: key, policy: pol });
+    assert.ok(r2.findings.some(f => f.code === 'CONTENT_ABSENT' && f.detail.includes(where)),
+      `dropping ${where} must be reported`);
+  }
+});
+
+test('PR10 review P2: content at a location the record does not commit to is refused', async () => {
+  // Nothing authenticates those bytes, and carrying them beside a verified
+  // proof invites a reader to treat them as part of the disclosure.
+  const { root, vkey, policy } = await rig();
+  const p = pack(root, 2);
+  const extra = {
+    ...p,
+    content: { ...p.content, elsewhere: { ...p.content.args } },
+  };
+  const r = await verifyDisclosure(extra, { vkey, policy });
+  assert.equal(r.verdict, 'fail');
+  assert.ok(r.findings.some(f => f.code === 'CONTENT_MISMATCH'
+    && /commits to no payload there/.test(f.detail)), JSON.stringify(r.findings));
+});
+
+test('PR10 review: the builder and the verifier share one definition of the locations', async () => {
+  // Two definitions would eventually disagree about which locations exist, and
+  // the disagreement would land on the recipient — a pack built against one
+  // list and checked against another.
+  const { committedContent } = await import('../src/disclose.mjs');
+  const { root } = await rig();
+  const s = new Store(root, 'host-1');
+  const record = /** @type {any} */ (s.readChain()[1]?.record);
+  s.close();
+  const p = pack(root, 2);
+  assert.deepEqual(
+    Object.keys(p.content).sort(),
+    [...committedContent(record).keys()].sort(),
+    'the pack carries exactly the locations the record commits to',
+  );
+  for (const [where, cid] of committedContent(record)) {
+    assert.equal(/** @type {any} */ (p.content)[where].cid, cid);
+  }
+  // A record with no payloads commits to nothing, and that is not an omission.
+  assert.deepEqual([...committedContent({ kind: 'heartbeat' }).keys()], []);
+});

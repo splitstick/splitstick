@@ -227,3 +227,50 @@ second implementation has earned its place.
 reporting a conclusion it had not established. A payload it never checked, a
 record it never held, bytes it ignored, lines it never read. M3b's review ended
 with the same sentence and so did M4's.
+
+## Defects found by the external review of PR #10
+
+Two findings, and the first is the same defect **one level up** from the one my
+own review had just fixed. That is the part worth recording.
+
+14. **A self-consistent payload replacement was accepted — verdict `ok`, no
+    findings.** My review's finding 8 was *the bytes are not checked against a
+    cid*, and the fix added the content salt so the commitment could be
+    recomputed. This is *the cid is not checked against the record*: the
+    commitment was read from `pack.content`, which nothing authenticates.
+    Replacing the bytes, the salt **and** the cid together produces an entry
+    that is internally consistent and has nothing to do with the record the
+    countersigned root committed to. A recipient then reads a payload from one
+    record under a Merkle proof for another, which is the precise failure a
+    disclosure pack exists to prevent.
+
+    The record is the only authenticated object in the pack — its leaf is bound
+    to the root, so what it commits to cannot change without breaking the proof.
+    The expected locations and their cids now come from it, the recomputation is
+    against **its** cid rather than the entry's, and an entry at a location the
+    record commits to nothing for is refused because nothing authenticates
+    those bytes.
+
+    **Fixing finding 8 is what made this reachable.** Before the salt existed
+    there was nothing to recompute, so there was no cid comparison to get wrong.
+    Each fix moved the trust boundary one step and left the next step
+    unexamined, twice — which is a better argument for the two-direction
+    boundary table than anything written in it.
+
+15. **A committed payload with no entry was silently treated as nothing to
+    verify.** The loop iterated `pack.content`, so a record referencing
+    `args.cid` with an empty content object performed no checks at all, and the
+    report did not distinguish that from a record with no payloads. A recipient
+    could receive an apparently valid disclosure without being told that
+    evidence the record references had been left out of a pack somebody chose to
+    build. *Omitted* and *erased* are now different findings, and the detail
+    says which.
+
+**One definition, not two.** `committedContent(record)` is shared by the builder
+and the verifier, because two lists of where a record commits to a payload would
+eventually disagree and the disagreement would land on the recipient — a pack
+built against one and checked against another. A test asserts the pack carries
+exactly the locations the record commits to.
+
+The spec-only verifier had the same bug, from the same document that did not say,
+and now carries the rule too. That is twice it has paid for itself.

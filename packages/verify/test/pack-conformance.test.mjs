@@ -283,11 +283,31 @@ async function independentVerify(pack, o) {
   if (size !== pack.proof.tree_size) return { ok: false, why: 'tree size disagrees with the note' };
   if (origin !== pack.manifest.origin) return { ok: false, why: 'origin disagrees' };
 
-  // Step 8 — each present payload against its commitment, as
+  // Step 8 — each payload against the commitment THE RECORD HOLDS, as
   // SHA-256(0x05 ‖ salt ‖ plaintext). Written out here rather than calling
   // contentCid, so the spec's formula is what is being checked.
-  for (const [where, c] of Object.entries(pack.content ?? {})) {
-    const held = /** @type {any} */ (c);
+  //
+  // The expected locations come from the record, which is the only
+  // authenticated object: comparing a payload to the cid in its own content
+  // entry accepts a self-consistent replacement, since nothing authenticates
+  // that entry. This implementation had that bug too, from the same spec that
+  // did not say — which is the point of writing it from the document.
+  /** @type {Map<string, string>} */
+  const expected = new Map();
+  for (const f of ['agent', 'args', 'result']) {
+    const cid = pack.record?.[f]?.cid;
+    if (typeof cid === 'string') expected.set(f, cid);
+  }
+  for (const f of ['reviewer', 'request']) {
+    const cid = pack.record?.approval?.[f]?.cid;
+    if (typeof cid === 'string') expected.set(`approval.${f}`, cid);
+  }
+  const seen = new Set(Object.keys(pack.content ?? {}));
+  for (const [where, cid] of expected) {
+    const held = /** @type {any} */ ((pack.content ?? {})[where]);
+    seen.delete(where);
+    if (held === undefined) return { ok: false, why: `${where}: committed and omitted` };
+    if (held.cid !== cid) return { ok: false, why: `${where}: cid is not the record's` };
     if (held.present !== true) {
       if (held.base64 !== undefined) return { ok: false, why: `${where}: absent with bytes` };
       continue;
@@ -298,8 +318,9 @@ async function independentVerify(pack, o) {
       .update(Buffer.from(held.salt, 'hex'))
       .update(Buffer.from(held.base64, 'base64'))
       .digest('hex')}`;
-    if (recomputed !== held.cid) return { ok: false, why: `${where}: bytes do not match the cid` };
+    if (recomputed !== cid) return { ok: false, why: `${where}: bytes do not match the record` };
   }
+  for (const where of seen) return { ok: false, why: `${where}: not committed by the record` };
   return { ok: true, why: 'verified from the spec alone' };
 }
 
@@ -326,6 +347,26 @@ test('INT-03: the independent verifier rejects what the spec says it must', asyn
           base64: Buffer.from('{"amount":999999999}').toString('base64'),
         },
       },
+    }],
+    // The PR #10 finding: bytes, salt and cid replaced TOGETHER, so the entry
+    // is internally consistent and has nothing to do with the record.
+    ['self-consistent replacement', {
+      ...pack,
+      content: {
+        ...pack.content,
+        args: {
+          cid: `sha256:${createHash('sha256')
+            .update(Buffer.from([0x05])).update(Buffer.alloc(16, 7))
+            .update(Buffer.from('other')).digest('hex')}`,
+          present: true,
+          base64: Buffer.from('other').toString('base64'),
+          salt: '07'.repeat(16),
+        },
+      },
+    }],
+    ['committed payload omitted', { ...pack, content: {} }],
+    ['content the record does not commit to', {
+      ...pack, content: { ...pack.content, elsewhere: { ...pack.content.args } },
     }],
     ['missing content salt', {
       ...pack,
