@@ -453,7 +453,15 @@ test('a complete verdict is reachable, and a declared gap does not prevent it', 
   // refusals is not a test of the function. If no store could ever read
   // COMPLETE, every verdict assertion above would be vacuous.
   const root = mkdtempSync(join(tmpdir(), 'ss-cov-complete-'));
-  const { store, c, clock, signer } = await rig(root);
+  // The attested anchor interval has to cover the fixture's own span. The
+  // records below are written over twenty seconds and countersigned at the
+  // end, so under the default ten-second interval the earliest of them ARE
+  // late by the operator's own declared policy — which the report now says,
+  // because lateness is measured against the attested interval rather than
+  // against a hardcoded minute.
+  const { store, c, clock, signer } = await rig(root, {
+    cfg: 'version: 1\nstore: ./s\nheartbeat_interval: 5s\nanchor_interval: 1m\n',
+  });
   const { Anchorer } = await import('../src/anchor.mjs');
   const { parseNote, encodeNote } = await import('../src/note.mjs');
   const { signNote } = await import('../src/signer.mjs');
@@ -493,4 +501,192 @@ test('a complete verdict is reachable, and a declared gap does not prevent it', 
   assert.match(renderCoverage(r), /verdict         COMPLETE with 1 declared gap\(s\)/);
   assert.match(renderCoverage(r), /DECLARED 1-3, queue_lost_on_disk_full/);
   assert.equal(runCoverage([root, '--from', T0, '--to', '2026-10-12T10:00:20.000Z']).exit, 0);
+});
+
+// ── The independent review of M4. Six findings, each reproduced first ────────
+
+test('M4 review 1: no heartbeat at all is never a COMPLETE verdict', async () => {
+  // Three countersigned actions, zero heartbeats, and the verdict read
+  // COMPLETE with no findings. SEC-11's entire liveness mechanism was absent
+  // and nothing said so, because every check was written to compare heartbeats
+  // against each other and there was nothing to compare. The rendering said
+  // "continuity unknown" in prose while the verdict said complete — and a
+  // reader acts on the verdict.
+  const root = mkdtempSync(join(tmpdir(), 'ss-rev-nohb-'));
+  const { store, c, clock, signer } = await rig(root, {
+    cfg: 'version: 1\nstore: ./s\nheartbeat_interval: 5s\nanchor_interval: 1m\n',
+  });
+  const { Anchorer } = await import('../src/anchor.mjs');
+  const { parseNote, encodeNote } = await import('../src/note.mjs');
+  const { signNote } = await import('../src/signer.mjs');
+  const wk = await generateDevSigner('audit.example');
+  for (let i = 0; i < 3; i += 1) { c.action(tx(`c-${i}`)); clock.t += 1000; }
+  const cp = await c.checkpoint();
+  const a = new Anchorer({
+    store, quorum: 1, now: () => clock.t,
+    witnesses: [{
+      id: 'audit.example', proof_type: /** @type {const} */ ('c2sp-note'),
+      establishes: ['sequence'], tier: /** @type {const} */ ('anchor'),
+      async submit(/** @type {string} */ note) {
+        const text = parseNote(note).text;
+        return {
+          type: /** @type {const} */ ('c2sp-note'), issuer: 'audit.example',
+          covers: /** @type {const} */ ('note'),
+          line: encodeNote(text, [await signNote(text, wk)]).trim().split('\n').at(-1),
+          received_at: new Date(clock.t).toISOString(),
+        };
+      },
+    }],
+  });
+  assert.equal((await a.anchor(cp.checkpoint_seq)).attached.length, 1);
+  store.close();
+
+  const r = report(root, { to: '2026-10-12T10:00:04.000Z' });
+  assert.equal(r.heartbeat.count, 0);
+  assert.notEqual(r.verdict, 'complete', 'liveness is not established, so the claim is not issued');
+  assert.equal(r.verdict, 'inconclusive');
+  assert.ok(
+    r.findings.some(f => f.code === 'COVERAGE_UNKNOWN' && /no heartbeat falls in this window/.test(f.detail)),
+    'and it says so, rather than leaving the reader to notice an empty continuity field',
+  );
+  // Not a GAP: the records here prove the collector ran at those instants, so
+  // claiming an outage would overstate against the operator.
+  assert.ok(!r.findings.some(f => f.code === 'COVERAGE_GAP'));
+});
+
+test('M4 review 2: a window outside the chain is unknown, not an outage', async () => {
+  // A window opening six years before the log existed produced a COVERAGE_GAP
+  // of 213,962,400,000ms and a verdict of INCOMPLETE — accusing the operator
+  // of a 6.8-year outage over time the report itself says it cannot speak to.
+  const { root, store, c, clock } = await rig();
+  for (let i = 0; i < 4; i += 1) { c.heartbeat(); clock.t += 5_000; }
+  store.close();
+
+  const before = report(root, { from: '2020-01-01', to: '2026-10-12T10:00:15.000Z' });
+  assert.deepEqual(before.heartbeat.discontinuities, [], 'no gap is claimed before the chain began');
+  assert.equal(before.verdict, 'inconclusive');
+  assert.ok(before.findings.some(f => /nothing here\s+speaks to the interval before that|speaks to the interval before that/.test(f.detail)));
+  assert.ok(!before.findings.some(f => f.code === 'COVERAGE_GAP'));
+
+  // The same at the other end: a log that ends where it ends has not
+  // necessarily stopped, and from the files alone those are indistinguishable.
+  const after = report(root, { to: '2026-11-01T00:00:00.000Z' });
+  assert.deepEqual(after.heartbeat.discontinuities, []);
+  assert.ok(after.findings.some(f => /has not necessarily stopped/.test(f.detail)));
+
+  // And the paired half: a gap INSIDE the chain's span is still a gap, so the
+  // silence above is the clamp and not an absent check.
+  const inner = await rig();
+  for (let i = 0; i < 3; i += 1) { inner.c.heartbeat(); inner.clock.t += 5_000; }
+  inner.clock.t += 120_000;
+  for (let i = 0; i < 3; i += 1) { inner.c.heartbeat(); inner.clock.t += 5_000; }
+  inner.store.close();
+  const r = report(inner.root, { to: '2026-10-12T10:02:30.000Z' });
+  assert.ok(r.findings.some(f => f.code === 'COVERAGE_GAP' && f.verdict === 'fail'));
+});
+
+test('M4 review 3: a policy record naming no subject is counted as neither', async () => {
+  // record.mjs documents an absent subject as read by NEITHER reader, and the
+  // collector requires 'effective'. This filter used `!== 'practice-statement'`
+  // and so counted a subject-less record as an effective policy change: the
+  // same record meant two different things depending on which module looked at
+  // it, which is the collision policy_subject was added to end.
+  const { root, store, c } = await rig();
+  c.heartbeat();
+  c.policy({ previous: `sha256:${'1'.repeat(64)}`, next: `sha256:${'2'.repeat(64)}` });
+  store.close();
+  const r = report(root, { to: '2026-10-12T10:00:10.000Z' });
+  assert.deepEqual(r.policy_events, [], 'not counted as an effective-policy change');
+  assert.ok(
+    r.findings.some(f => f.code === 'COVERAGE_UNKNOWN' && /naming no subject/.test(f.detail)),
+    'and not silently dropped either',
+  );
+});
+
+test('M4 review 6: lateness is measured against the ATTESTED anchor interval', async () => {
+  // The threshold was a hardcoded sixty seconds, so an operator anchoring
+  // every ten minutes by declared policy had nine of those minutes reported as
+  // lateness, and one anchoring every second had a 59-second delay reported as
+  // on time. A claim's threshold has to come from the same place the claim does.
+  const mk = async (/** @type {string} */ interval) => {
+    const root = mkdtempSync(join(tmpdir(), 'ss-rev-late-'));
+    const { store, c, clock } = await rig(root, {
+      cfg: `version: 1\nstore: ./s\nheartbeat_interval: 5s\nanchor_interval: ${interval}\n`,
+    });
+    const { Anchorer } = await import('../src/anchor.mjs');
+    const { parseNote, encodeNote } = await import('../src/note.mjs');
+    const { signNote } = await import('../src/signer.mjs');
+    const wk = await generateDevSigner('audit.example');
+    for (let i = 0; i < 4; i += 1) { c.heartbeat(); clock.t += 5_000; }
+    const cp = await c.checkpoint();
+    const a = new Anchorer({
+      store, quorum: 1, now: () => clock.t,
+      witnesses: [{
+        id: 'audit.example', proof_type: /** @type {const} */ ('c2sp-note'),
+        establishes: ['sequence'], tier: /** @type {const} */ ('anchor'),
+        async submit(/** @type {string} */ note) {
+          const text = parseNote(note).text;
+          return {
+            type: /** @type {const} */ ('c2sp-note'), issuer: 'audit.example',
+            covers: /** @type {const} */ ('note'),
+            line: encodeNote(text, [await signNote(text, wk)]).trim().split('\n').at(-1),
+            received_at: new Date(clock.t).toISOString(),   // ~20s after the first record
+          };
+        },
+      }],
+    });
+    await a.anchor(cp.checkpoint_seq);
+    store.close();
+    return report(root, { to: '2026-10-12T10:00:20.000Z' });
+  };
+
+  // Ten seconds declared: a twenty-second delay is late by the operator's own
+  // policy, and the report says so against the interval they attested.
+  const strict = await mk('10s');
+  assert.ok(strict.anchoring.late.length > 0);
+  assert.equal(strict.anchoring.on_time_ms, 10_000);
+  assert.match(renderCoverage(strict), /against an attested interval of 10s/);
+
+  // One minute declared: the same delay is within policy, and nothing is
+  // reported. The behaviour now follows the declaration rather than a constant.
+  const relaxed = await mk('1m');
+  assert.deepEqual(relaxed.anchoring.late, []);
+  assert.equal(relaxed.anchoring.on_time_ms, 60_000);
+});
+
+test('M4 review 5: the coverage CLI closes every store it opens', async () => {
+  // Without --collector the CLI opened a probe store to ask which collectors
+  // exist, then opened a SECOND store for the named one and closed only that,
+  // so every run without the flag leaked the probe.
+  //
+  // Checked against the SOURCE, because a leaked handle is invisible from
+  // outside: the process goes on working and nothing observable changes. An
+  // earlier version of this test instrumented a Store subclass and asserted
+  // that the subclass paired its own opens and closes, which was true and said
+  // nothing about the CLI — a check that could not see its subject.
+  //
+  // Comment-stripped, so the paragraph above explaining the leak cannot be
+  // what satisfies the check.
+  const { readFileSync } = await import('node:fs');
+  const { codeOnly } = await import('../../../tools/code-text.mjs');
+  const src = codeOnly(readFileSync(
+    new URL('../src/coverage-cli.mjs', import.meta.url).pathname, 'utf8'));
+
+  const opens = [...src.matchAll(/new Store\(/g)].length;
+  assert.equal(opens, 2, 'a probe for the collector list, and the named one');
+  assert.match(src, /probe !== undefined && probe !== store/,
+    'the probe is closed unless it IS the store that was used');
+  assert.match(src, /store\?\.close\(\)/);
+
+  // And the behaviour that a held handle or an unreleased lock would eventually
+  // break: the CLI run repeatedly over one store, with and without the flag.
+  const { root, store, c } = await rig();
+  c.heartbeat();
+  store.close();
+  for (let i = 0; i < 3; i += 1) {
+    for (const args of [[], ['--collector', 'host-1']]) {
+      const r = runCoverage([root, '--from', T0, '--to', '2026-10-12T10:00:05.000Z', ...args]);
+      assert.ok([0, 1, 2].includes(r.exit), `run ${i} ${args.join(' ')}: ${r.out.slice(0, 80)}`);
+    }
+  }
 });

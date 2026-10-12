@@ -300,7 +300,7 @@
       "source": "Coverage attestation — splitstick coverage",
       "verify": "Report wording asserted by test; injected gaps appear exactly; attempt and logical-action counts are both present and differ under retry; a suppressed action does not appear and the report does not imply completeness",
       "status": "done",
-      "evidence": "coverage.mjs + coverage-report.mjs + coverage-cli.mjs; attempts and logical actions are counted separately because one number makes a retried action look like several. Every count names its subject — what the COLLECTOR REPORTED — in the sentence rather than a footnote, and the verdict ladder distinguishes undeclared absence (incomplete) from evidence that cannot support the claim (inconclusive), with a DECLARED gap leaving a complete verdict because penalising the disclosure would penalise the honesty it exists to produce"
+      "evidence": "coverage.mjs + coverage-report.mjs + coverage-cli.mjs; attempts and logical actions are counted separately because one number makes a retried action look like several. Every count names its subject — what the COLLECTOR REPORTED — in the sentence rather than a footnote, and the verdict ladder distinguishes undeclared absence (incomplete) from evidence that cannot support the claim (inconclusive), with a DECLARED gap leaving a complete verdict because penalising the disclosure would penalise the honesty it exists to produce A window with NO heartbeat at all is never complete: the verdict read COMPLETE over three countersigned actions and zero heartbeats, with SEC-11's whole mechanism absent and nothing saying so. And the report speaks only to the intersection of the window and the chain's span — a window opening before the log existed produced a 6.8-year COVERAGE_GAP, a fail-class accusation about time the report says it cannot speak to."
     },
     {
       "id": "FR-29",
@@ -422,7 +422,7 @@
       "source": "Operations — reported as a coverage gap",
       "verify": "Coverage report flags the widened window",
       "status": "done",
-      "evidence": "coverage.mjs anchorCoverage late windows + COVERAGE_UNKNOWN; a record anchored eleven minutes after the fact was mutable for eleven minutes, which is honestly weaker evidence rather than silently absent. The delay rests on the witness's own clock, unsigned for a C2SP note, and the report says so"
+      "evidence": "coverage.mjs anchorCoverage late windows + COVERAGE_UNKNOWN; a record anchored eleven minutes after the fact was mutable for eleven minutes, which is honestly weaker evidence rather than silently absent. The delay rests on the witness's own clock, unsigned for a C2SP note, and the report says so Lateness is measured against the ATTESTED anchor interval, not a hardcoded minute: an operator anchoring every ten minutes by declared policy had nine of them reported as lateness. Where no attested policy document is held, lateness is not asserted at all rather than asserted against a guess."
     },
     {
       "id": "FR-41",

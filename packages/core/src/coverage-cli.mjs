@@ -56,10 +56,16 @@ export function runCoverage(argv) {
   if (root === undefined) return { exit: 2, out: `a store directory is required\n\n${USAGE}` };
 
   let store;
+  /** @type {import('./store.mjs').Store|undefined} */
+  let probe;
   try {
     // Opened with a placeholder first only to ask which collectors exist. A
     // store holding several must not have one picked for it in silence.
-    const probe = new Store(root, String(flags.collector ?? 'unknown'));
+    //
+    // Tracked separately and closed in the `finally` below. When no collector
+    // was named a SECOND Store was opened and only that one was closed, so
+    // every run without --collector leaked the probe.
+    probe = new Store(root, String(flags.collector ?? 'unknown'));
     const available = probe.collectors();
     const collector = flags.collector === undefined
       ? (available[0] ?? 'unknown')
@@ -93,5 +99,6 @@ export function runCoverage(argv) {
     throw e;
   } finally {
     store?.close();
+    if (probe !== undefined && probe !== store) probe.close();
   }
 }

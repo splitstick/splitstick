@@ -216,17 +216,33 @@ export function coverageReport(store, o) {
     // The edges count too. A collector stopped before the window opened, or
     // never restarted before it closed, leaves no pair to compare — and that
     // is exactly the window an operator would choose.
-    const firstGap = Number(stamps[0]) - window.from_ms;
+    // THE EDGES ARE CLAMPED TO THE CHAIN'S OWN SPAN.
+    //
+    // A window opening six years before the log existed produced a
+    // COVERAGE_GAP of 213,962,400,000ms and a verdict of INCOMPLETE —
+    // accusing the operator of a 6.8-year outage covering time the report
+    // itself says it cannot speak to. The same at the other end: a log that
+    // ends where it ends has not necessarily stopped, and from the files alone
+    // those are indistinguishable.
+    //
+    // So the report speaks to the INTERSECTION of the window and the chain's
+    // span. Gaps inside it are gaps; outside it the window simply extends past
+    // the evidence, which is reported below as unknown rather than as a
+    // failure.
+    const firstGap = Number(stamps[0]) - Math.max(window.from_ms, Date.parse(String(chainFirst)));
     if (firstGap > tolerance) {
       discontinuities.push({
-        from: window.from, to: new Date(Number(stamps[0])).toISOString(),
+        from: new Date(Math.max(window.from_ms, Date.parse(String(chainFirst)))).toISOString(),
+        to: new Date(Number(stamps[0])).toISOString(),
         ms: firstGap,
       });
     }
-    const lastGap = window.to_ms - Number(stamps[stamps.length - 1]);
+    const end = Math.min(window.to_ms, Date.parse(String(chainLast)));
+    const lastGap = end - Number(stamps[stamps.length - 1]);
     if (lastGap > tolerance) {
       discontinuities.push({
-        from: new Date(Number(stamps[stamps.length - 1])).toISOString(), to: window.to,
+        from: new Date(Number(stamps[stamps.length - 1])).toISOString(),
+        to: new Date(end).toISOString(),
         ms: lastGap,
       });
     }
@@ -262,8 +278,23 @@ export function coverageReport(store, o) {
   }));
 
   // ── policy events ────────────────────────────────────────────────────────
+  // `=== 'effective'`, not `!== 'practice-statement'`. record.mjs documents an
+  // absent subject as read by NEITHER reader, and the collector requires
+  // 'effective' — this filter counted a subject-less record as an effective
+  // policy change, so the same record meant two different things depending on
+  // which module looked at it. That is the collision policy_subject was added
+  // to end, reintroduced in the code that consumes it.
+  const unsubscribed = inWindow.filter(
+    r => r.kind === 'policy' && r.policy_subject === undefined,
+  );
+  for (const r of unsubscribed) {
+    findings.push(finding('COVERAGE_UNKNOWN', 'inconclusive',
+      `record ${r.record_seq} is a policy record naming no subject, so which policy it moved `
+      + 'cannot be told from it. It is reported rather than counted as either',
+      { record_seq: Number(r.record_seq) }));
+  }
   const policyEvents = inWindow
-    .filter(r => r.kind === 'policy' && r.policy_subject !== 'practice-statement')
+    .filter(r => r.kind === 'policy' && r.policy_subject === 'effective')
     .map(r => ({
       ts: String(r.ts),
       previous_policy: String(r.previous_policy),
@@ -276,7 +307,28 @@ export function coverageReport(store, o) {
     }));
 
   // ── anchoring, and FR-40's late windows ──────────────────────────────────
-  const anchoring = anchorCoverage(store, inWindow, window);
+  // FR-40's "late" is measured against the interval the operator ATTESTED, not
+  // against a number chosen here. It was a hardcoded sixty seconds, so an
+  // operator anchoring every ten minutes by declared policy had nine of those
+  // minutes reported as lateness, and one anchoring every second had a
+  // 59-second delay reported as on time. The threshold has to come from the
+  // same place the claim does.
+  //
+  // Read from the policy document the chain commits to, for the policy the
+  // heartbeats in this window attest. Absent, the interval is unknown and
+  // lateness is not asserted at all — rather than asserted against a guess.
+  /** @type {number|null} */
+  let attestedAnchorMs = null;
+  for (const digest of policies) {
+    const doc = /** @type {any} */ (store.readPolicyDocument(digest));
+    const v = doc?.anchor_interval_ms;
+    if (Number.isSafeInteger(v) && v > 0) {
+      // The LONGEST attested, where a window spans a change: the shorter one
+      // would report delays as late that the policy then in force permitted.
+      attestedAnchorMs = Math.max(attestedAnchorMs ?? 0, Number(v));
+    }
+  }
+  const anchoring = anchorCoverage(store, inWindow, window, attestedAnchorMs);
 
   // ── sequence integrity across the window ─────────────────────────────────
   //
@@ -316,7 +368,42 @@ export function coverageReport(store, o) {
   if (beats.length > 0 && !resolution_known) {
     findings.push(finding('COVERAGE_UNKNOWN', 'inconclusive',
       'not every heartbeat in this window records its own interval, so the resolution of the '
-      + 'liveness claim is not established by the evidence'));
+      + 'liveness claim is not established by the evidence, and no discontinuity check could be '
+      + 'run over it'));
+  }
+  // NO HEARTBEAT AT ALL is not continuity, it is the absence of the mechanism.
+  //
+  // This verdict read COMPLETE for a window holding three countersigned
+  // actions and no heartbeat: SEC-11's entire liveness mechanism was missing
+  // and nothing said so, because every check here was written to compare
+  // heartbeats against each other and there was nothing to compare. The
+  // rendering said "continuity unknown" in prose while the verdict said
+  // complete, which is the most misleading thing this report can do — a reader
+  // acts on the verdict.
+  //
+  // Not COVERAGE_GAP: the records that ARE here prove the collector ran at
+  // those instants, so claiming an outage would overstate against the
+  // operator. What is unestablished is liveness BETWEEN them, which is exactly
+  // what a heartbeat is for and exactly what inconclusive means.
+  if (beats.length === 0 && inWindow.length > 0) {
+    findings.push(finding('COVERAGE_UNKNOWN', 'inconclusive',
+      'no heartbeat falls in this window, so nothing attests the collector was running between '
+      + 'the records that are here. FR-24 emits them whether or not a run is active precisely '
+      + 'because an interval with no activity is otherwise indistinguishable from a stopped '
+      + 'collector'));
+  }
+  // The window outside the chain's span: unknown, not missing.
+  if (chainFirst !== null && Date.parse(chainFirst) > window.from_ms) {
+    findings.push(finding('COVERAGE_UNKNOWN', 'inconclusive',
+      `this window opens at ${window.from} and the chain begins at ${chainFirst}; nothing here `
+      + 'speaks to the interval before that, and its absence is not evidence of a stopped '
+      + 'collector'));
+  }
+  if (chainLast !== null && Date.parse(chainLast) < window.to_ms) {
+    findings.push(finding('COVERAGE_UNKNOWN', 'inconclusive',
+      `this window ends at ${window.to} and the chain's last record is at ${chainLast}; a log `
+      + 'that ends where it ends has not necessarily stopped, and from these files alone those '
+      + 'are indistinguishable'));
   }
   if (inWindow.length === 0) {
     findings.push(finding('COVERAGE_UNKNOWN', 'inconclusive',
@@ -411,8 +498,11 @@ export function coverageReport(store, o) {
  * @param {import('./store.mjs').Store} store
  * @param {Record<string, unknown>[]} inWindow
  * @param {{ from_ms: number, to_ms: number }} window
+ * @param {number|null} onTimeMs the anchor interval the operator attested; null
+ *   when no attested policy document is held, in which case lateness is not
+ *   asserted rather than asserted against a number chosen here
  */
-function anchorCoverage(store, inWindow, window) {
+function anchorCoverage(store, inWindow, window, onTimeMs) {
   /** @type {{ seq: number, tree_size: number, witnessed_at: string|null, issuers: string[] }[]} */
   const checkpoints = [];
   for (const { seq, blob } of store.readCheckpoints()) {
@@ -438,9 +528,10 @@ function anchorCoverage(store, inWindow, window) {
   let unanchored = 0;
   /** @type {{ record_seq: number, delay_ms: number, checkpoint_seq: number }[]} */
   const late = [];
-  // A batch anchored within one anchor interval is on time. Beyond it, the
-  // records sat mutable for the difference, and that is what gets reported.
-  const onTime = 60_000;
+  // A batch anchored within one attested anchor interval is on time. Beyond
+  // it, the records sat mutable for the difference, and that is what gets
+  // reported.
+  const onTime = onTimeMs;
   for (const r of inWindow) {
     const seq = Number(r.record_seq);
     const cp = checkpoints.find(c => c.tree_size >= seq);
@@ -453,7 +544,7 @@ function anchorCoverage(store, inWindow, window) {
     if (cp === undefined) { unanchored += 1; continue; }
     if (cp.issuers.length === 0) { checkpointed_only += 1; continue; }
     anchored += 1;
-    if (cp.witnessed_at === null) continue;
+    if (cp.witnessed_at === null || onTime === null) continue;
     const delay = Date.parse(cp.witnessed_at) - Date.parse(String(r.ts));
     if (delay > onTime) late.push({ record_seq: seq, delay_ms: delay, checkpoint_seq: cp.seq });
   }
@@ -464,6 +555,7 @@ function anchorCoverage(store, inWindow, window) {
     unwitnessed: checkpointed_only + unanchored,
     late,
     max_delay_ms: late.reduce((a, l) => Math.max(a, l.delay_ms), 0),
+    on_time_ms: onTimeMs,
     in_window: inWindow.length,
     window_ms: window.to_ms - window.from_ms,
   };

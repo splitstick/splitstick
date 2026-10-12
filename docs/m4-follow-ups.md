@@ -126,3 +126,70 @@ exercised only by declared limits is reported as closing nothing, and a
 declared limit that turns out to be detected is reported as a stale
 declaration — because leaving the project claiming a weakness it no longer has
 is its own kind of dishonesty.
+
+## Defects found by the independent review of M4
+
+Six findings, each reproduced by a probe before being fixed, and each shown to
+fail its regression against the pre-fix code. All 759 tests passed before this
+review, so none of the six was covered — which is the review's first result.
+
+Five of the six are in `coverage.mjs`, the module whose own header names it as
+the largest surface in the project that composes an assurance out of evidence.
+The risk assessment said that was where to look. It was right, and writing that
+down did not stop me putting six defects there.
+
+9. **A COMPLETE verdict over a window with no liveness evidence at all.** Three
+   countersigned actions, zero heartbeats, no findings, verdict `complete`.
+   SEC-11's entire mechanism was absent and nothing said so, because every
+   check was written to compare heartbeats against each other and there was
+   nothing to compare. The rendering printed "continuity unknown" in prose
+   while the verdict said complete — and a reader acts on the verdict. Now
+   `COVERAGE_UNKNOWN`: not a gap, because the records present prove the
+   collector ran at those instants, and claiming an outage would overstate
+   against the operator. What is unestablished is liveness *between* them,
+   which is what a heartbeat is for.
+
+10. **A 6.8-year outage invented for time before the log existed.** A window
+    opening in 2020 against a chain starting in 2026 produced a `COVERAGE_GAP`
+    of 213,962,400,000 ms and a verdict of `incomplete` — a fail-class finding
+    accusing the operator of a stop over an interval the report itself says it
+    cannot speak to. The same at the other end, where a log that ends is not a
+    log that stopped. The report now speaks only to the intersection of the
+    window and the chain's span, and the remainder is reported as unknown.
+
+11. **The same record meant different things to different modules.**
+    `record.mjs` documents an absent `policy_subject` as read by *neither*
+    reader and the collector requires `'effective'`, but the coverage report
+    filtered on `!== 'practice-statement'` — so a subject-less policy record
+    was counted as an effective-policy change. That is precisely the collision
+    `policy_subject` was added to end, reintroduced in the code that consumes
+    it. Subject-less records are now reported and counted as neither.
+
+12. **One policy change reported as two.** The capture surface carries
+    `anchor_interval_ms` because it is part of what is attested, and it was
+    also compared at the top level, so a single change appeared twice — in a
+    list an auditor counts.
+
+13. **The coverage CLI leaked a store on every run without `--collector`.** It
+    opened a probe to ask which collectors exist, then opened a second store
+    for the named one and closed only that. The first regression written for
+    this instrumented a `Store` subclass and asserted the subclass paired its
+    own opens and closes: true, and silent about the CLI — a check that could
+    not see its subject.
+
+14. **FR-40 measured lateness against a hardcoded minute.** The operator
+    attests an anchor interval; the report ignored it. An operator anchoring
+    every ten minutes by declared policy had nine of those minutes reported as
+    lateness, and one anchoring every second had a 59-second delay reported as
+    on time. A claim's threshold has to come from the same place the claim
+    does, so it is read from the attested policy document — and where no such
+    document is held, lateness is not asserted at all rather than asserted
+    against a guess.
+
+**What the six have in common.** Four of them — 9, 10, 12, 14 — are the report
+saying something the evidence does not support, in both directions: twice too
+favourable to the operator (a clean verdict with no liveness evidence, a
+generous lateness threshold) and twice too harsh (an invented outage, a doubled
+change). The remaining two are a comparison against the wrong thing and a
+resource never released. The pattern from M3b holds exactly: the defects are
+not in the mechanisms, they are in what gets claimed about them.

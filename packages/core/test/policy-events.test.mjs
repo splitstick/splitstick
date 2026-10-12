@@ -332,3 +332,27 @@ test('neither digest depends on declaration order, and duplicates are refused', 
     ...base, witnesses: [{ id: 'a', type: 't' }, { id: 'a', type: 't' }],
   })), PolicyError, 'one party submitting twice is not a quorum');
 });
+
+test('M4 review 4: one change to the anchor interval is reported once, not twice', async () => {
+  // The capture surface carries anchor_interval_ms because it is part of what
+  // is attested, and it is also compared at the top level — so a single change
+  // appeared in both places and read as two changes, in a list an auditor
+  // counts.
+  const base = {
+    quorum: 1, anchor_interval_ms: 10_000, rollup_interval_ms: 60_000,
+    heartbeat_interval_ms: 5_000, witnesses: [{ id: 'a', type: 'rfc3161' }],
+  };
+  const changes = policyChanges(
+    effectivePolicy(/** @type {any} */ (base)),
+    effectivePolicy(/** @type {any} */ ({ ...base, anchor_interval_ms: 20_000 })),
+  );
+  assert.deepEqual(changes, [{ field: 'anchor_interval_ms', before: 10_000, after: 20_000 }]);
+
+  // The heartbeat interval lives ONLY in the capture surface, so it must still
+  // be reported from there — the fix must not have silenced it.
+  const hb = policyChanges(
+    effectivePolicy(/** @type {any} */ (base)),
+    effectivePolicy(/** @type {any} */ ({ ...base, heartbeat_interval_ms: 60_000 })),
+  );
+  assert.deepEqual(hb.map(x => x.field), ['capture.heartbeat_interval_ms']);
+});

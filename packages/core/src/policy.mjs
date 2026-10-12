@@ -149,10 +149,16 @@ export function policyChanges(before, after) {
       out.push({ field: `capture.${f}`, before: before.capture[f], after: after.capture[f] });
     }
   }
-  for (const f of /** @type {const} */ (['heartbeat_interval_ms', 'anchor_interval_ms'])) {
-    if (before.capture[f] !== after.capture[f]) {
-      out.push({ field: `capture.${f}`, before: before.capture[f], after: after.capture[f] });
-    }
+  // `heartbeat_interval_ms` only. The capture surface carries
+  // `anchor_interval_ms` too, because it is part of what is attested, but it is
+  // already compared at the top level above — reporting it in both places made
+  // one change read as two, in a list an auditor counts.
+  if (before.capture.heartbeat_interval_ms !== after.capture.heartbeat_interval_ms) {
+    out.push({
+      field: 'capture.heartbeat_interval_ms',
+      before: before.capture.heartbeat_interval_ms,
+      after: after.capture.heartbeat_interval_ms,
+    });
   }
   return out;
 }

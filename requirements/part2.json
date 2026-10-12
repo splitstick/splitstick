@@ -247,7 +247,7 @@
     "source": "Attack class table, row 6",
     "verify": "Kill the collector mid-window; the coverage report shows an undeclared gap. A separate test asserts a collector reporting a forged digest is NOT flagged, so the limit is pinned by a test rather than by prose",
     "status": "done",
-    "evidence": "Heartbeat discontinuity as COVERAGE_GAP (red-team G, detected) and the patched collector as a declared limit (red-team G2, undetected by construction — a patched collector never allocates the number, so there is nothing to remove). G2 first removed the action from an honest store and was DETECTED via the source_seq hole, which would have credited AC-6 for catching something it does not catch"
+    "evidence": "Heartbeat discontinuity as COVERAGE_GAP (red-team G, detected) and the patched collector as a declared limit (red-team G2, undetected by construction — a patched collector never allocates the number, so there is nothing to remove). G2 first removed the action from an honest store and was DETECTED via the source_seq hole, which would have credited AC-6 for catching something it does not catch The coverage report refuses a completeness claim when no heartbeat falls in the window, because the mechanism being absent is not the mechanism reporting continuity."
   },
   {
     "id": "SEC-12",

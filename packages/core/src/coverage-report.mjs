@@ -117,10 +117,15 @@ export function renderCoverage(r) {
   if (a.unanchored > 0) {
     L.push(`                ${a.unanchored} fall under no checkpoint at all`);
   }
+  if (a.on_time_ms === null && a.anchored > 0) {
+    L.push('                lateness is NOT asserted: no attested policy document is held here, so');
+    L.push('                there is no declared anchor interval to measure a delay against');
+  }
   if (a.late.length > 0) {
     // FR-40 — honestly weaker evidence rather than silently absent.
     L.push(`                ${a.late.length} window(s) anchored LATE, max delay `
-      + `${duration(a.max_delay_ms)} — reported as a coverage gap, because a record`);
+      + `${duration(a.max_delay_ms)} against an attested interval of `
+      + `${duration(a.on_time_ms)} — reported as a coverage gap, because a record`);
     L.push('                anchored that long after the fact was mutable for that long');
     L.push('                the delay rests on the witness\'s own clock, which for a C2SP note is');
     L.push('                carried beside the signature rather than under it');
