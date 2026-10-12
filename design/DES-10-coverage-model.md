@@ -98,6 +98,33 @@ verdict         COMPLETE with 1 declared gap
 after the fact had an eleven-minute mutability window, and that is weaker evidence — honestly
 weaker, rather than silently absent.
 
+### What the report can conclude — the failure codes
+
+Three codes, in the verifier's shared vocabulary (`spec/failure-codes.json`) rather than a second
+set invented for coverage, because a reader should not have to know which tool is talking before
+they can read a code:
+
+| Code | Verdict | When |
+|---|---|---|
+| `COVERAGE_GAP` | fail | a window with no record of any kind and no declaration — nothing attests the collector was running |
+| `COVERAGE_UNKNOWN` | inconclusive | a `gap_unknown` is declared, the heartbeat resolution is not established by the records, or the window holds no record at all |
+| `UNDATED_RECORD` | inconclusive | a record carries no usable `ts`, so it cannot be placed in a window; excluded from the counts and reported rather than silently dropped |
+
+**Liveness is evidenced by ANY record, not by heartbeats alone.** The first implementation measured
+heartbeat-to-heartbeat and reported a two-minute outage over an interval in which three actions had
+been written — signed, chained records proving the collector was running. Overstating a stop on the
+strength of evidence that says the opposite is the one direction this report must never overstate
+in. The heartbeat remains what makes a *quiet* window checkable, which is the whole reason there is
+one; both failures are still caught, because a stopped collector writes nothing of either sort.
+
+**The three verdicts.** `incomplete` means something undeclared is missing or damaged.
+`inconclusive` means nothing is known to be missing and the evidence cannot support a completeness
+claim anyway. `complete` means everything the collector reported is chained, the resolution is
+established, liveness is unbroken, and every record falls under a countersigned checkpoint. A
+*declared* gap does not downgrade it — that is this document's own example above — because a
+disclosed loss is what the project converts an undeclared absence into, and penalising the
+disclosure would penalise the honesty it exists to produce.
+
 ## What this does not prove — SEC-11's boundary
 
 A collector patched to **drop one specific tool call** while still heartbeating with the original

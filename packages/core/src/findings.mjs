@@ -66,6 +66,7 @@ export const FAILURE_CODES = Object.freeze([
   // M4 — coverage
   'COVERAGE_GAP',
   'COVERAGE_UNKNOWN',
+  'UNDATED_RECORD',
 ]);
 
 /** DES-12's three verdicts. There is no fourth, and no absent one. */
@@ -133,6 +134,7 @@ export const DEFAULT_VERDICTS = Object.freeze({
   // M4
   COVERAGE_GAP: 'fail',
   COVERAGE_UNKNOWN: 'inconclusive',
+  UNDATED_RECORD: 'inconclusive',
 });
 
 /**

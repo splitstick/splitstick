@@ -10,6 +10,7 @@ import { generateDevSigner } from '@splitstick/core/signer-file';
 import { formatVkey, checkpointText, encodeNote, parseNote } from '@splitstick/core/note';
 import { signNote } from '@splitstick/core/signer';
 import { treeRoot } from '@splitstick/core/merkle';
+import { coverageReport } from '@splitstick/core/coverage';
 import { verifyStore } from '../src/verify.mjs';
 
 /**
@@ -68,6 +69,44 @@ async function writeCheckpoint(ctx, seq, tree_size, root, suite = 'SS1') {
  * wants; the harness then asserts the code appears in the report.
  * @type {Record<string, (ctx: any) => Promise<Record<string, unknown>|void>>}
  */
+/**
+ * Codes produced by the COVERAGE REPORT rather than by verifyStore.
+ *
+ * The same guarantee, driven through the other entry point: these three are
+ * what a coverage claim can conclude, and a code nobody has seen a real run
+ * emit is a failure mode nobody has seen occur. Each returns the window to
+ * report on.
+ */
+const COVERAGE_SCENARIOS = {
+  /** A window with no record of any kind and no declaration. */
+  async COVERAGE_GAP(ctx) {
+    // The store built below heartbeats for a minute, stops for five, and
+    // resumes. The stop is the gap.
+    return { from: '2026-10-11T10:00:00.000Z', to: '2026-10-11T10:07:00.000Z' };
+  },
+  /** An unknown-loss interval: the chain is intact and the span is not exact. */
+  async COVERAGE_UNKNOWN(ctx) {
+    // Written at the collector's CURRENT clock, which the heartbeat loop has
+    // advanced past the window. Reset it, or the record lands outside the
+    // window under test and the scenario proves nothing.
+    ctx.collector.now = () => new Date(Date.parse('2026-10-11T10:00:10.000Z'));
+    ctx.collector.gapUnknown({
+      from_ts: '2026-10-11T10:00:01.000Z', to_ts: '2026-10-11T10:00:02.000Z',
+      last_checkpoint_source_seq: 0,
+    });
+    return { from: '2026-10-11T10:00:00.000Z', to: '2026-10-11T10:00:30.000Z' };
+  },
+  /** A record that cannot be placed in a window at all. */
+  async UNDATED_RECORD(ctx) {
+    const ls = lines(ctx.root);
+    // Not a date, and not the right shape either: the point is that it cannot
+    // be placed, and the report excludes it loudly rather than quietly.
+    ls[1].record.ts = 'whenever';
+    write(ctx.root, ls);
+    return { from: '2026-10-11T10:00:00.000Z', to: '2026-10-11T10:00:30.000Z' };
+  },
+};
+
 const SCENARIOS = {
   async NO_EVIDENCE(ctx) {
     rmSync(chainPath(ctx.root), { force: true });
@@ -301,13 +340,39 @@ const delivered = SPEC.codes
   .map((/** @type {any} */ c) => c.code);
 
 test('the scenario table covers exactly the delivered codes', () => {
-  const covered = Object.keys(SCENARIOS).sort();
+  const covered = [...Object.keys(SCENARIOS), ...Object.keys(COVERAGE_SCENARIOS)].sort();
   assert.deepEqual(covered, [...delivered].sort(),
     'a delivered code with no scenario here is a failure mode nobody has seen occur, '
     + 'and a scenario for an undelivered code means the spec is stale');
 });
 
-for (const code of delivered) {
+for (const code of delivered.filter(c => c in COVERAGE_SCENARIOS)) {
+  test(`${code} is produced by a real coverage run`, async () => {
+    // Heartbeats for a minute, a five-minute stop, then heartbeats again. The
+    // same store for all three, so each scenario perturbs a log that is
+    // otherwise sound.
+    const ctx = await build({ records: 1, checkpoint: true });
+    let t = Date.parse('2026-10-11T10:00:00.000Z');
+    const beat = () => { ctx.collector.now = () => new Date(t); ctx.collector.heartbeat(); };
+    for (let i = 0; i < 12; i += 1) { beat(); t += 5_000; }
+    t += 300_000;
+    for (let i = 0; i < 12; i += 1) { beat(); t += 5_000; }
+    const window = await COVERAGE_SCENARIOS[code](ctx);
+    ctx.store.close();
+
+    const store = new Store(ctx.root, 'host-1');
+    const report = coverageReport(store, { ...window, collectors: store.collectors() });
+    store.close();
+    const codes = report.findings.map(f => f.code);
+    assert.ok(codes.includes(code),
+      `${code} was not emitted; got ${JSON.stringify(codes)} (verdict ${report.verdict})`);
+    const promised = SPEC.codes.find(c => c.code === code)?.verdict;
+    assert.equal(report.findings.find(f => f.code === code)?.verdict, promised,
+      `${code} was emitted with a verdict the specification does not promise`);
+  });
+}
+
+for (const code of delivered.filter(c => !(c in COVERAGE_SCENARIOS))) {
   test(`${code} is produced by a real verifier run`, async () => {
     const scenario = SCENARIOS[code];
     assert.ok(scenario, `no scenario for ${code}`);

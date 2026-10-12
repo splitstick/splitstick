@@ -4,7 +4,8 @@
     "M1",
     "M2",
     "M3a",
-    "M3b"
+    "M3b",
+    "M4"
   ],
   "verdict_rule": "A single fail makes the whole run fail. inconclusive never upgrades to fail and never downgrades to ok. ok means every check that could run, ran, and passed.",
   "codes": [
@@ -204,7 +205,13 @@
       "code": "COVERAGE_UNKNOWN",
       "milestone": "M4",
       "verdict": "inconclusive",
-      "conclusion": "A gap_unknown record is present. The chain may be perfectly intact while the collector cannot say what was observed during the interval, so an otherwise flawless run containing one is not proof of complete capture."
+      "conclusion": "Something about this window cannot be established, so no completeness claim is issued for it, and the chain may be perfectly intact throughout. Four causes, each named in the detail: a gap_unknown record is declared, so the collector cannot say what it observed during the interval and the span is bounded rather than exact; the heartbeat resolution is not established by the records, so no claim can be made finer than an interval the evidence does not state; the window holds no record at all, which is not a clean window but an unknown one; or records in the window fall under no countersigned checkpoint, or under one that arrived late, so nothing independent establishes when they were written. An otherwise flawless run carrying any of these is not proof of completeness."
+    },
+    {
+      "code": "UNDATED_RECORD",
+      "milestone": "M4",
+      "verdict": "inconclusive",
+      "conclusion": "A record carries no usable ts, so it cannot be placed in a date window and is excluded from a coverage report's counts. Inconclusive rather than fail: the record is chained and its integrity is unaffected, and what is missing is the ability to say WHEN it falls — which the ts never established anyway, being self-asserted. Reported rather than silently dropped, because a record excluded in silence makes a window look emptier than the evidence says."
     }
   ]
 }
