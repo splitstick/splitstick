@@ -87,6 +87,41 @@ was ordinary. And two roots at one height must fail closed.
 **Ask:** is this an availability decision or an integrity decision? Availability
 fails open and reports; integrity fails closed and refuses.
 
+## Trust boundaries, and the two directions a boundary fails
+
+A trust boundary is any point where data changes hands or changes status: a
+pack handed to a counterparty, a countersignature arriving from a witness, a
+file read back from disk after a restart, a digest crossing from "present" to
+"established". Every finding in sections 1, 2 and 4 above sits on one.
+
+**Name the boundary before writing the code that crosses it**, and for each,
+answer both questions — because a boundary fails in two opposite directions and
+the second one is the one that gets missed:
+
+| | Too much crosses | Too little crosses |
+|---|---|---|
+| **Outbound** (a pack, a report) | a disclosure reveals a sibling's content; a report asserts more than the evidence supports | a report discards valid evidence and reports the operator as worse than they are |
+| **Inbound** (a proof, a file, a flag) | an unverified proof is counted as verified; a damaged field is coerced into a usable one | a valid proof is refused because it arrived on a later checkpoint than expected |
+
+The PR #9 review found exactly one of each, in the same function: a
+countersignature's *presence* counted as anchoring (too much crossing inbound),
+and a validly witnessed later checkpoint ignored (too little crossing). Both had
+passed a self-review that was explicitly looking for the first kind.
+
+**Three rules that follow:**
+
+1. **Status changes are earned, never assumed.** `present` → `verified`,
+   `claimed` → `established`, `declared` → `attested`. Each arrow needs a
+   check, and the check belongs to whichever module already owns it. If
+   deriving the answer means importing the verifier, import the verifier —
+   that is what M4 ended up doing, after writing a second one.
+2. **A boundary's own direction is data.** What a pack *omits* is part of its
+   contract (`complete: false`), and a recipient must be able to tell a
+   deliberate omission from a missing piece.
+3. **The spec is the boundary, not the implementation.** Where a third party
+   writes against a format (INT-03), the format is what must be correct; our
+   verifier agreeing with itself proves nothing.
+
 ## M4 carries one risk the earlier milestones did not
 
 M4's requirements demand tests that assert the system does **not** signal
