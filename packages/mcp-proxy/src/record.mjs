@@ -22,8 +22,11 @@
  *   failed is the place a report would otherwise go.
  */
 export function recorder({ collector, run = null, onUnrecordable }) {
-  /** @type {{ records: number, unrecordable: number, unparsed: number, unmatched: number }} */
-  const counts = { records: 0, unrecordable: 0, unparsed: 0, unmatched: 0 };
+  /** @type {{ records: number, unrecordable: number, unparsed: number, unmatched: number,
+   *            unverbatim: number, notification: number }} */
+  const counts = {
+    records: 0, unrecordable: 0, unparsed: 0, unmatched: 0, unverbatim: 0, notification: 0,
+  };
 
   /**
    * @param {import('./pairing.mjs').Observation} o
@@ -54,6 +57,14 @@ export function recorder({ collector, run = null, onUnrecordable }) {
       // discarded them would be hiding exactly the traffic it understood least.
       if (o.what === 'unparsed') counts.unparsed += 1;
       if (o.what === 'unmatched') counts.unmatched += 1;
+      // The commitment is over a re-encoding rather than the wire bytes. Not
+      // an action record — the action record still lands, when its result
+      // arrives — but a reader must not be told "as sent" about bytes that
+      // were not.
+      if (o.what === 'unverbatim') counts.unverbatim += 1;
+      // The call itself IS recorded — it is pending, and settles as an attempt
+      // with no result. This counts the fact that it could never have had one.
+      if (o.what === 'notification') counts.notification += 1;
       onUnrecordable?.({ detail: o.detail ?? o.what, cause: null });
       return false;
     } catch (cause) {
@@ -62,9 +73,13 @@ export function recorder({ collector, run = null, onUnrecordable }) {
       // path.
       counts.unrecordable += 1;
       onUnrecordable?.({
-        detail: `the proxy could not record a ${o.what}: the traffic was forwarded anyway, and `
-          + 'the loss is the collector\'s to declare. NFR-12 is absolute — a collector that can '
-          + 'stop a run is one an operator disables',
+        detail: `the proxy could not record a ${o.what}: the traffic was forwarded anyway. `
+          + 'NFR-12 is absolute — a collector that can stop a run is one an operator disables. '
+          + 'The loss is not silent: `Collector#action` spends the observation counter BEFORE '
+          + 'anything that can fail, so an attempt that was observed and never written leaves a '
+          + 'hole in source_seq and a verifier reports SEQ_BROKEN over it. Where the chain store '
+          + 'itself is what failed the collector degrades instead, and the log stops rather than '
+          + 'continuing from an untrustworthy position',
         cause,
       });
       return false;

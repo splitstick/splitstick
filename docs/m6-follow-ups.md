@@ -60,6 +60,42 @@ Recorded because the shapes repeat, not for credit.
 | the documented `collect-oma` snippet took a store path | the constructor takes a Collector. Wrong the moment it was written, caught by running it |
 | the root pinned OMA 1.21.1 — the middle of three published 1.21.x | "supports 1.21.x" tested at one point. Both ends now run in CI, and both pass |
 
+## Found in the M6 self-review, fixed in M6
+
+Each was reproduced with a probe before anything was changed, and each regression was run
+against the pre-fix code to confirm it fails there.
+
+| What | The shape it had |
+|---|---|
+| the stdio proxy rewrote `\r\n` to `\n` | ninety bytes in, eighty-nine out, under a capitalised claim that the bytes forwarded are the bytes received. The guarding test sent only `\n` |
+| it also appended a newline to a final message that had none | same claim, same cause: `readline` reports a line without its terminator, so the terminator was reconstructed rather than preserved |
+| the committed `args` were `JSON.stringify`'d | `{"amount": 1.50,"big":1e2}` became `{"amount":1.5,"big":100}` under a comment saying they were not re-serialised. Self-consistent, verifiable, and not what the agent sent — and the number of a transfer is where that stops being cosmetic |
+| `String(id)` collapsed `1` and `"1"` | JSON-RPC treats them as different ids, so an upstream answering `"1"` to a request made with `1` had its result attributed to a call that never received it. The module refuses to match by proximity because "a guess here invents a tool result"; a coercion invents one just as well, from the untrusted side |
+| a `tools/call` with no JSON-RPC id recorded NOTHING | forwarded, executed by any server that dispatches on `method`, and invisible. The one outcome a collector whose premise is "the agent is not trusted to self-report" may not have |
+| the tlog adapter labelled every cosignature with its own id | a line signed by someone else travelled into the envelope under the configured identity, so every reader checked it against the wrong key and got a finding whose stated meaning is "the operator rewrote history" — a false tampering signal caused by a misbehaving witness |
+| it kept the last of several cosignature lines | nothing makes the last authoritative, and the others were dropped in silence. A witness cosigning under two keys during a rotation is a real case |
+| the OPS-05 static check missed `await import('node:net')` | and `globalThis.fetch(…)`. Two of the four ways in, on the guard for the highest-risk row in the milestone, in a repository where `await import('node:crypto')` is ordinary style |
+| and then it matched `typeof globalThis.fetch` in a JSDoc type | the overcorrection: a guard that fires on a type reference gets switched off, and then it guards nothing |
+
+### Checked and found sound
+
+Recorded because the investigation was the expensive part, and the next person should not
+repeat it.
+
+A recording failure in the proxy looked at first like silent loss: the traffic is forwarded,
+the evidence has one fewer record, and the coverage report prints `loss 0 declared`. It is
+not silent. `Collector#action` spends the observation counter **before** anything that can
+fail, so an observed-and-unwritten attempt leaves a hole in `source_seq` and the verifier
+reports `SEQ_BROKEN` — verdict **fail**, with the detail "source_seq jumped from 1 to 5:
+3 observed attempt(s) were never written". Where the chain store itself is what failed, the
+collector degrades and the log stops rather than continuing from an untrustworthy position,
+and the report says `inconclusive` with `COVERAGE_UNKNOWN` rather than claiming
+completeness.
+
+The first probe for this replaced `Collector#action` wholesale, which bypassed exactly the
+counter-spending under test and produced a false positive. Breaking the content store
+instead — the failure the mechanism was built for — showed it working.
+
 ## Carried, not yet accepted
 
 ### The test suite leaks a temp directory per test
@@ -72,6 +108,19 @@ Closing it: a shared helper that registers each directory for removal, and a che
 fails if a test file calls `mkdtempSync` without it. Offered as its own small change rather
 than folded into a milestone, because it touches almost every test file and would bury the
 diff of whatever it travelled with.
+
+### A record-format gap, left as a decision rather than taken
+
+An id-less `tools/call` is now recorded, and it settles as an attempt with `outcome:
+'timeout'` — observed, and no result ever received, which is true. What is imprecise is
+*why*: nothing timed out, because nothing was ever going to answer. `OUTCOMES` is
+`ok | error | timeout | denied`, a published vocabulary, and adding a value to it makes
+records that older verifiers refuse.
+
+So the choice was not made unilaterally at review time. Either an `unanswered` outcome, or a
+distinct record kind, with the compatibility question answered deliberately. Until then the
+proxy reports the notification out of band and counts it, and the record says the weaker
+true thing rather than the stronger false one.
 
 ## Not a follow-up, but worth saying once
 

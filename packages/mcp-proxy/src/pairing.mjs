@@ -36,13 +36,14 @@ export const TOOL_CALL = 'tools/call';
  * @property {string|number} id the JSON-RPC id
  * @property {string} tool
  * @property {Uint8Array} args the arguments as they were sent
+ * @property {boolean} verbatim whether `args` is the wire bytes or a re-encoding
  * @property {string} correlation
  * @property {number} at when the request was seen, for a timeout
  */
 
 /**
  * @typedef {object} Observation
- * @property {'call'|'unmatched'|'unparsed'|'timeout'} what
+ * @property {'call'|'unmatched'|'unparsed'|'timeout'|'unverbatim'|'notification'} what
  * @property {string} [tool]
  * @property {Uint8Array} [args]
  * @property {Uint8Array} [result]
@@ -54,6 +55,9 @@ export const TOOL_CALL = 'tools/call';
 export class Pairing {
   /** @type {Map<string, PendingCall>} */
   #pending = new Map();
+
+  /** Counts id-less tools/call messages, so each gets a distinct pending key. */
+  #notifications = 0;
 
   /**
    * @param {object} o
@@ -91,17 +95,52 @@ export class Pairing {
           + 'and is recorded as unparsed rather than repaired or refused',
       };
     }
-    if (msg.method !== TOOL_CALL || msg.id === undefined || msg.id === null) return null;
-    const key = String(msg.id);
+    if (msg.method !== TOOL_CALL) return null;
+    if (msg.id === undefined || msg.id === null) {
+      // A `tools/call` sent as a JSON-RPC NOTIFICATION. It is not conformant —
+      // tools/call is a request — but the proxy exists because the agent is
+      // not trusted to report its own actions, and this used to return null:
+      // the call was forwarded, many servers dispatch on `method` without
+      // looking for an id and would execute it, and NOTHING was recorded. A
+      // consequential action crossing the boundary invisibly is the one
+      // outcome this collector may not have.
+      //
+      // So it is pended like any other call, under a key no response can
+      // produce — `idKey` is always `string:` or `number:` — and therefore
+      // settles as a timeout at expiry or shutdown. `timeout` is the honest
+      // value available: observed, and no result was ever received. That it
+      // was never going to receive one is in the out-of-band report, because
+      // the record vocabulary has no value for it (see docs/m6-follow-ups.md).
+      this.#notifications += 1;
+      const { args, verbatim } = argsBytes(bytes, msg);
+      const tool = typeof msg.params?.name === 'string' ? msg.params.name : 'unknown';
+      this.#pending.set(`notification:#${this.#notifications}`, {
+        id: `notification:#${this.#notifications}`, tool, args, verbatim,
+        correlation: this.newCorrelation(), at: this.now(),
+      });
+      return {
+        what: 'notification',
+        detail: `a tools/call for ${JSON.stringify(tool)} arrived with no JSON-RPC id, so it can `
+          + 'never receive a result. It was forwarded unchanged and is recorded as an attempt '
+          + 'with no result rather than passed over: a consequential call that left no trace is '
+          + 'the one thing this proxy exists to prevent',
+      };
+    }
     const tool = typeof msg.params?.name === 'string' ? msg.params.name : 'unknown';
-    // The ARGUMENTS as sent, not re-serialised. A re-serialisation would commit
-    // to bytes the server never saw, so the record would attest to a request
-    // that was never made.
-    const args = argsBytes(bytes, msg);
-    this.#pending.set(key, {
-      id: msg.id, tool, args, correlation: this.newCorrelation(), at: this.now(),
+    // The ARGUMENTS as sent, by span out of the original bytes. A
+    // re-serialisation would commit to bytes the server never saw, so the
+    // record would attest to a request that was never made.
+    const { args, verbatim } = argsBytes(bytes, msg);
+    this.#pending.set(idKey(msg.id), {
+      id: msg.id, tool, args, verbatim, correlation: this.newCorrelation(), at: this.now(),
     });
-    return null;
+    return verbatim ? null : {
+      what: 'unverbatim',
+      detail: `the arguments of a call to ${JSON.stringify(tool)} could not be taken verbatim `
+        + 'from the request bytes, so the commitment is over a re-encoding of them. It is '
+        + 'reported because a reader told "these are the arguments as sent" would otherwise be '
+        + 'told something this proxy cannot establish',
+    };
   }
 
   /**
@@ -119,7 +158,7 @@ export class Pairing {
       };
     }
     if (msg.id === undefined || msg.id === null) return null;     // a notification
-    const key = String(msg.id);
+    const key = idKey(msg.id);
     const call = this.#pending.get(key);
     if (call === undefined) {
       // An id nobody sent. Reported, never matched to the nearest request: the
@@ -174,6 +213,20 @@ export class Pairing {
 }
 
 /**
+ * The pending-map key for a JSON-RPC id.
+ *
+ * The TYPE is part of the key. `String(id)` collapsed `1` and `"1"`, which
+ * JSON-RPC treats as different ids — so an upstream answering `"1"` to a
+ * request made with `1` was matched, and its result was attributed to a call
+ * that never received it. This module refuses to match a response to the
+ * nearest request because "a guess here invents a tool result"; a type
+ * coercion invents one just as effectively, and from the side of the boundary
+ * that is not trusted.
+ * @param {string|number} id
+ */
+const idKey = (id) => `${typeof id}:${id}`;
+
+/**
  * @param {Uint8Array} bytes
  * @returns {{ id?: string|number, method?: string, params?: any, error?: any }|null}
  */
@@ -188,16 +241,123 @@ function parse(bytes) {
 }
 
 /**
- * The arguments as the agent sent them.
+ * The arguments as the agent sent them — the ORIGINAL BYTES, by span.
  *
- * Taken from the original bytes by re-encoding only the `arguments` subtree,
- * which is the smallest thing that can be said to be "what was asked".
- * Committing to the whole envelope would put the JSON-RPC id in the record,
- * and ids are a per-connection counter that says nothing about the action.
+ * Only the `arguments` subtree, which is the smallest thing that can be said
+ * to be "what was asked". Committing to the whole envelope would put the
+ * JSON-RPC id in the record, and ids are a per-connection counter that says
+ * nothing about the action.
+ *
+ * This used to be `JSON.stringify(msg.params.arguments)` under a comment
+ * saying it was not re-serialised. It was: `{"amount": 1.50,"big":1e2,"note":
+ * "caf\u00e9"}` on the wire became `{"amount":1.5,"big":100,"note":"café"}` in
+ * the commitment. Self-consistent, verifiable, and not the bytes the agent
+ * sent — so a reader told "these are the arguments as sent" was being told
+ * something false about the one field most likely to be argued over. The
+ * number of a transfer is exactly where `1.50` versus `1.5` stops being
+ * cosmetic.
+ *
+ * Falls back to re-serialising ONLY when the span cannot be located, and says
+ * so in the return value so the caller is never left believing a
+ * re-serialisation is the wire bytes.
+ *
  * @param {Uint8Array} bytes @param {any} msg
+ * @returns {{ args: Buffer, verbatim: boolean }}
  */
 function argsBytes(bytes, msg) {
   const a = msg.params?.arguments;
-  if (a === undefined) return Buffer.alloc(0);
-  return Buffer.from(JSON.stringify(a), 'utf8');
+  if (a === undefined) return { args: Buffer.alloc(0), verbatim: true };
+  const span = argumentsSpan(bytes);
+  if (span !== null) {
+    return { args: Buffer.from(bytes.subarray(span[0], span[1])), verbatim: true };
+  }
+  return { args: Buffer.from(JSON.stringify(a), 'utf8'), verbatim: false };
+}
+
+/**
+ * Locate the `"arguments"` value inside `params` in the raw bytes.
+ *
+ * A scanner rather than a regular expression, because the value is a balanced
+ * structure that may contain the key's own spelling inside a string. It walks
+ * the text once, tracking string state and escapes, and returns the half-open
+ * byte range of the value — or null, which the caller treats as "cannot claim
+ * verbatim" rather than as "no arguments".
+ *
+ * Only a top-level-of-`params` `"arguments"` is accepted: a nested one belongs
+ * to the payload, and committing to it would be committing to a fragment of
+ * what was asked while calling it the whole.
+ * @param {Uint8Array} bytes
+ * @returns {[number, number]|null}
+ */
+function argumentsSpan(bytes) {
+  const t = Buffer.from(bytes).toString('utf8');
+  // Byte offsets and string offsets diverge under multi-byte UTF-8, so the
+  // scan is done on the string and the result is converted back through the
+  // same encoder. Slicing the Buffer at a string index would cut a character
+  // in half and produce a commitment to invalid UTF-8.
+  let i = 0;
+  let depth = 0;
+  let inStr = false;
+  let esc = false;
+  /** Depth at which `params`'s object sits, once seen. */
+  let paramsDepth = -1;
+  /** @type {string|null} the key most recently completed at this depth */
+  let pendingKey = null;
+  let keyStart = -1;
+
+  for (; i < t.length; i += 1) {
+    const ch = t[i];
+    if (inStr) {
+      if (esc) { esc = false; continue; }
+      if (ch === '\\') { esc = true; continue; }
+      if (ch === '"') {
+        inStr = false;
+        pendingKey = t.slice(keyStart + 1, i);
+      }
+      continue;
+    }
+    if (ch === '"') { inStr = true; keyStart = i; continue; }
+    if (ch === '{' || ch === '[') {
+      if (pendingKey === 'params' && paramsDepth === -1) paramsDepth = depth;
+      if (pendingKey === 'arguments' && depth === paramsDepth + 1) {
+        const start = i;
+        const end = balancedEnd(t, i);
+        if (end === -1) return null;
+        return [Buffer.byteLength(t.slice(0, start), 'utf8'),
+          Buffer.byteLength(t.slice(0, end), 'utf8')];
+      }
+      depth += 1;
+      pendingKey = null;
+      continue;
+    }
+    if (ch === '}' || ch === ']') { depth -= 1; pendingKey = null; continue; }
+    if (ch === ',') { pendingKey = null; continue; }
+  }
+  return null;
+}
+
+/**
+ * The index just past the structure opening at `open`.
+ * @param {string} t @param {number} open @returns {number}
+ */
+function balancedEnd(t, open) {
+  let depth = 0;
+  let inStr = false;
+  let esc = false;
+  for (let i = open; i < t.length; i += 1) {
+    const ch = t[i];
+    if (inStr) {
+      if (esc) { esc = false; continue; }
+      if (ch === '\\') { esc = true; continue; }
+      if (ch === '"') inStr = false;
+      continue;
+    }
+    if (ch === '"') { inStr = true; continue; }
+    if (ch === '{' || ch === '[') { depth += 1; continue; }
+    if (ch === '}' || ch === ']') {
+      depth -= 1;
+      if (depth === 0) return i + 1;
+    }
+  }
+  return -1;
 }

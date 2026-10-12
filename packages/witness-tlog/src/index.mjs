@@ -156,23 +156,59 @@ export function tlogWitness({ id, url, tier = 'anchor', timeout_ms = 10_000, fet
       }
       if (!res.ok) throw new TlogWitnessError(`${id} returned HTTP ${res.status}: ${text.slice(0, 200)}`);
 
-      // The body is signature lines. Take the LAST one that is a signature
-      // line and is not already in the note: a witness returns its own
-      // cosignature, and echoing the operator's line back as a
-      // countersignature would make the operator their own witness — the
-      // defect this project has already had once, where presence was counted
-      // as anchoring.
+      // The body is signature lines. Lines already in the note are discarded:
+      // a witness returns its OWN cosignature, and echoing the operator's line
+      // back as a countersignature would make the operator their own witness —
+      // the defect this project has already had once, where presence was
+      // counted as anchoring.
       const own = new Set(note.trimEnd().split('\n').filter(l => l.startsWith('— ')));
       const lines = text.trimEnd().split('\n')
         .map(l => l.trim())
         .filter(l => l.startsWith('— ') && !own.has(l));
-      const line = lines.at(-1);
-      if (line === undefined) {
+
+      if (lines.length === 0) {
         throw new TlogWitnessError(
-          `${id} returned no cosignature line of its own. ${lines.length === 0 && text.trim() !== ''
+          `${id} returned no cosignature line of its own. ${text.trim() !== ''
             ? 'The body carried only lines already in the note, which would make the operator '
               + 'their own witness.'
             : `The body was ${JSON.stringify(text.slice(0, 120))}.`}`,
+        );
+      }
+      // More than one, and this adapter will not choose. It used to take
+      // `.at(-1)` — nothing makes the last line authoritative, and the others
+      // were dropped in silence. A witness cosigning under two keys during a
+      // rotation is a real case, and losing one of them quietly is losing
+      // evidence; picking one fabricates a decision the adapter has no basis
+      // for. The envelope carries one line per countersignature, so the honest
+      // response is to say what arrived.
+      if (lines.length > 1) {
+        throw new TlogWitnessError(
+          `${id} returned ${lines.length} cosignature lines and this adapter will not choose `
+          + 'between them: nothing makes one of them the countersignature, and keeping one '
+          + `silently would discard evidence. The lines were ${JSON.stringify(lines)}`,
+        );
+      }
+      const line = /** @type {string} */ (lines[0]);
+
+      // The line must be signed UNDER THE NAME this countersignature will be
+      // attributed to. It is returned as `issuer: id`, and a line signed by
+      // somebody else carried that label all the way into the envelope — so a
+      // reader's policy for `id` was used to check a signature `id` never
+      // made, and the result is a mismatch finding whose stated meaning is
+      // "the operator rewrote history". A bad or hostile witness response
+      // would have read as tampering by the operator.
+      //
+      // This checks the NAME only, which nothing here authenticates — the body
+      // came from the witness. That is deliberate: the key is authenticated by
+      // the READER's acceptance policy, which is where it belongs (FR-30), and
+      // the adapter's whole job is to not mislabel what it hands over.
+      const signedBy = /^— (\S+) /.exec(line)?.[1];
+      if (signedBy !== id) {
+        throw new TlogWitnessError(
+          `${id} returned a cosignature signed under the name ${JSON.stringify(signedBy ?? '')}. `
+          + `It is refused rather than attributed to ${id}: a line labelled with one identity and `
+          + 'signed by another is checked against the wrong key by every reader, and reads as the '
+          + 'operator having rewritten history rather than as a witness misbehaving.',
         );
       }
 

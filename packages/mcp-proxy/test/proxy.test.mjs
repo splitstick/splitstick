@@ -84,6 +84,70 @@ test('FR-03: a call and its result become one record over stdio', async () => {
   r.store.close();
 });
 
+test('FR-03: a CRLF-terminated message is forwarded with its CRLF', async () => {
+  // The transparency claim was false by one byte. `readline` strips the
+  // terminator and reports the line without it, so `\r\n` went out as `\n`
+  // and the record attested to a line the agent had not sent. The test beside
+  // this one sent only `\n` and passed throughout — a seam exercised once.
+  const { c, store } = await rig();
+  const agentIn = new PassThrough();
+  const agentOut = new PassThrough();
+  const upIn = new PassThrough();
+  const upOut = new PassThrough();
+  /** @type {Buffer[]} */
+  const seen = [];
+  upIn.on('data', (d) => seen.push(d));
+  stdioProxy({
+    agentIn, agentOut, upstreamIn: upIn, upstreamOut: upOut,
+    collector: c, newCorrelation: () => 'cor-crlf', onUnrecordable: () => {},
+  });
+
+  const req = JSON.stringify({
+    jsonrpc: '2.0', id: 1, method: 'tools/call',
+    params: { name: 'transfer_funds', arguments: { amount: 1 } },
+  });
+  // Both framings, in one stream, because a reader that handled only one would
+  // pass whichever was tested.
+  const sent = Buffer.from(`${req}\r\n${req}\n`, 'utf8');
+  agentIn.write(sent);
+  await new Promise((r) => setTimeout(r, 60));
+
+  assert.equal(Buffer.compare(Buffer.concat(seen), sent), 0,
+    'the server did not receive the bytes the agent sent');
+  // And the record parsed, so preserving the terminator did not come at the
+  // cost of the \r landing inside the JSON the pairing layer reads.
+  assert.equal(store.readChain().filter(e => /** @type {any} */ (e).record?.kind === 'tool_call').length, 0,
+    'nothing is recorded until the results arrive, which is the pairing contract');
+  store.close();
+});
+
+test('FR-03: a final message with no terminator is not dropped', async () => {
+  // Splitting on the newline by hand introduces the chance of losing a
+  // trailing partial, and the trailing one is the last call of a run — the
+  // call most likely to be the one somebody is asking about.
+  const { c, store } = await rig();
+  const agentIn = new PassThrough();
+  const agentOut = new PassThrough();
+  const upIn = new PassThrough();
+  const upOut = new PassThrough();
+  /** @type {Buffer[]} */
+  const seen = [];
+  upIn.on('data', (d) => seen.push(d));
+  stdioProxy({
+    agentIn, agentOut, upstreamIn: upIn, upstreamOut: upOut,
+    collector: c, newCorrelation: () => 'cor-tail', onUnrecordable: () => {},
+  });
+  const req = JSON.stringify({
+    jsonrpc: '2.0', id: 7, method: 'tools/call',
+    params: { name: 'transfer_funds', arguments: { amount: 7 } },
+  });
+  agentIn.end(req);  // no trailing newline at all
+  await new Promise((r) => setTimeout(r, 60));
+  assert.equal(Buffer.concat(seen).toString('utf8'), req,
+    'the last message of the stream was dropped');
+  store.close();
+});
+
 test('FR-03: the bytes the server sees are the bytes the agent sent', async () => {
   // Transparency is the proxy's first obligation. Re-serialising the parsed
   // JSON would be easier and would change key order, whitespace and number
@@ -519,4 +583,111 @@ test('--help is an answer, so it goes to stdout', async () => {
   assert.equal(r.exit, 0);
   assert.match(r.out, /^splitstick-mcp-proxy --upstream/);
   assert.equal(r.err, '', 'and nothing at all on the error stream');
+});
+
+// ── Review findings: what the record CLAIMS about the traffic ──────────────
+
+test('the committed arguments are the wire bytes, not a re-encoding of them', async () => {
+  // `JSON.stringify(msg.params.arguments)` sat under a comment saying the
+  // arguments were not re-serialised. They were: `1.50` became `1.5`, `1e2`
+  // became `100`, and `é` became the character. Self-consistent,
+  // verifiable, and not what the agent sent — and the number of a transfer is
+  // exactly where that stops being cosmetic.
+  const p = new Pairing({ newCorrelation: () => 'cor' });
+  const wire = '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"transfer_funds",'
+    + '"arguments":{"amount": 1.50,"big":1e2,"note":"caf\\u00e9"}}}';
+  assert.equal(p.request(Buffer.from(wire, 'utf8')), null);
+  const obs = p.response(Buffer.from(JSON.stringify({ jsonrpc: '2.0', id: 1, result: { ok: true } })));
+  assert.equal(obs?.what, 'call');
+  assert.equal(Buffer.from(/** @type {any} */ (obs).args).toString('utf8'),
+    '{"amount": 1.50,"big":1e2,"note":"caf\\u00e9"}',
+    'the commitment is not the bytes the agent sent');
+});
+
+test('the arguments span survives multi-byte characters and nested braces', async () => {
+  // The scanner works on the string and converts back through the encoder; a
+  // Buffer slice at a string index would cut a character in half and commit to
+  // invalid UTF-8. And `"arguments"` appearing INSIDE the payload must not be
+  // mistaken for the key.
+  const p = new Pairing({ newCorrelation: () => 'cor' });
+  const args = '{"memo":"日本語の説明","nested":{"arguments":"not the key","a":[1,{"b":2}]}}';
+  const wire = `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"t","arguments":${args}}}`;
+  p.request(Buffer.from(wire, 'utf8'));
+  const obs = p.response(Buffer.from(JSON.stringify({ jsonrpc: '2.0', id: 1, result: {} })));
+  assert.equal(Buffer.from(/** @type {any} */ (obs).args).toString('utf8'), args);
+});
+
+test('a response id of a different TYPE is not matched to the request', async () => {
+  // JSON-RPC treats `1` and `"1"` as different ids. `String(id)` collapsed
+  // them, so an upstream answering `"1"` to a request made with `1` had its
+  // result attributed to a call that never received it. This module refuses to
+  // match a response to the nearest request because "a guess here invents a
+  // tool result"; a type coercion invents one just as effectively, and from
+  // the side of the boundary that is not trusted.
+  const p = new Pairing({ newCorrelation: () => 'cor' });
+  p.request(Buffer.from(JSON.stringify({
+    jsonrpc: '2.0', id: 1, method: 'tools/call',
+    params: { name: 'transfer_funds', arguments: { amount: 1 } },
+  })));
+  const obs = p.response(Buffer.from(JSON.stringify({ jsonrpc: '2.0', id: '1', result: { ok: true } })));
+  assert.equal(obs?.what, 'unmatched', 'a string id was matched to a numeric request');
+  assert.equal(p.outstanding, 1, 'and the real call is still awaiting its result');
+  // It settles as a timeout, which is the honest end: no result ever arrived
+  // for the id that was actually sent.
+  const [t] = p.closeAll();
+  assert.equal(t?.outcome, 'timeout');
+});
+
+test('a tools/call with no JSON-RPC id is recorded, not passed over', async () => {
+  // It used to return null: the call was forwarded, a server dispatching on
+  // `method` would execute it, and nothing at all was recorded. The proxy
+  // exists because the agent is not trusted to report its own actions, so a
+  // consequential call that leaves no trace is the one outcome it may not
+  // have.
+  const p = new Pairing({ newCorrelation: () => 'cor' });
+  const obs = p.request(Buffer.from(JSON.stringify({
+    jsonrpc: '2.0', method: 'tools/call',
+    params: { name: 'transfer_funds', arguments: { amount: 2000000 } },
+  })));
+  assert.equal(obs?.what, 'notification');
+  assert.match(String(obs?.detail), /can never receive a result/);
+  assert.equal(p.outstanding, 1, 'the call is pending, so it cannot vanish');
+
+  const settled = p.closeAll();
+  assert.equal(settled.length, 1);
+  assert.equal(settled[0]?.outcome, 'timeout', 'observed, and no result ever received');
+  assert.equal(settled[0]?.tool, 'transfer_funds');
+  assert.equal(Buffer.from(/** @type {any} */ (settled[0]).args).toString('utf8'),
+    '{"amount":2000000}', 'the arguments of the invisible call are committed');
+});
+
+test('two id-less calls are two records, not one', async () => {
+  // They share no id, so a single synthetic key would have collapsed them and
+  // hidden the second — which is the shape of the bug being fixed, one level
+  // down.
+  const p = new Pairing({ newCorrelation: () => 'cor' });
+  for (const amount of [1, 2]) {
+    p.request(Buffer.from(JSON.stringify({
+      jsonrpc: '2.0', method: 'tools/call', params: { name: 't', arguments: { amount } },
+    })));
+  }
+  assert.equal(p.outstanding, 2);
+  assert.deepEqual(p.closeAll().map(o => Buffer.from(/** @type {any} */ (o).args).toString('utf8')),
+    ['{"amount":1}', '{"amount":2}']);
+});
+
+test('a response can never collide with an id-less call\'s pending key', async () => {
+  // The synthetic key is `notification:#n`, and `idKey` is always `string:` or
+  // `number:`, so no response of either type can reach it. Asserted rather
+  // than reasoned about, because a collision here would attribute a real
+  // server result to a call that never asked for one.
+  const p = new Pairing({ newCorrelation: () => 'cor' });
+  p.request(Buffer.from(JSON.stringify({
+    jsonrpc: '2.0', method: 'tools/call', params: { name: 't', arguments: { a: 1 } },
+  })));
+  for (const id of ['notification:#1', 1, 'string:notification:#1']) {
+    const obs = p.response(Buffer.from(JSON.stringify({ jsonrpc: '2.0', id, result: { ok: true } })));
+    assert.equal(obs?.what, 'unmatched', `id ${JSON.stringify(id)} reached the synthetic key`);
+  }
+  assert.equal(p.outstanding, 1);
 });

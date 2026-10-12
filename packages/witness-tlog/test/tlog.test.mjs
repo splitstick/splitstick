@@ -233,3 +233,50 @@ test('FR-15: it is reachable from configuration, as a type like any other', asyn
   assert.equal(a?.id, 'w.example');
   assert.deepEqual(a?.establishes, ['sequence']);
 });
+
+// ── Review findings: what the adapter CLAIMS about what it hands over ──────
+
+test('FR-15: a cosignature signed under another name is refused, not relabelled', async () => {
+  // It was returned as `issuer: id` regardless of who signed the line, so a
+  // bad or hostile witness response travelled into the envelope labelled with
+  // an identity it was not signed by. Every reader then checked it against
+  // that identity's key, failed, and got a mismatch finding whose stated
+  // meaning is "the operator re-signed history" — a false tampering signal
+  // caused by a misbehaving witness.
+  const note = 'o\n1\ncm9vdA==\n\n— o AAAA\n';
+  const w = tlogWitness({
+    id: 'expected.example', url: 'http://127.0.0.1:1',
+    fetchImpl: async () => new Response('— someone.else SIG\n', { status: 200 }),
+  });
+  await assert.rejects(
+    () => w.submit(note, { old_size: 0, consistency_proof: [] }),
+    (/** @type {any} */ e) => e instanceof TlogWitnessError
+      && /signed under the name "someone\.else"/.test(e.message)
+      && /reads as the operator having rewritten history/.test(e.message));
+
+  // The name matching IS accepted — the check is about mislabelling, not about
+  // authenticating the witness, which is the reader's policy's job (FR-30).
+  const ok = tlogWitness({
+    id: 'expected.example', url: 'http://127.0.0.1:1',
+    fetchImpl: async () => new Response('— expected.example SIG\n', { status: 200 }),
+  });
+  const cs = await ok.submit(note, { old_size: 0, consistency_proof: [] });
+  assert.equal(cs.issuer, 'expected.example');
+  assert.equal(cs.line, '— expected.example SIG');
+});
+
+test('FR-15: several cosignature lines are refused rather than one being chosen', async () => {
+  // `.at(-1)` kept the last and dropped the rest in silence. Nothing makes the
+  // last line authoritative, and a witness cosigning under two keys during a
+  // rotation is a real case — losing one quietly is losing evidence.
+  const note = 'o\n1\ncm9vdA==\n\n— o AAAA\n';
+  const w = tlogWitness({
+    id: 'w.example', url: 'http://127.0.0.1:1',
+    fetchImpl: async () => new Response('— w.example FIRST\n— w.example SECOND\n', { status: 200 }),
+  });
+  await assert.rejects(
+    () => w.submit(note, { old_size: 0, consistency_proof: [] }),
+    (/** @type {any} */ e) => e instanceof TlogWitnessError
+      && /will not choose between them/.test(e.message)
+      && /FIRST/.test(e.message) && /SECOND/.test(e.message));
+});

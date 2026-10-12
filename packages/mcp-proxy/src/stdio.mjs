@@ -5,18 +5,36 @@
  * upstream server's. Messages are newline-delimited JSON.
  *
  * TRANSPARENCY IS THE FIRST OBLIGATION. The bytes forwarded are the bytes
- * received, unchanged and in order: the proxy writes through the ORIGINAL line
- * and parses a copy for recording. Re-serialising the parsed JSON would be
- * easier and would change key order, whitespace and number formatting — so the
- * server would receive bytes the agent never sent, and the record would attest
- * to a request that was never made.
+ * received, unchanged and in order: the proxy writes through the ORIGINAL
+ * bytes and parses a copy for recording. Re-serialising the parsed JSON would
+ * be easier and would change key order, whitespace and number formatting — so
+ * the server would receive bytes the agent never sent, and the record would
+ * attest to a request that was never made.
+ *
+ * That claim used to be false by one byte. Framing was read with
+ * `readline`, which strips the terminator and reports the line without it, so
+ * a `\r\n`-terminated message — permitted framing, and emitted by some
+ * runtimes — was forwarded as `\n`: ninety bytes in, eighty-nine out, and a
+ * record attesting to a line the agent did not send. The test that guarded
+ * this sent only `\n`, so it passed throughout; a seam exercised once looks
+ * like a seam that works. Framing is now split by hand so the terminator
+ * survives, and the test sends both.
  *
  * A line that is not JSON at all is still forwarded. The proxy is not a
  * validator: repairing traffic alters what it records, and refusing traffic
  * decides what the agent may send.
+ *
+ * THERE IS NO SIZE CEILING HERE, unlike the HTTP transport, and the difference
+ * is the transport rather than an oversight. HTTP has to buffer a whole body
+ * to forward it as one request, so a limit there is the only alternative to
+ * holding an unbounded body in memory — and it refuses loudly at a stated
+ * size. A stdio message is forwarded as it completes, one at a time, so the
+ * exposure is a single message and the bound is the same one the agent's own
+ * traffic already has. Refusing a large message here would also contradict the
+ * paragraph above: a proxy that decides what the agent may send is no longer
+ * recording what the agent did.
  */
 
-import { createInterface } from 'node:readline';
 import { Pairing } from './pairing.mjs';
 import { recorder } from './record.mjs';
 
@@ -43,21 +61,54 @@ export function stdioProxy(o) {
    * One direction. `observe` is the pairing call for it; the write happens
    * FIRST so that a recording failure cannot delay the traffic — NFR-12 again,
    * expressed as an ordering rather than as a try/catch.
+   *
+   * Framing is split here rather than by `readline` so that the message is
+   * forwarded with the terminator it arrived with. What is handed to `observe`
+   * is the message WITHOUT its terminator — the pairing layer parses JSON and
+   * a trailing `\r` is not part of the JSON — while what is written onward is
+   * the original bytes including whatever ended them.
    * @param {import('node:stream').Readable} from
    * @param {import('node:stream').Writable} to
    * @param {(b: Uint8Array) => import('./pairing.mjs').Observation|null} observe
    */
   const pipe = (from, to, observe) => {
-    const lines = createInterface({ input: from, crlfDelay: Infinity });
-    lines.on('line', (line) => {
-      // Forward first, byte for byte. The newline is re-added because readline
-      // consumed it; nothing else about the line is touched.
-      to.write(`${line}\n`);
-      const observation = observe(Buffer.from(line, 'utf8'));
+    /** @type {Buffer} */
+    let buf = Buffer.alloc(0);
+    let closed = false;
+    const deliver = (/** @type {Buffer} */ raw) => {
+      // Forward first, byte for byte, terminator and all.
+      to.write(raw);
+      // The payload for recording: the message without its line terminator.
+      let end = raw.length;
+      if (end > 0 && raw[end - 1] === 0x0a) end -= 1;
+      if (end > 0 && raw[end - 1] === 0x0d) end -= 1;
+      const observation = observe(raw.subarray(0, end));
       if (observation !== null) rec.emit(observation);
-    });
-    lines.on('close', () => { to.end?.(); });
-    return lines;
+    };
+    const onData = (/** @type {Buffer} */ chunk) => {
+      buf = buf.length === 0 ? chunk : Buffer.concat([buf, chunk]);
+      for (let i = buf.indexOf(0x0a); i !== -1; i = buf.indexOf(0x0a)) {
+        deliver(buf.subarray(0, i + 1));
+        buf = buf.subarray(i + 1);
+      }
+    };
+    const onEnd = () => {
+      // A final message with no terminator is still a message. Dropping it
+      // would lose the last call of a run whenever a peer exits without a
+      // trailing newline, and that is the call most likely to matter.
+      if (buf.length > 0) { deliver(buf); buf = Buffer.alloc(0); }
+      closed = true;
+      to.end?.();
+    };
+    from.on('data', onData);
+    from.on('end', onEnd);
+    return {
+      close() {
+        from.off('data', onData);
+        from.off('end', onEnd);
+        if (!closed && buf.length > 0) { deliver(buf); buf = Buffer.alloc(0); }
+      },
+    };
   };
 
   const a = pipe(o.agentIn, o.upstreamIn, b => pairing.request(b));

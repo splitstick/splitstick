@@ -65,16 +65,97 @@ function sources(dir) {
   return out;
 }
 
-test('OPS-05: nothing that must stay offline even imports a network module', () => {
+/** Network modules, however they are spelled. */
+const NET = 'net|http|https|dns|tls|dgram|http2|inspector|quic';
+
+/**
+ * The static rules, each with the message it fails under.
+ *
+ * Written out rather than crammed into one alternation because the first
+ * version was one regex and it MISSED `await import('node:net')` — in a
+ * repository where `await import('node:crypto')` is an established idiom in
+ * these very packages, so a dynamic network import would have read as
+ * ordinary style and passed. It also missed `globalThis.fetch(...)`. A guard
+ * on the highest-risk requirement in the milestone that quietly covered two
+ * of the four ways to reach the network is the kind of check that makes a
+ * build green and stops anybody looking.
+ *
+ * Each rule is exercised against text that breaks it, below.
+ */
+const RULES = [
+  {
+    re: new RegExp(`from\\s+['"]node:(${NET})['"]`),
+    why: 'statically imports a network module',
+  },
+  {
+    re: new RegExp(`require\\(\\s*['"]node:(${NET})['"]\\s*\\)`),
+    why: 'requires a network module',
+  },
+  {
+    re: new RegExp(`import\\(\\s*['"]node:(${NET})['"]\\s*\\)`),
+    why: 'dynamically imports a network module',
+  },
+  {
+    // The CALL, not the name. Requiring the open paren matters: the first
+    // version matched `@param {{ fetchImpl?: typeof globalThis.fetch }}` — a
+    // JSDoc type annotation in the package that passes a fetch implementation
+    // through to the adapters and never calls one itself. A guard that fires
+    // on a type reference gets switched off, and then it guards nothing.
+    re: /(^|[^.\w])fetch\s*\(|\b(?:globalThis|global|window|self)\s*\.\s*fetch\s*\(/,
+    why: 'calls fetch',
+  },
+  {
+    // The evasion the three rules above cannot see. A non-literal specifier
+    // makes the static layer decorative, so it is refused outright: every
+    // dynamic import in these packages names its module directly, and one
+    // that does not is either an evasion or a pattern that needs a different
+    // guard.
+    re: /import\(\s*(?!['"])/,
+    why: 'dynamically imports a module named by an expression, which no static check can read',
+  },
+];
+
+test('OPS-05: nothing that must stay offline can reach the network', () => {
   // The static half. A trap can be bypassed by a primitive nobody thought to
   // patch; an import that is not there cannot be called by any route.
-  const banned = /from\s+['"]node:(net|http|https|dns|tls|dgram|http2)['"]|require\(['"]node:(net|http|https|dns|tls|dgram|http2)['"]\)|(^|[^.\w])fetch\s*\(/;
   for (const pkg of OFFLINE) {
     for (const f of sources(join(REPO, 'packages', pkg, 'src'))) {
       const src = readFileSync(f, 'utf8');
-      assert.ok(!banned.test(src),
-        `${f.slice(REPO.length + 1)} reaches the network, and ${pkg} must not`);
+      for (const rule of RULES) {
+        assert.ok(!rule.re.test(src),
+          `${f.slice(REPO.length + 1)} ${rule.why}, and ${pkg} must not reach the network`);
+      }
     }
+  }
+});
+
+test('OPS-05: each static rule catches what it is for', () => {
+  // A rule that cannot fire is worse than no rule. Every way in is checked
+  // against the rule meant to stop it, and against text that must NOT fire —
+  // a guard that flags `node:crypto` would be switched off within a week.
+  const caught = (/** @type {string} */ src) => RULES.some(r => r.re.test(src));
+  for (const src of [
+    "import net from 'node:net';",
+    'import https from "node:https";',
+    "const { connect } = require('node:net');",
+    "const net = await import('node:net');",
+    'await import("node:dns");',
+    'await fetch(url);',
+    'globalThis.fetch(url);',
+    'const r = await self.fetch(u);',
+    'const m = pick(); await import(m);',
+  ]) {
+    assert.ok(caught(src), `not caught: ${src}`);
+  }
+  for (const src of [
+    "const { createHash } = await import('node:crypto');",
+    "import { readFileSync } from 'node:fs';",
+    '// the fetchImpl is injected so the suite never depends on a network',
+    'const prefetch = (x) => x;',
+    'obj.fetch(url);',
+    '@param {{ fetchImpl?: typeof globalThis.fetch }} [opts]',
+  ]) {
+    assert.ok(!caught(src), `wrongly caught: ${src}`);
   }
 });
 
