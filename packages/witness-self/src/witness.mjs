@@ -81,7 +81,9 @@
  *   tail and is refused, or one corrupted byte would delete a retained root.
  */
 
-import { mkdirSync, readFileSync, writeFileSync, existsSync, renameSync, appendFileSync } from 'node:fs';
+import {
+  mkdirSync, readFileSync, writeFileSync, existsSync, renameSync, appendFileSync, truncateSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { parseNote, parseCheckpointText, encodeNote, checkpointText } from '@splitstick/core/note';
@@ -169,12 +171,14 @@ export class StatefulWitness {
     const torn = raw.length > 0 && !raw.endsWith('\n');
     const lines = raw.split('\n');
     if (torn) lines.pop();
-    /** @type {any[]} */
+    /** @type {{ operator: string, tree_size: number, root: string, at: string }[]} */
     const entries = [];
     lines.forEach((line, i) => {
       if (line === '') return;
+      /** @type {unknown} */
+      let parsed;
       try {
-        entries.push(JSON.parse(line));
+        parsed = JSON.parse(line);
       } catch {
         throw new Error(
           `${this.rootsPath} line ${i + 1} is unreadable, and it is not the last line. A torn tail `
@@ -182,8 +186,79 @@ export class StatefulWitness {
           + 'would let one corrupted byte delete a retained root.',
         );
       }
+      // Shape as strictly as syntax. Being strict about JSON and lax about
+      // shape was the worst combination available: reconciliation used to skip
+      // an entry whose tree_size was the STRING "20", so a retained root
+      // vanished from the check and a conflicting root at that height was
+      // accepted. The lax half is where the bypass lived.
+      entries.push(this.#validateRootEntry(parsed, i + 1));
     });
     return { entries, torn };
+  }
+
+  /**
+   * One retained entry, or an error naming what is wrong with it.
+   *
+   * Refused rather than skipped. A retained root is evidence; an entry that
+   * cannot be read as one must stop the witness, not quietly disappear from
+   * the reconciliation that depends on it.
+   *
+   * @param {unknown} parsed @param {number} line
+   * @returns {{ operator: string, tree_size: number, root: string, at: string }}
+   */
+  #validateRootEntry(parsed, line) {
+    /** @param {string} why @returns {never} */
+    const bad = (why) => {
+      throw new Error(
+        `${this.rootsPath} line ${line} is not a usable retained root: ${why}. It is refused `
+        + 'rather than skipped, because an entry that disappears from reconciliation lets a '
+        + 'conflicting root at the same height through.',
+      );
+    };
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return bad('it is not a JSON object');
+    }
+    const r = /** @type {Record<string, unknown>} */ (parsed);
+    if (typeof r.operator !== 'string' || r.operator === '') {
+      return bad(`operator is ${JSON.stringify(r.operator)}`);
+    }
+    if (!Number.isSafeInteger(r.tree_size) || /** @type {number} */ (r.tree_size) < 1) {
+      return bad(`tree_size is ${JSON.stringify(r.tree_size)}, not a positive integer`);
+    }
+    if (typeof r.root !== 'string') return bad(`root is ${JSON.stringify(r.root)}`);
+    const root = decodeRoot(r.root);
+    if (!root) {
+      return bad('root is not 32 base64-encoded bytes, which is what a SHA-256 tree root is');
+    }
+    if (typeof r.at !== 'string' || r.at === '') return bad(`at is ${JSON.stringify(r.at)}`);
+    return {
+      operator: r.operator,
+      tree_size: /** @type {number} */ (r.tree_size),
+      root: r.root,
+      at: r.at,
+    };
+  }
+
+  /**
+   * Remove a torn trailing line, under the lock, before anything is appended.
+   *
+   * Tolerating it on read was not enough. `appendFileSync` writes AFTER the
+   * partial bytes, so the next submission produced one malformed line that was
+   * newline-terminated — damage in the middle, which fails closed. A
+   * recoverable crash therefore became permanent corruption through ordinary
+   * operation, and the submission that corrupted the journal was accepted and
+   * signed first: the operator held a countersignature for a height the witness
+   * could no longer read.
+   *
+   * Truncating to the last newline removes only the incomplete line. A
+   * complete entry always ends in one.
+   */
+  #repairTornTail() {
+    if (!existsSync(this.rootsPath)) return;
+    const raw = readFileSync(this.rootsPath, 'utf8');
+    if (raw.length === 0 || raw.endsWith('\n')) return;
+    const keep = raw.lastIndexOf('\n') + 1;
+    truncateSync(this.rootsPath, Buffer.byteLength(raw.slice(0, keep), 'utf8'));
   }
 
   /**
@@ -193,12 +268,13 @@ export class StatefulWitness {
    * @returns {{ state: WitnessState, adopted: string[], ambiguous: Map<string, number> }}
    */
   #reconcile(s) {
+    // Every entry is already validated by #readRoots, so there is nothing to
+    // skip here. The filter that used to live at this line is where a
+    // wrong-typed tree_size disappeared from the check.
     const { entries } = this.#readRoots();
     /** @type {Map<string, Map<number, Set<string>>>} */
     const byOperator = new Map();
     for (const r of entries) {
-      if (typeof r?.operator !== 'string' || !Number.isSafeInteger(r?.tree_size)
-        || typeof r?.root !== 'string') continue;
       const heights = byOperator.get(r.operator) ?? new Map();
       const roots = heights.get(r.tree_size) ?? new Set();
       roots.add(r.root);
@@ -421,6 +497,9 @@ export class StatefulWitness {
     // crashed in the window between its append and its state write, and
     // validating against a state that is behind the retained history is how a
     // conflicting successor gets accepted.
+    // Under the lock: repair first, so reconciliation and the append that
+    // follows both see a journal whose every line is complete.
+    this.#repairTornTail();
     const { state: s, adopted, ambiguous } = this.#reconcile(this.#read());
     const ambiguousAt = ambiguous.get(cp.origin);
     if (ambiguousAt !== undefined) {
@@ -560,6 +639,17 @@ export class StatefulWitness {
     this.#appendKey(next);
     this.signer = next;
   }
+}
+
+/**
+ * Strict base64 for a 32-byte tree root. `Buffer.from` is lenient and would
+ * accept rubbish, silently producing a shorter root.
+ * @param {string} v @returns {Buffer|null}
+ */
+function decodeRoot(v) {
+  if (!/^[A-Za-z0-9+/]{43}=$/.test(v)) return null;
+  const b = Buffer.from(v, 'base64');
+  return b.length === 32 ? b : null;
 }
 
 export { publicKeyFromRaw };

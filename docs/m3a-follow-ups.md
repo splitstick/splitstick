@@ -249,6 +249,33 @@ straight back from the retained root. A witness operator who wants to serve an
 earlier head now has to destroy the evidence too, which is precisely why FR-50's
 detection depends on somebody else having retained the head they were served.
 
+## Found by the re-review of e88a70b, and fixed
+
+**A torn tail was tolerated on read and never repaired.** `appendFileSync`
+writes after the partial bytes, so the next submission produced one malformed
+line that WAS newline-terminated — damage in the middle, which fails closed. A
+recoverable crash therefore became permanent corruption through ordinary
+operation.
+
+It is worse than it reads, and the reviewer was generous about it: the
+submission that corrupted the journal was **accepted and signed first**. The
+operator walked away holding a countersignature for a height the witness could
+no longer read. The repair now happens under the exclusive lock, before
+reconciliation and before the append, truncating to the last newline — which
+removes only the incomplete line, because a complete entry always ends in one.
+
+**Structurally invalid entries were silently skipped.** `#reconcile` filtered on
+types and dropped anything that did not match, so a retained root whose
+`tree_size` was the string `"20"` vanished from the check and a conflicting root
+at height 20 was accepted. Strict about JSON syntax and lax about shape was the
+worst combination available: the lax half is where the bypass lived.
+
+Validation moved into the reader, where every complete line is checked as
+strictly as it is parsed — operator non-empty, `tree_size` a positive safe
+integer, `root` exactly 32 base64-encoded bytes, `at` present — and a line that
+fails refuses to start rather than disappearing. `#reconcile` no longer filters
+anything, because there is nothing left for it to skip.
+
 ## Decided against
 
 **Fetching block headers to confirm an OpenTimestamps attestation.** It would

@@ -235,3 +235,109 @@ test('killing the process mid-transition never produces a forked history', async
       `run ${i}: state ${after.state(OPERATOR).last_size} is behind retained ${highest}`);
   }
 });
+
+// ── Repairing the torn tail, not merely tolerating it ───────────────────────
+
+test('a torn tail is REPAIRED before the next append, not appended after', async () => {
+  // Tolerating a torn tail on read is not enough. appendFileSync writes after
+  // the partial bytes, producing one malformed line that IS newline-terminated
+  // — and a terminated malformed line is damage in the middle, which fails
+  // closed. So a recoverable crash became permanent corruption through
+  // ordinary operation, and the submission that corrupted it was ACCEPTED AND
+  // SIGNED first: the operator held a countersignature for a height the
+  // witness could no longer read.
+  const { dir, seedFile, operator, witnessSigner, prefix } = await seeded();
+  const p = join(dir, 'roots.jsonl');
+  const intact = readFileSync(p, 'utf8');
+  writeFileSync(p, intact + '{"operator":"splitstick.dev/host-1","tree_siz');
+
+  const w = new StatefulWitness({ dir, signer: witnessSigner });
+  const hist = historyFor(prefix, 'B', 20);
+  const t = checkpointText({
+    origin: OPERATOR, tree_size: 20, root: treeRoot(hist), suite: 'SS1' });
+  const res = await w.addCheckpoint({
+    note: encodeNote(t, [await signNote(t, operator)]), old_size: 10,
+    consistency_proof: consistencyProof(hist, 10).map(b => b.toString('base64')),
+  });
+  assert.equal(res.status, 200);
+
+  // Every line complete, and the partial bytes gone.
+  const after = readFileSync(p, 'utf8');
+  assert.ok(after.endsWith('\n'));
+  assert.ok(!after.includes('"tree_siz{'), 'the partial line must not have been appended after');
+  for (const line of after.split('\n').filter(Boolean)) {
+    assert.doesNotThrow(() => JSON.parse(line), `line is not complete JSON: ${line.slice(0, 60)}`);
+  }
+
+  // And the witness still comes up, with both heights.
+  const restarted = new StatefulWitness({ dir, signer: witnessSigner });
+  assert.deepEqual(restarted.roots(OPERATOR).map(r => r.tree_size), [10, 20]);
+  assert.equal(restarted.state(OPERATOR).last_size, 20);
+  assert.equal(restarted.state(OPERATOR).last_root, treeRoot(hist).toString('base64'));
+});
+
+test('the repair only removes the torn tail, never a complete entry', async () => {
+  const { dir, witnessSigner, operator, prefix } = await seeded();
+  const p = join(dir, 'roots.jsonl');
+  const before = readFileSync(p, 'utf8').split('\n').filter(Boolean).length;
+  writeFileSync(p, readFileSync(p, 'utf8') + 'x');   // one stray byte
+  const w = new StatefulWitness({ dir, signer: witnessSigner });
+  const hist = historyFor(prefix, 'B', 20);
+  const t = checkpointText({
+    origin: OPERATOR, tree_size: 20, root: treeRoot(hist), suite: 'SS1' });
+  await w.addCheckpoint({
+    note: encodeNote(t, [await signNote(t, operator)]), old_size: 10,
+    consistency_proof: consistencyProof(hist, 10).map(b => b.toString('base64')),
+  });
+  assert.equal(readFileSync(p, 'utf8').split('\n').filter(Boolean).length, before + 1,
+    'the complete entries survive and exactly one is added');
+});
+
+// ── Structurally invalid entries are refused, not skipped ──────────────────
+
+test('a retained entry with the wrong types is refused, not silently skipped', async () => {
+  // It parsed as JSON and was then dropped by a type filter in reconciliation,
+  // so a retained root at height 20 vanished from the check and a conflicting
+  // root at 20 was accepted. Strict about JSON syntax and lax about shape is
+  // the worst combination: the lax half is where the bypass lives.
+  const { dir, witnessSigner, prefix } = await seeded();
+  appendFileSync(join(dir, 'roots.jsonl'), JSON.stringify({
+    operator: OPERATOR,
+    tree_size: '20',                    // a string, not a number
+    root: treeRoot(historyFor(prefix, 'B', 20)).toString('base64'),
+    at: '2026-10-11T12:00:00.000Z',
+  }) + '\n');
+  assert.throws(() => new StatefulWitness({ dir, signer: witnessSigner }),
+    /tree_size|unreadable/i);
+});
+
+test('every field of a retained entry is validated, not just its presence', async () => {
+  const { dir, witnessSigner, prefix } = await seeded();
+  const good = {
+    operator: OPERATOR, tree_size: 20,
+    root: treeRoot(historyFor(prefix, 'B', 20)).toString('base64'),
+    at: '2026-10-11T12:00:00.000Z',
+  };
+  const intact = readFileSync(join(dir, 'roots.jsonl'), 'utf8');
+  for (const bad of [
+    { ...good, operator: '' },
+    { ...good, operator: 42 },
+    { ...good, tree_size: 0 },
+    { ...good, tree_size: -1 },
+    { ...good, tree_size: 1.5 },
+    { ...good, root: 'not base64!!' },
+    { ...good, root: Buffer.alloc(31).toString('base64') },   // not a SHA-256 root
+    { ...good, root: Buffer.alloc(33).toString('base64') },
+    { ...good, at: 99 },
+    [good],
+    'a string',
+    null,
+  ]) {
+    writeFileSync(join(dir, 'roots.jsonl'), intact + JSON.stringify(bad) + '\n');
+    assert.throws(() => new StatefulWitness({ dir, signer: witnessSigner }),
+      `${JSON.stringify(bad)} should be refused`);
+  }
+  // And the good one still works, so the validation is not simply refusing.
+  writeFileSync(join(dir, 'roots.jsonl'), intact + JSON.stringify(good) + '\n');
+  assert.doesNotThrow(() => new StatefulWitness({ dir, signer: witnessSigner }));
+});

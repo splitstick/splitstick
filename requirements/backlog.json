@@ -450,9 +450,9 @@
       "title": "Witness retains roots",
       "statement": "The witness keeps submitted roots in its own append-only store.",
       "source": "Witness Practice Statement — has retained it",
-      "verify": "Every root retained in order and never overwritten, asserted across three submissions. Crash-consistent: the newline is the commit marker so a torn tail is dropped rather than parsed, damage in the middle refuses to start, and a root retained without the state having advanced is reconciled on load and inside the critical section rather than ignored",
+      "verify": "Every root retained in order and never overwritten. Crash-consistent: a torn tail is dropped on read AND repaired under the lock before the next append, damage in a terminated line refuses to start, every retained entry is validated by shape rather than skipped, and a root retained without the state having advanced is reconciled on load and inside the critical section",
       "status": "done",
-      "evidence": "StatefulWitness #readRoots/#reconcile + roots.jsonl; two different roots at one height fails CLOSED, because a witness that cannot tell which it accepted would rest every later signature on a guess. packages/witness-self/test/crash-consistency.test.mjs"
+      "evidence": "StatefulWitness #readRoots/#validateRootEntry/#repairTornTail/#reconcile; two different roots at one height fails CLOSED. Tolerating a torn tail without repairing it let the next append produce a terminated malformed line, so a recoverable crash became permanent corruption; a wrong-typed tree_size used to vanish from reconciliation and let a conflicting root through. packages/witness-self/test/crash-consistency.test.mjs"
     },
     {
       "id": "FR-45",
