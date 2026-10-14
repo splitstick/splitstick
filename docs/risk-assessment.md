@@ -188,6 +188,17 @@ believed:
 | GOV-09's field check | a denylist of words that had not anticipated `sponsored` or `premium` |
 | OPS-05's own test name | it said "the shipped default configuration" and parsed a config that omits the key, while the shipped default names two witnesses |
 
+And M7 then made the same mistake in its own guards, which is why the rule above needed an
+ordering attached to it:
+
+> **Write the sentence a marketer would write, then the regex.** Not the other way round.
+
+M7's first claims audit passed its companions and missed twenty out of twenty realistic
+violations — every sentence a landing page would actually carry, and every feature in the
+shape it would actually arrive in. The companions had been written *from* the patterns, so
+they asked whether a regex fired on text composed to match it. The audit was green, and an
+actual overclaim would have shipped.
+
 The last of those is the one to keep in mind, because it is not a pattern that was too narrow.
 It is a test that **checked the wrong artefact** and took its title from what it wished it had
 checked. No regex would have helped. The question a guard's companion has to answer is not

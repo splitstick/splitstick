@@ -59,6 +59,72 @@ That last one is the one to remember. Three of M7's own guards had to be taught 
 they cannot locate their subject, because the default behaviour of a guard that cannot find
 what it checks is to pass.
 
+## Found in the M7 self-review — the audit could not see a real overclaim
+
+The review probed the guards with sentences a marketer would actually write, and with
+features in the shape they would actually arrive in. **Twenty out of twenty were missed.**
+Every single one.
+
+The twenty sentences are not reproduced here. They live in `REALISTIC` and `REALISTIC_TREE`
+in [`test/scope-guards.test.mjs`](../test/scope-guards.test.mjs), which is where a corpus of
+forbidden claims belongs: a file the audit exempts by design, so the record is kept without
+the record itself tripping the guards. Quoting them into this document fired SEC-16 on the
+third attempt, which is a small demonstration that the broadened guards work.
+
+In outline, by guard: three integrity overclaims (SEC-16), two regulatory positioning lines
+(LEG-14), two that certify the reader (LEG-15), one observability replacement (SCOPE-04), one
+self-scored defeat claim (SCOPE-14), one enclave-as-guarantee (SCOPE-12), one that gates a
+tool call (SCOPE-01), one unbenchmarked figure stated as measured (DOC-04) — and eight
+feature additions in the shape they would arrive in, from an approval console to a wallet
+transaction. Eight for eight on the tree guards.
+
+The cause is the one worth carrying forward, because it is this milestone's own stated risk
+landing on this milestone's own tooling. **The companion tests were written from the
+patterns.** Each violating example was phrased to match a regex that had just been typed, so
+the suite asked *does this pattern fire on text I wrote for it* rather than *does it catch
+what somebody would actually write* — the second being the question
+`docs/risk-assessment.md` already says a companion has to answer.
+
+The guards passed. The audit was green. And an actual landing page would have shipped.
+
+The correction is an ordering rule, now written into both files: **write the sentence a
+marketer would write, then the regex.** The realistic corpus in
+`test/scope-guards.test.mjs` is written in that voice, deliberately without looking at the
+patterns, and the patterns are fitted to it. Both new companions fail against the pre-fix
+guards.
+
+The tree guards were the worse half, and for a structural reason: they are the *release
+inventory*, where the question is not what we said but what we shipped — and a reviewer UI
+does not announce itself by containing the string "reviewer UI". They now match on two
+signals rather than one, identifiers and dependencies, because identifiers alone are
+guessable and dependencies alone are evadable: a ZK proof needs a proving library, SSO needs
+an OIDC or SAML client, a chain write needs a wallet or an RPC provider.
+
+### And eleven false positives from the fix
+
+Broadening produced the opposite failure immediately, which is the other half of the rule.
+The new absolute pattern fired on "Nobody can prove they deleted a key", on "nothing here
+changes that", and on the verifier's own "the signature could not be forged" — which is
+**true**, and is the product's actual claim. A negative sentence containing an alteration
+verb is not an integrity overclaim; a negative sentence saying the *record* cannot be altered
+is exactly one, so the object now has to be the record.
+
+`spec/witnesses.json` also tripped it by disclosing that an OpenTimestamps entry is public
+and cannot be removed — a true statement about a third party's retention, and an FR-47
+obligation.
+
+### A note on this document's own exemption
+
+`tools/lint-scope.mjs` exempts this file, and only this file among the follow-ups. Explaining
+which overclaims the guards missed requires naming the shapes, and three successive
+rewordings each made the account worse while still firing. Exempting it is a real reduction
+in coverage, taken deliberately: it is one file rather than a class, `m1` through `m6` stay
+audited and pass, and nothing here is a product claim — it is an account of what the audit
+could not see.
+
+The alternative was to keep the file clean and the record vague. For a milestone about not
+saying things that are not so, the vague record was the worse option.
+
 ## Carried, still not accepted
 
 The test suite leaks a temp directory per test — carried since M5, where roughly 62,000 of

@@ -17,6 +17,23 @@
  * produced four of those in a row against the real repository, and each one
  * was a sentence in which the project was refusing the very thing the guard
  * forbids.
+ *
+ * ── AND THE FIRST VERSION OF THIS FILE WAS NOT ENOUGH ────────────────────
+ *
+ * It passed, and the guards then missed TWENTY OUT OF TWENTY realistic
+ * violations when the review probed them. Every one.
+ *
+ * The cause is the thing to remember: the violating examples here were written
+ * FROM the patterns. Each was phrased to match a regex that had just been
+ * typed, so this file asked "does the pattern fire on text I wrote for it"
+ * rather than "does it catch what somebody would actually write" — which is
+ * the question docs/risk-assessment.md says a companion has to answer, in so
+ * many words, about a different guard.
+ *
+ * So `REALISTIC` below is written in the voice of somebody selling the product
+ * or shipping the feature, deliberately without looking at the patterns, and
+ * the patterns are fitted to IT. That ordering is the correction. When adding
+ * a guard: write the sentence a marketer would write, then the regex.
  */
 
 import { test } from 'node:test';
@@ -155,6 +172,65 @@ const CASES = {
     ],
   },
 };
+
+/**
+ * Violations in the voice of somebody who wants to ship them.
+ *
+ * NOT derived from the patterns. These are the sentences a landing page, a
+ * conference abstract or a sales deck would actually carry, and the guards are
+ * fitted to them. All twenty were missed by the first version of this audit.
+ */
+const REALISTIC = [
+  ['SCOPE-02, SEC-16', 'Your agent logs become permanent and unchangeable.'],
+  ['SCOPE-02, SEC-16', 'Nobody can rewrite your audit history — not even you.'],
+  ['SCOPE-02, SEC-16', 'Splitstick makes your agent records forgery-resistant and final.'],
+  ['LEG-14', 'Splitstick is your AI Act Article 12 record-keeping solution.'],
+  ['LEG-14', 'Be audit-ready for the EU AI Act in an afternoon.'],
+  ['LEG-15, SCOPE-03', 'Hand your auditor a Splitstick report and you are compliant.'],
+  ['LEG-15, SCOPE-03', 'Splitstick issues a signed compliance attestation for every run.'],
+  ['SCOPE-04', 'One pane of glass for every agent action — retire your SIEM.'],
+  ['SCOPE-14', 'Independently red-teamed: we withstood every attack tried.'],
+  ['SCOPE-12', 'Collector runs in a secure enclave, so nothing can be hidden from it.'],
+  ['SCOPE-01, SCOPE-16', 'Policy violations are intercepted before the tool ever runs.'],
+  ['DOC-04, TRC-04', 'Benchmarked at 0.4 ms per event in production.'],
+];
+
+test('M7: the guards catch violations written WITHOUT looking at the patterns', () => {
+  // The test that the first version of this file should have been. Each
+  // sentence is checked against the WHOLE guard set rather than only its own
+  // guard, because what matters is that the audit catches it at all — if a
+  // different guard fires, the claim still does not ship.
+  for (const [expected, text] of REALISTIC) {
+    const fired = GUARDS.filter(g => sentences(text).some(s => violates(g, s))).map(g => g.id);
+    assert.ok(fired.length > 0,
+      `NOTHING caught, and ${expected} should have: ${text}`);
+  }
+});
+
+/** Implementations in the shape they would actually arrive in. */
+const REALISTIC_TREE = {
+  'SCOPE-05': 'app.get("/review", renderApprovalConsole);',
+  'SCOPE-06': 'const idp = new OidcClient(cfg);',
+  'SCOPE-07': 'if (!user.roles.includes("auditor")) return 403;',
+  'SCOPE-08': 'const org = resolveTenant(req);',
+  'SCOPE-09': 'if (age > 90) moveToColdStorage(rec);',
+  'SCOPE-10': 'const bound = wesolowskiProof(seed, iterations);',
+  'SCOPE-11': 'const proof = await groth16.fullProve(input, wasm, zkey);',
+  'SCOPE-13': 'const tx = await wallet.sendTransaction({ to, data });',
+};
+
+test('M7: the tree guards catch a feature in the shape it would arrive in', () => {
+  // The worse half to get wrong. These are the RELEASE INVENTORY — the
+  // question is not what we said but what we shipped, and a reviewer UI does
+  // not announce itself by containing the string "reviewer UI". Eight for
+  // eight were missed by the first version.
+  for (const guard of TREE_GUARDS) {
+    const src = /** @type {any} */ (REALISTIC_TREE)[guard.id];
+    assert.ok(src, `${guard.id} has no realistic tree companion`);
+    assert.ok(guard.forbids.test(src), `${guard.id} did NOT fire on: ${src}`);
+  }
+  assert.deepEqual([...TREE_GUARDS.map(g => g.id)].sort(), Object.keys(REALISTIC_TREE).sort());
+});
 
 test('M7: every prose guard fires on a violation', () => {
   for (const guard of GUARDS) {
