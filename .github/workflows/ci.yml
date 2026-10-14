@@ -26,8 +26,12 @@ jobs:
         run: npm run backlog
       - name: Specification review gate
         run: npm run review
-      - name: Verifier vocabulary
+      - name: Verifier vocabulary and packaging
         run: npm run lint
+      - name: The lockfile matches the workspaces
+        # `npm ci` above already proves this, but it proves it by failing the
+        # whole job at step one with an npm error. This says which package.
+        run: node tools/lint-packaging.mjs
       - name: Generated files are up to date
         run: git diff --exit-code -- requirements/MATRIX.md requirements/PLAN.md requirements/DESIGN.md
 
@@ -51,6 +55,72 @@ jobs:
         run: npm run typecheck
       - name: Unit tests
         run: npm run test:unit
+
+  # NFR-10 — @open-multi-agent/core 1.21.x, tested at BOTH ENDS of the declared
+  # range rather than at the one patch release the lockfile happens to pin.
+  # peerDependencies is a promise to whoever installs, and an installer may
+  # resolve the lowest 1.21 as easily as the highest; a single pinned patch
+  # passing is a seam exercised once.
+  #
+  # The declarations themselves (the peer range, the root pin, the README prose)
+  # are checked against each other by packages/collect-oma/test/version.test.mjs,
+  # which runs in the unit job. This is the part that needs the registry.
+  oma-range:
+    name: OMA range · ${{ matrix.oma }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # lowest and highest published 1.21.x, resolved below and asserted to
+        # differ — a matrix that tested one version twice would look like
+        # coverage and be none.
+        oma: ['lowest', 'highest']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm ci
+      - name: Resolve the ${{ matrix.oma }} published 1.21.x
+        id: pick
+        run: |
+          set -euo pipefail
+          RANGE="$(node -p "require('./packages/collect-oma/package.json').peerDependencies['@open-multi-agent/core']")"
+          echo "declared range: $RANGE"
+          ALL="$(npm view "@open-multi-agent/core@$RANGE" version --json)"
+          echo "published in range: $ALL"
+          V="$(node -e '
+            const all = JSON.parse(process.argv[1]);
+            const list = Array.isArray(all) ? all : [all];
+            if (list.length === 0) throw new Error("no published version satisfies the declared range");
+            // Sorted by the registry already, but sort explicitly: relying on
+            // the order a service happens to return is not a pin.
+            list.sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+            const which = process.argv[2];
+            if (which === "lowest") process.stdout.write(String(list[0]));
+            else process.stdout.write(String(list[list.length - 1]));
+          ' "$ALL" "${{ matrix.oma }}")"
+          echo "chose: $V"
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "count=$(node -e 'const a=JSON.parse(process.argv[1]);process.stdout.write(String((Array.isArray(a)?a:[a]).length))' "$ALL")" >> "$GITHUB_OUTPUT"
+      - name: The range has two ends
+        if: steps.pick.outputs.count == '1'
+        run: |
+          echo "Only one 1.21.x is published, so 'lowest' and 'highest' are the same release."
+          echo "That is not a failure — it is said out loud so this job is not mistaken for"
+          echo "coverage of a range it cannot yet cover."
+      - name: Install ${{ steps.pick.outputs.version }}
+        run: npm install --no-save "@open-multi-agent/core@${{ steps.pick.outputs.version }}"
+      - name: The installed version is the one chosen
+        run: |
+          set -euo pipefail
+          GOT="$(node -p "require('@open-multi-agent/core/package.json').version")"
+          echo "installed: $GOT"
+          test "$GOT" = "${{ steps.pick.outputs.version }}"
+      - name: OMA integration suite
+        run: node --test packages/collect-oma/test/*.test.mjs
+      - name: Tamper suite against OMA's own verifier
+        run: npm run generate && npm run redteam
 
   # NFR-01, NFR-02 — measured, not assumed. The budgets are reported rather than
   # gated: a laptop and a shared runner disagree with each other by a factor of

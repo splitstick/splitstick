@@ -21,6 +21,7 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { code } from './code-text.mjs';
+import { presumptionFindings } from './leg12.mjs';
 
 const ROOT = new URL('..', import.meta.url).pathname;
 const SKIP = new Set(['node_modules', '.git', 'out', 'coverage', 'tools']);
@@ -123,6 +124,36 @@ if (disclosures.length > 0) {
   process.exit(1);
 }
 
+// ── LEG-12 — the eIDAS presumption, and what it does not attach to ────────
+/** @type {{ file: string, rule: string, text: string }[]} */
+const presumption = [];
+for (const file of markdown(ROOT)) {
+  for (const f of presumptionFindings(readFileSync(file, 'utf8'))) {
+    presumption.push({ file: relative(ROOT, file), rule: f.rule, text: f.text });
+  }
+}
+// The witness list is data an operator reads to choose, so it is a claim
+// surface too — and it is JSON, not markdown.
+for (const rel of ['spec/witnesses.json']) {
+  for (const f of presumptionFindings(readFileSync(join(ROOT, rel), 'utf8'))) {
+    presumption.push({ file: rel, rule: f.rule, text: f.text });
+  }
+}
+
+if (presumption.length > 0) {
+  console.error('\nCLAIMS LINT FAILED — LEG-12\n');
+  for (const p of presumption) {
+    console.error(`  ${p.file}`);
+    console.error(p.rule === 'R1'
+      ? '    mentions the Art. 41 presumption without naming the QUALIFIED precondition'
+      : '    claims the presumption alongside us or our witness, with no negation in the sentence');
+    console.error(`    ${p.text}\n`);
+  }
+  console.error('  LEG-12: the presumption attaches only via a qualified trust service,');
+  console.error("  and never via a witness this project operates.\n");
+  process.exit(1);
+}
+
 if (findings.length > 0) {
   console.error('\nCLAIMS LINT FAILED — SEC-17\n');
   for (const f of findings) {
@@ -135,4 +166,5 @@ if (findings.length > 0) {
 }
 
 console.log('\n  claims: every forward-secrecy claim states its precondition in the same place (SEC-17)');
-console.log('  claims: the collector-patch limit is stated in all three coverage surfaces (DOC-10)\n');
+console.log('  claims: the collector-patch limit is stated in all three coverage surfaces (DOC-10)');
+console.log('  claims: no surface attaches the eIDAS presumption to a witness we operate (LEG-12)\n');

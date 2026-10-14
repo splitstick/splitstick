@@ -391,12 +391,15 @@ test('the coverage CLI refuses an unknown flag rather than ignoring it', async (
   c.heartbeat();
   store.close();
   const bad = await runCoverage([root, '--form', T0, '--to', T5]);
-  assert.equal(bad.exit, 2);
-  assert.match(bad.out, /unknown flag --form/);
-  assert.match(bad.out, /Refused rather than ignored/);
+  // 3, not 2: a refusal is not a verdict. 2 is "inconclusive", and a pipeline
+  // that saw 2 for a typo would read the typo as a finding about the evidence.
+  assert.equal(bad.exit, 3);
+  assert.match(String(bad.err), /unknown flag --form/);
+  assert.match(String(bad.err), /Refused rather than ignored/);
+  assert.equal(bad.out, '', 'and a refusal never lands on stdout beside a report');
 
   const noValue = await runCoverage([root, '--from', '--to', T5]);
-  assert.equal(noValue.exit, 2);
+  assert.equal(noValue.exit, 3);
 
   const ok = await runCoverage([root, '--from', T0, '--to', T5]);
   assert.ok(ok.out.includes(PATCH_LIMIT));
@@ -409,9 +412,10 @@ test('the CLI refuses a collector the store does not hold', async () => {
   c.heartbeat();
   store.close();
   const r = await runCoverage([root, '--from', T0, '--to', T5, '--collector', 'nope']);
-  assert.equal(r.exit, 2);
-  assert.match(r.out, /holds no chain for collector "nope"/);
-  assert.match(r.out, /it holds host-1/);
+  assert.equal(r.exit, 3);
+  assert.match(String(r.err), /holds no chain for collector "nope"/);
+  assert.match(String(r.err), /it holds host-1/);
+  assert.equal(r.out, '', 'a refusal is not half a report');
 });
 
 test('--json carries the same numbers the rendering shows', async () => {

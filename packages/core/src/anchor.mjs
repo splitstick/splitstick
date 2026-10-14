@@ -62,6 +62,10 @@ export class AnchorError extends Error {
  * @property {'c2sp-note'|'rfc3161'|'opentimestamps'} proof_type
  * @property {string[]} establishes one or more CAPABILITY_CLASSES
  * @property {'anchor'|'rollup'} tier anchor cadence or roll-up cadence
+ * @property {boolean} [qualified] LEG-13 — the operator's DECLARATION that this
+ *   is a qualified trust service under eIDAS. Carried so a deployment can be
+ *   described; nothing in the verifier rests on it, because the Art. 41
+ *   presumption is a conclusion the READER draws from their own policy.
  * @property {(note: string, ctx: { old_size: number, consistency_proof: string[] })
  *   => Promise<import('./envelope.mjs').Countersignature>} submit
  */

@@ -108,6 +108,19 @@ countersignature's *presence* counted as anchoring (too much crossing inbound),
 and a validly witnessed later checkpoint ignored (too little crossing). Both had
 passed a self-review that was explicitly looking for the first kind.
 
+**FIXING A BOUNDARY CHECK MOVES THE BOUNDARY.** Learned twice in one day, on
+one function. The disclosure pack's payload was unverifiable, so the content
+salt was added and the bytes checked against the cid — which made a new question
+reachable: *where does the cid come from?* It came from the unauthenticated part
+of the pack, so replacing bytes, salt and cid together passed. Each fix moved
+the trust boundary one step inward and left the next step unexamined.
+
+So after adding a check at a boundary, ask the same question of its inputs:
+**what authenticates the thing I just compared against?** Keep asking until the
+answer is something a signature covers. In that case the answer was the record,
+whose leaf is bound to a countersigned root; everything between the bytes and
+that root had to be checked, not just the first hop.
+
 **Three rules that follow:**
 
 1. **Status changes are earned, never assumed.** `present` → `verified`,

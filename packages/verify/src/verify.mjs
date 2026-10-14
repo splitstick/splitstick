@@ -46,6 +46,9 @@ import { createHash as nodeCreateHash } from 'node:crypto';
  * @property {string} type
  * @property {string} establishes
  * @property {boolean} accepted
+ * @property {boolean} [qualified] LEG-13 — what the READER's policy declared
+ *   about this issuer, carried onto the entry it describes so the report needs
+ *   no second route to the policy.
  * @property {Verdict} verdict
  * @property {string} detail
  * @property {number} checkpoint_seq the checkpoint this proof sits on. Every
@@ -118,7 +121,7 @@ function rootsFor(leaves, sizes) {
  * @param {string} [opts.collector] the collector instance whose chain to read
  * @param {string} [opts.vkey] the pinned operator identity, as a note vkey
  * @param {{ quorum?: number, witnesses?: { id: string, public_key?: string,
- *   establishes?: string[], anchors?: string[], tier?: 'anchor'|'rollup',
+ *   establishes?: string[], anchors?: string[], tier?: 'anchor'|'rollup', qualified?: boolean,
  *   key_history?: { keys?: { public_key?: string }[], note?: string } }[] }} [opts.policy]
  *   FR-30 — the ACCEPTANCE POLICY,
  *   supplied by the reader. Not a hardcoded trust store: two readers with
@@ -139,6 +142,7 @@ function rootsFor(leaves, sizes) {
  *   capability: { can: string[], cannot: string[] },
  *   trusting: string[],
  *   succession: ReturnType<typeof successionReport>|null,
+ *   presumption: { attaches: boolean, detail: string, issuers: string[] },
  * }>}
  */
 export async function verifyStore(root, opts = {}) {
@@ -885,6 +889,73 @@ function report(tree_size, anchored, checks, findings, notes, collector, vkey, s
     );
   }
 
+  // ── LEG-12, LEG-13 — the eIDAS Art. 41 presumption ──────────────────────
+  //
+  // The presumption is a legal conclusion the READER draws, so what gates it
+  // is the reader's own policy and not the operator's configuration. An
+  // operator may declare their TSA qualified in splitstick.yaml; that records
+  // which endpoint they chose and changes nothing here. A reader who has
+  // consulted the EU trusted list themselves says so in their policy, and only
+  // then does the report speak of it.
+  //
+  // Four conditions, all of them necessary, and the report names which one
+  // failed rather than falling silent — an absent statement is read as
+  // "probably fine" by a reader hoping for one.
+  //
+  // It never attaches via a witness this project operates, at any tier, under
+  // any policy. That is LEG-12, and it is the reason this is computed from the
+  // proof TYPE rather than from the issuer's name: a self-hosted or hosted
+  // Splitstick witness signs a C2SP note, which is not an RFC 3161 token from
+  // a trust service, however the reader's policy labels it.
+  const presumption = (() => {
+    const declared = witnesses.filter(w => w.qualified === true);
+    if (declared.length === 0) {
+      return {
+        attaches: false,
+        detail: 'no witness is declared a qualified trust service in your acceptance policy, so '
+          + 'the eIDAS Art. 41 presumption is not addressed by this report. It attaches only to a '
+          + 'timestamp from a qualified trust service, and never through a witness this project '
+          + 'operates (LEG-12)',
+        /** @type {string[]} */
+        issuers: [],
+      };
+    }
+    const tokens = declared.filter(w => w.type === 'rfc3161');
+    if (tokens.length === 0) {
+      return {
+        attaches: false,
+        detail: `your policy declares ${declared.map(w => w.id).join(', ')} qualified, but the `
+          + 'countersignature here is not an RFC 3161 token from a trust service. A C2SP note is '
+          + 'not a qualified timestamp whatever a policy calls it, so the presumption does not '
+          + 'attach (LEG-12)',
+        issuers: declared.map(w => w.id),
+      };
+    }
+    const good = tokens.filter(w => w.accepted && w.verdict === 'ok');
+    if (good.length === 0) {
+      return {
+        attaches: false,
+        detail: `${tokens.map(w => w.id).join(', ')} is declared qualified and its token did NOT `
+          + 'verify here, so there is no verified qualified timestamp for the presumption to rest on',
+        issuers: tokens.map(w => w.id),
+      };
+    }
+    return {
+      attaches: true,
+      detail: `anchored to ${good.map(w => w.id).join(', ')}, which YOUR POLICY declares a `
+        + 'qualified trust service. Where that declaration is correct the eIDAS Art. 41 '
+        + 'presumption attaches to that timestamp. This report does not and cannot establish '
+        + 'qualified status: the EU trusted list is not reachable from here, and verification is '
+        + 'offline by design (NFR-05). It attaches to that anchor and not through any witness '
+        + 'this project operates (LEG-12)',
+      issuers: good.map(w => w.id),
+    };
+  })();
+  cannot.push(presumption.attaches
+    ? 'the Art. 41 presumption rests on your own declaration that the anchor is a qualified trust '
+      + 'service; nothing here verified that status'
+    : 'nothing here establishes the eIDAS Art. 41 presumption');
+
   return {
     verdict, summary, tree_size, anchored_tree_size: anchored, records,
     checks,
@@ -892,7 +963,7 @@ function report(tree_size, anchored, checks, findings, notes, collector, vkey, s
     // layer passes through here, so an unrecognised code cannot be printed to
     // someone deciding whether to rely on this evidence.
     findings: validateFindings(findings, 'verifyStore'),
-    witnesses, quorum, capability: { can, cannot }, trusting, succession,
+    witnesses, quorum, capability: { can, cannot }, trusting, succession, presumption,
   };
 }
 
@@ -943,6 +1014,7 @@ function commitments(record) {
  * @param {object} o
  * @param {{ seq: number, env: ReturnType<typeof parseEnvelope> }[]} o.envelopes
  * @param {{ quorum?: number, witnesses?: { id: string, public_key?: string, establishes?: string[],
+ *   qualified?: boolean,
  *   anchors?: string[], tier?: 'anchor'|'rollup' }[] }} [o.policy]
  * @param {{ issuers: Set<string> }[]} [o.rollups] FR-66 — the roll-up
  *   envelopes, so a witness on the slower tier can be told apart from one that
@@ -1129,7 +1201,20 @@ async function verifyWitnesses({ envelopes, policy, leaves, findings, anchored, 
     // at each of the push sites above, so a branch added later cannot omit it
     // — the type will not let it.
     for (const w of local) {
-      witnesses.push({ ...w, checkpoint_seq: seq, tree_size: env.tree_size });
+      // LEG-13 stamped HERE and nowhere else. There are eleven `local.push`
+      // sites in this loop; adding the flag at each of them is how a branch
+      // gets missed, and the branch that got missed was `rfc3161` — the only
+      // type the presumption can ever attach to. The report's positive case
+      // was unreachable until this moved to the single merge point.
+      //
+      // From the READER's policy, never from the operator's config: an
+      // operator declaring their own TSA qualified is self-assertion, and the
+      // presumption is a conclusion the reader draws.
+      const declared = named.get(w.id)?.qualified === true;
+      witnesses.push({
+        ...w, ...(declared ? { qualified: true } : {}),
+        checkpoint_seq: seq, tree_size: env.tree_size,
+      });
     }
   }
 

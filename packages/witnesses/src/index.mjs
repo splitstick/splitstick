@@ -36,6 +36,7 @@ import { CAPABILITY_CLASSES } from '@splitstick/core/anchor';
 import { tsaWitness } from '@splitstick/witness-tsa';
 import { otsWitness } from '@splitstick/witness-ots';
 import { rekorWitness } from '@splitstick/witness-rekor';
+import { tlogWitness } from '@splitstick/witness-tlog';
 
 export class WitnessConfigError extends Error {
   /** @param {string} m */
@@ -57,14 +58,20 @@ export const TIME_DISCIPLINE = Object.freeze({
   splitstick: 'the witness host\'s clock, recorded as received_at. Trustworthy exactly as far as '
     + 'the party running it, which is the point of it being a different party',
   rekor: 'the log\'s own signed entry timestamp, disciplined as its operator says',
+  'tlog-witness': 'NOTHING. A tlog cosignature carries no time inside the note, and this '
+    + 'adapter records none beside it rather than writing our own submission clock down as the '
+    + 'witness\'s observation. It establishes sequence; for time, configure a witness that '
+    + 'actually has a clock',
 });
 
 /** The types this builder knows. An unknown type is refused, never ignored. */
-export const WITNESS_TYPES = Object.freeze(['rfc3161', 'opentimestamps', 'rekor', 'splitstick']);
+export const WITNESS_TYPES = Object.freeze([
+  'rfc3161', 'opentimestamps', 'rekor', 'tlog-witness', 'splitstick',
+]);
 
 /**
  * @param {{ witnesses?: { id: string, type: string, url?: string, tier?: string,
- *   calendars?: string[], key?: string, self_hosted?: boolean }[] }} config
+ *   calendars?: string[], key?: string, self_hosted?: boolean, qualified?: boolean }[] }} config
  * @param {{ fetchImpl?: typeof globalThis.fetch }} [opts]
  * @returns {import('@splitstick/core/anchor').WitnessAdapter[]}
  */
@@ -87,29 +94,58 @@ export function witnessesFromConfig(config, opts = {}) {
       );
     }
     const tier = /** @type {'anchor'|'rollup'|undefined} */ (w.tier);
+    // SEC-25's declaration, attached HERE because this is the only place that
+    // knows the configured type.
+    //
+    // It used to be looked up by `proof_type` at description time, and the two
+    // are not the same vocabulary: `splitstick`, `rekor` and `tlog-witness`
+    // all have proof_type `c2sp-note`, so the lookup returned undefined and
+    // those witnesses were described with NO time discipline at all. Rekor's
+    // entry had been sitting in the table unreachable. The test did not see it
+    // because it only ever built an `rfc3161` witness, the one type whose
+    // config name and proof type happen to be the same string — a seam
+    // exercised once.
+    const discipline = /** @type {Record<string, string>} */ (TIME_DISCIPLINE)[w.type];
+    if (discipline === undefined) {
+      throw new WitnessConfigError(
+        `witness type ${JSON.stringify(w.type)} declares no time discipline (SEC-25). A report `
+        + 'that presented its countersignature beside the others would imply an authority about '
+        + 'time that nothing here established.',
+      );
+    }
+    const declare = (/** @type {any} */ a) => { a.time_discipline = discipline; return a; };
     switch (w.type) {
       case 'rfc3161':
-        out.push(tsaWitness({
+        out.push(declare(tsaWitness({
           id: w.id,
           url: /** @type {string} */ (w.url),
+          ...(w.qualified ? { qualified: true } : {}),
           ...(opts.fetchImpl ? { fetchImpl: opts.fetchImpl } : {}),
-        }));
+        })));
         break;
       case 'opentimestamps':
-        out.push(otsWitness({
+        out.push(declare(otsWitness({
           id: w.id,
           calendars: w.calendars ?? [...DEFAULT_CALENDARS],
           ...(opts.fetchImpl ? { fetchImpl: opts.fetchImpl } : {}),
-        }));
+        })));
         break;
       case 'rekor':
-        out.push(rekorWitness({
+        out.push(declare(rekorWitness({
           id: w.id,
           url: /** @type {string} */ (w.url),
           ...(tier ? { tier } : {}),
           ...(w.self_hosted ? { selfHosted: true } : {}),
           ...(opts.fetchImpl ? { fetchImpl: opts.fetchImpl } : {}),
-        }));
+        })));
+        break;
+      case 'tlog-witness':
+        out.push(declare(tlogWitness({
+          id: w.id,
+          url: /** @type {string} */ (w.url),
+          ...(tier ? { tier } : {}),
+          ...(opts.fetchImpl ? { fetchImpl: opts.fetchImpl } : {}),
+        })));
         break;
       case 'splitstick':
         throw new WitnessConfigError(
@@ -149,8 +185,9 @@ export function describeWitnessSet(witnesses) {
   const time_discipline = {};
   for (const w of witnesses) {
     for (const c of w.establishes) classes[c]?.push(w.id);
-    const d = TIME_DISCIPLINE[/** @type {keyof typeof TIME_DISCIPLINE} */ (w.proof_type)];
-    if (d) time_discipline[w.id] = d;
+    // From the adapter, which carries what its configured type declared.
+    const d = /** @type {any} */ (w).time_discipline;
+    if (typeof d === 'string' && d !== '') time_discipline[w.id] = d;
   }
   const closes_truncation = (classes.sequence ?? []).length > 0;
   /** @type {string[]} */

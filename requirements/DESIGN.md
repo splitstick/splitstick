@@ -238,14 +238,14 @@ The shared capture core, the OMA backend, the MCP proxy, and where the capture b
 |---|---|---|
 | `FR-01` | OMA journal backend | ✅ |
 | `FR-02` | OMA approval-store backend | ✅ |
-| `FR-03` | MCP proxy collector (stdio) | ☐ |
-| `FR-04` | MCP proxy collector (HTTP) | ☐ |
+| `FR-03` | MCP proxy collector (stdio) | ✅ |
+| `FR-04` | MCP proxy collector (HTTP) | ✅ |
 | `INT-04` | Additive OMA integration | ✅ |
-| `INT-05` | Framework-agnostic capture | ☐ |
+| `INT-05` | Framework-agnostic capture | ✅ |
 | `INT-07` | No agent code changes | ✅ |
-| `FR-46` | Conformance test suite | ☐ |
-| `FR-47` | Witness list as data | ☐ |
-| `INT-06` | Reuse rather than reimplement | ☐ |
+| `FR-46` | Conformance test suite | ✅ |
+| `FR-47` | Witness list as data | ✅ |
+| `INT-06` | Reuse rather than reimplement | ✅ |
 
 ### [DES-15 — Failure and availability model](../design/DES-15-failure-and-availability.md)
 
@@ -276,9 +276,9 @@ Version negotiation in the record and pack, and the migration path when a hash o
 | Requirement | | Status |
 |---|---|---|
 | `NFR-07` | Long-term verifiability | ✅ |
-| `NFR-08` | Node.js 20+ | ☐ |
-| `NFR-10` | OMA version compatibility | ☐ |
-| `NFR-11` | MCP transport coverage | ☐ |
+| `NFR-08` | Node.js 20+ | ✅ |
+| `NFR-10` | OMA version compatibility | ✅ |
+| `NFR-11` | MCP transport coverage | ✅ |
 
 ### [DES-17 — Release and provenance pipeline](../design/DES-17-release-and-provenance.md)
 
@@ -292,7 +292,7 @@ Build reproducibility, provenance attestation, release signing, SBOM generation,
 | `SEC-23` | Signed releases and SBOM | ✅ |
 | `NFR-01` | Low-overhead evidence capture | ☐ |
 | `NFR-02` | Run latency budget | ✅ |
-| `FR-49` | Documented CLI contract | ☐ |
+| `FR-49` | Documented CLI contract | ✅ |
 
 ### [DES-18 — Witness practice statement structure](../design/DES-18-practice-statement-structure.md)
 
@@ -312,8 +312,8 @@ What the countersignature asserts and disclaims, how the statement is versioned 
 | `LEG-08` | WPS disclaims lawfulness | ✅ |
 | `LEG-09` | WPS versioned and anchored | ☐ |
 | `LEG-19` | WPS states the time discipline | ✅ |
-| `OPS-03` | Self-hosted witness deployment guide | ☐ |
-| `OPS-05` | Zero-egress mode | ☐ |
+| `OPS-03` | Self-hosted witness deployment guide | ✅ |
+| `OPS-05` | Zero-egress mode | ✅ |
 
 ### [DES-19 — Detection without a stateful witness](../design/DES-19-detection-without-a-witness.md)
 

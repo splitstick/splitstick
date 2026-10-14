@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
-import { mkdtempSync, writeFileSync, readFileSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, readFileSync, symlinkSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -89,7 +89,7 @@ test('--explain prints only what the verdict depends on', async () => {
 test('no arguments prints usage and exits 3', async () => {
   const r = await run([]);
   assert.equal(r.code, 3);
-  assert.match(r.stdout, /splitstick verify <store>/);
+  assert.match(r.stdout, /splitstick-verify <store>/);
 });
 
 test('a flag with no value is a usage error, not a silent default', async () => {
@@ -165,4 +165,23 @@ test('--disclosed makes the cross-pack comparison reachable', async () => {
   const r = await run([root, '--collector', 'host-1', '--key', vkey, '--disclosed', path]);
   assert.equal(r.code, 2);
   assert.match(r.stdout, /TRUNCATED_BELOW_DISCLOSED/);
+});
+
+test('invoked through a bin symlink it still runs', async () => {
+  // npm installs a bin as a SYMLINK, so `process.argv[1]` is the link and
+  // `import.meta.url` is the realpath of this file. The self-exec guard
+  // compared the two directly, never matched, and the only published entry
+  // point in this project printed nothing and exited 0 — a verifier whose
+  // silence reads as "nothing wrong".
+  const dir = mkdtempSync(join(tmpdir(), 'ss-bin-'));
+  const link = join(dir, 'splitstick-verify');
+  symlinkSync(CLI, link);
+  const r = await new Promise((resolve) => {
+    execFile(process.execPath, [link, '--help'], (err, stdout, stderr) => resolve({
+      code: err && typeof err.code === 'number' ? err.code : 0, stdout, stderr,
+    }));
+  });
+  rmSync(dir, { recursive: true, force: true });
+  assert.equal(r.code, 0);
+  assert.match(r.stdout, /^splitstick-verify <store>/, 'the entry point produced no output at all');
 });

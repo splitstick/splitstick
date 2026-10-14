@@ -10,10 +10,10 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { Store } from '@splitstick/core/store';
 import { buildDisclosure, verifyDisclosure, DiscloseError } from './disclose.mjs';
 
-const USAGE = `splitstick disclose <store> --record <seq> [--collector <name>] [--out <file>]
-splitstick disclose --verify <pack.json> [--key <vkey>] [--policy <file>]
+const USAGE = `splitstick-disclose <store> --event <seq> [--collector <name>] [--out <file>]
+splitstick-disclose --verify <pack.json> [--key <vkey>] [--policy <file>]
 
-  --record         the single record_seq to disclose. One event, by design.
+  --event          the single record_seq to disclose. One event, by design.
   --collector      which collector's chain to disclose from.
   --out            write the pack here instead of to stdout.
   --verify         verify a pack instead of building one. Needs nothing else:
@@ -29,7 +29,7 @@ splitstick disclose --verify <pack.json> [--key <vkey>] [--policy <file>]
  * @returns {Promise<{ exit: number, out: string, err?: string }>}
  */
 export async function runDisclose(argv) {
-  const FLAGS = new Set(['record', 'collector', 'out', 'verify', 'key', 'policy']);
+  const FLAGS = new Set(['event', 'collector', 'out', 'verify', 'key', 'policy']);
   /** @type {Record<string, string>} */
   const flags = {};
   /** @type {string[]} */
@@ -41,7 +41,7 @@ export async function runDisclose(argv) {
     const name = a.slice(2);
     if (!FLAGS.has(name)) {
       return {
-        exit: 2, out: '',
+        exit: 3, out: '',
         err: `${a} is not a flag this reads. Refused rather than ignored: a misspelled flag `
           + `that silently disclosed a different record would be read as disclosing this `
           + `one.\n\n${USAGE}`,
@@ -49,7 +49,7 @@ export async function runDisclose(argv) {
     }
     const v = argv[i + 1];
     if (v === undefined || String(v).startsWith('--')) {
-      return { exit: 2, out: '', err: `${a} needs a value\n\n${USAGE}` };
+      return { exit: 3, out: '', err: `${a} needs a value\n\n${USAGE}` };
     }
     flags[name] = String(v);
     i += 1;
@@ -80,17 +80,20 @@ export async function runDisclose(argv) {
       lines.push(`${f.verdict === 'fail' ? 'FAIL  ' : 'note  '}          ${f.code}: ${f.detail}`);
     }
     lines.push('', `verdict         ${r.verdict.toUpperCase()}`, '');
-    // 0 ok, 1 fail, 2 inconclusive — a verdict, not an error code.
+    // 0 ok, 1 fail, 2 inconclusive — a VERDICT about the pack. Refusals exit
+    // 3 and never land in this range: a recipient scripting this who mistyped
+    // a flag used to get 2, indistinguishable from "the pack is inconclusive",
+    // so a refusal read as a verdict about evidence.
     const exit = r.verdict === 'ok' ? 0 : r.verdict === 'fail' ? 1 : 2;
     return { exit, out: `${lines.join('\n')}\n` };
   }
 
   // ── building a pack: the operator's side ──────────────────────────────────
   const root = positional[0];
-  if (root === undefined) return { exit: 2, out: '', err: `a store directory is required\n\n${USAGE}` };
-  const seq = Number(flags.record);
+  if (root === undefined) return { exit: 3, out: '', err: `a store directory is required\n\n${USAGE}` };
+  const seq = Number(flags.event);
   if (!Number.isSafeInteger(seq)) {
-    return { exit: 2, out: '', err: `--record needs a record_seq\n\n${USAGE}` };
+    return { exit: 3, out: '', err: `--event needs a record_seq\n\n${USAGE}` };
   }
 
   const probe = new Store(root, flags.collector ?? 'unknown');
@@ -100,7 +103,7 @@ export async function runDisclose(argv) {
     const collector = flags.collector ?? available[0] ?? 'unknown';
     if (flags.collector !== undefined && !available.includes(collector)) {
       return {
-        exit: 2, out: '',
+        exit: 3, out: '',
         err: `this store holds no chain for collector ${JSON.stringify(collector)}`
           + `${available.length === 0 ? '' : `; it holds ${available.join(', ')}`}\n`,
       };
@@ -114,7 +117,7 @@ export async function runDisclose(argv) {
     }
     return { exit: 0, out: json };
   } catch (e) {
-    if (e instanceof DiscloseError) return { exit: 2, out: '', err: `${e.message}\n` };
+    if (e instanceof DiscloseError) return { exit: 3, out: '', err: `${e.message}\n` };
     throw e;
   } finally {
     store?.close();

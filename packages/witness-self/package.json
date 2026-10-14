@@ -10,8 +10,7 @@
   },
   "exports": {
     ".": "./src/index.mjs",
-    "./witness": "./src/witness.mjs",
-    "./client": "./src/client.mjs"
+    "./*": "./src/*.mjs"
   },
   "files": [
     "src",

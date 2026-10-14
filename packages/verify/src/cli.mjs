@@ -17,12 +17,13 @@
  * capability block says which checks went unanswered.
  */
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, realpathSync } from 'node:fs';
+import { pathToFileURL } from 'node:url';
 import { verifyStore } from './verify.mjs';
 
 const EXIT = { ok: 0, inconclusive: 1, fail: 2 };
 
-const USAGE = `splitstick verify <store> [options]
+const USAGE = `splitstick-verify <store> [options]
 
   --collector <id>   the collector instance whose chain to read
   --key <vkey>       the operator identity you pin, as name+keyid+base64key
@@ -165,12 +166,43 @@ export async function main(argv) {
   for (const c of report.capability.can.slice(1)) out.push('            ' + c);
   for (const c of report.capability.cannot) out.push('            NOT: ' + c);
   out.push('');
+  // Printed whether or not it attaches. An absent line is read as "probably
+  // fine" by a reader hoping for one, and this is the field most likely to be
+  // quoted at somebody outside the room.
+  const wrap = (/** @type {string} */ t) => {
+    /** @type {string[]} */
+    const lines = [];
+    let cur = '';
+    for (const word of t.split(' ')) {
+      if (cur !== '' && `${cur} ${word}`.length > 76) { lines.push(cur); cur = word; }
+      else cur = cur === '' ? word : `${cur} ${word}`;
+    }
+    if (cur !== '') lines.push(cur);
+    return lines.join('\n            ');
+  };
+  out.push(`eIDAS       ${report.presumption.attaches ? 'Art. 41 presumption ATTACHES' : 'no Art. 41 presumption'}`);
+  out.push(`            ${wrap(report.presumption.detail)}`);
+  out.push('');
   out.push('trusting    ' + report.trusting.join('\n            '));
   out.push('');
   process.stdout.write(out.join('\n') + '\n');
   return EXIT[report.verdict];
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+/**
+ * Run when this file IS the program, not when it is imported.
+ *
+ * `file://${process.argv[1]}` was wrong in the one case that matters: npm
+ * installs a bin as a symlink, so argv[1] is `.bin/splitstick-verify` while
+ * `import.meta.url` is the realpath of this file. They never matched, the
+ * guard never fired, and the only published entry point in this project
+ * printed nothing and exited 0 — the shape of failure a verifier is least
+ * allowed to have, since silence reads as "nothing wrong". Compare realpaths,
+ * and build the URL with pathToFileURL so a path containing a space or a `#`
+ * is not a second way to miss.
+ */
+const invokedAs = process.argv[1] === undefined
+  ? '' : pathToFileURL(realpathSync(process.argv[1])).href;
+if (import.meta.url === invokedAs) {
   process.exitCode = await main(process.argv);
 }
