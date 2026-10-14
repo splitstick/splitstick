@@ -232,6 +232,60 @@ test('M7: the tree guards catch a feature in the shape it would arrive in', () =
   assert.deepEqual([...TREE_GUARDS.map(g => g.id)].sort(), Object.keys(REALISTIC_TREE).sort());
 });
 
+/**
+ * Evasions: a real overclaim wearing an unrelated denial.
+ *
+ * NINE OF TEN of these got through the first version, because the negation
+ * exemption and `allows` both read the whole sentence. Marketing copy pairs a
+ * negative hook with a positive claim as a matter of course — "No setup
+ * required", "Never lose an action again" — so in the real world the exemption
+ * was nearly always available, and the realistic corpus above did not catch
+ * it because those sentences were realistic in VOCABULARY but not in
+ * CONSTRUCTION.
+ *
+ * Exemptions are now clause-local. These are kept permanently because the
+ * finding was not a missing pattern, it was the exemption mechanism, and that
+ * is the kind of thing that comes back.
+ */
+const EVASIONS = [
+  'Splitstick is not slow, and your logs are permanent and unchangeable.',
+  'No setup required: be audit-ready for the EU AI Act in an afternoon.',
+  'No agent changes needed — hand your auditor a report and you are compliant.',
+  'Never lose an action again: we withstood every attack tried.',
+  'Nothing to configure. Retire your SIEM.',
+  'Your audit log is public and cannot be altered.',
+  'Splitstick is tamper-evident, and your records are permanent and unchangeable.',
+  'Rejected alternatives aside, we ship zero-knowledge compliance proofs.',
+  'Cut to the chase: a verifiable delay function bounds elapsed time for you.',
+];
+
+test('M7: an unrelated denial does not shield an overclaim', () => {
+  // The exemption has to be ATTACHED to the thing it exempts. "tamper-evident,
+  // not tamper-proof" keeps the denial in the same clause as the phrase, which
+  // is what makes it honest rather than merely adjacent to something honest.
+  for (const text of EVASIONS) {
+    const fired = GUARDS.filter(g => sentences(text).some(s => violates(g, s)));
+    assert.ok(fired.length > 0, `EVADED: ${text}`);
+  }
+});
+
+test('M7: and the honest refusals still survive the clause rule', () => {
+  // The other half, and the reason the clause break is punctuation-only:
+  // splitting on `and` broke "considered and rejected", where the exemption is
+  // the second half of a fixed phrase about the subject.
+  for (const text of [
+    'Splitstick is tamper-evident, not tamper-proof: it detects and attributes change.',
+    'We do not claim an immutable audit log; the operator can still rewrite the file.',
+    'It does not replace your SIEM; keep the observability you already need.',
+    'Zero-knowledge compliance proofs were considered and rejected, and are not on the roadmap.',
+    'A verifiable delay function was proposed as an offline lower bound and rejected.',
+    'EU AI Act Article 12 asks for tamper-evident records, not impossible ones.',
+  ]) {
+    const fired = GUARDS.filter(g => sentences(text).some(s => violates(g, s))).map(g => g.id);
+    assert.deepEqual(fired, [], `wrongly fired on: ${text}`);
+  }
+});
+
 test('M7: every prose guard fires on a violation', () => {
   for (const guard of GUARDS) {
     const c = /** @type {any} */ (CASES)[guard.id];

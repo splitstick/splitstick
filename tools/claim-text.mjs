@@ -36,6 +36,13 @@ export const NEGATION =
  * Sentences, roughly, plus the separators this repository's prose uses to join
  * clauses a negation does NOT carry across — semicolons and bullet boundaries.
  *
+ * Markdown emphasis is admitted on BOTH sides of the break — up to three
+ * characters after the terminator and before the capital. Without that, a
+ * sentence ending `…(NFR-09).** The KMS half is…` did not split at all, so a
+ * whole paragraph became one unit and the assurance lint's per-sentence check
+ * landed on text it was not about. The first fix only handled emphasis AFTER
+ * the space, which is the rarer of the two placements.
+ *
  * The lookahead for a capital is load-bearing, and its absence was a real bug:
  * splitting on any `.` plus space cut the eIDAS article reference in half, so
  * neither fragment matched the presumption pattern and the rule could NEVER
@@ -78,7 +85,7 @@ export const sentences = (para) => {
 
   return units
     .flatMap(u => (/^\s*\|/.test(u) ? [u]
-      : u.split(/(?<=[.!?])\s+(?=["'(\[]?[A-Z])|;\s+/)))
+      : u.split(/(?<=[.!?][*_`"')\]]{0,3})\s+(?=[*_`"'(\[]{0,3}[A-Z])|;\s+/)))
     .map(x => x.trim())
     .filter(x => x !== '');
 };
@@ -161,3 +168,44 @@ export function claimSurfaces(root) {
 
   return out;
 }
+
+/**
+ * The clause a match sits in.
+ *
+ * An exemption has to be ATTACHED to the thing it exempts. Checking for a
+ * denial anywhere in the sentence let nine of ten crafted evasions through,
+ * because marketing copy pairs a negative hook with a positive claim as a
+ * matter of course: "Splitstick is not slow, and your logs are permanent and
+ * unchangeable", "No setup required: be audit-ready for the EU AI Act",
+ * "Never lose an action again: we withstood every attack tried". The denial is
+ * real, it is just about something else.
+ *
+ * Clauses are split on PUNCTUATION ONLY — commas, semicolons, colons, dashes.
+ * Not on conjunctions: splitting on `and` broke "Zero-knowledge compliance
+ * proofs were considered and rejected", where the exemption is the second half
+ * of a fixed phrase about the subject. Punctuation alone handles every case in
+ * the corpus, catches all ten crafted evasions, and errs towards a longer
+ * clause — which is the safe direction here, because the failure it risks is
+ * missing an overclaim rather than firing on an honest refusal, and an honest
+ * refusal firing is what gets a guard deleted.
+ *
+ * A TABLE ROW IS NOT CLAUSE-SPLIT. Its cells are the context: the
+ * rejected-designs log keeps `CUT` in one cell and the design name in another,
+ * and splitting them is how that log stopped reading as honest in the first
+ * place.
+ * @param {string} sentence
+ * @param {number} at index of the match within the sentence
+ * @returns {string}
+ */
+export function clauseAt(sentence, at) {
+  if (/^\s*\|/.test(sentence)) return sentence;
+  const BREAK = /[,;:—–]/g;
+  let start = 0;
+  let end = sentence.length;
+  for (let m = BREAK.exec(sentence); m !== null; m = BREAK.exec(sentence)) {
+    if (m.index + m[0].length <= at) start = m.index + m[0].length;
+    else if (m.index >= at) { end = m.index; break; }
+  }
+  return sentence.slice(start, end);
+}
+

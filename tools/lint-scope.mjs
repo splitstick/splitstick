@@ -61,6 +61,20 @@ const EXEMPT = [
   // pass — and the file makes no product claims: it is an internal account of
   // what the audit could not see.
   /^docs\/m7-follow-ups\.md$/,
+  // A catalogue of OTHER PEOPLE'S services, in their terms: each entry states
+  // a third party's acceptable use, rate limits and retention, because FR-47
+  // requires an operator to choose on informed grounds. "Every entry is public
+  // and cannot be removed" is a true disclosure about an OpenTimestamps
+  // calendar, not an integrity claim about our records, and reading a JSON
+  // value describing somebody else's log as a claim about this product is a
+  // category error.
+  //
+  // It is not unaudited. `parseWitnessList` governs it far more precisely than
+  // a prose guard could: it refuses any field expressing preference (GOV-09),
+  // validates every capability class against CAPABILITY_CLASSES, requires each
+  // entry to state its position rather than default to permissive, and refuses
+  // an unknown field outright. That is the better instrument for this file.
+  /^spec\/witnesses\.json$/,
 ];
 
 /** Source the tree guards do not read, beyond EXEMPT. */

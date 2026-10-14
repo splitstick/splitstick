@@ -50,7 +50,7 @@
  * patterns are fitted to it. That ordering is the whole correction.
  */
 
-import { NEGATION } from './claim-text.mjs';
+import { NEGATION, clauseAt } from './claim-text.mjs';
 
 /**
  * @typedef {object} Guard
@@ -98,7 +98,7 @@ export const GUARDS = [
     // OpenTimestamps or Rekor entry is public and cannot be removed, which is
     // a true statement about a third party's retention and an FR-47
     // obligation, not an integrity claim about our records.
-    allows: /\bwithout detection\b|\bundetected\b|\bwithout leaving\b|\bwithout being detected\b|\btamper[\s-]?evident\b|\bretains?_publicly\b|\bretention_note\b|\bis public\b|\bpublic (?:log|calendar|instance|good)\b/i,
+    allows: /\bwithout detection\b|\bundetected\b|\bwithout leaving\b|\bwithout being detected\b|\btamper[\s-]?evident\b|\bretains?_publicly\b|\bretention_note\b/i,
     negationExempt: true,
     why: 'the product detects and attributes tampering; it does not prevent it, and an operator '
       + 'who believes otherwise will not keep the second party the detection depends on',
@@ -109,7 +109,14 @@ export const GUARDS = [
     // The AI Act named alongside ANY product positioning. A vendor does not
     // write "we assert conformity"; they write "your AI Act solution" and
     // "audit-ready for the EU AI Act", and both were missed.
-    forbids: /\b(?:EU )?AI Act\b[^.]{0,90}\b(?:conform\w*|compliant|compliance|solution|ready|covered|handled|satisf\w+|requirements?|obligations?|Article \d+)\b|\b(?:conform\w*|compliant|compliance|audit[\s-]ready|ready)\b[^.]{0,60}\b(?:EU )?AI Act\b/i,
+    // POSITIONING OF THE PRODUCT, not discussion of the statute. `Article \d+`
+    // and `requirements` were in this list and fired on
+    // docs/threat-model.md's "EU AI Act Article 12 asks for tamper-evident
+    // records, not impossible ones" — which describes what the regulation
+    // asks for and claims nothing. Naming what a statute requires is how you
+    // write honestly about it; a guard that forbade that would forbid the
+    // threat model.
+    forbids: /\b(?:EU )?AI Act\b[^.]{0,90}\b(?:conform\w*|compliant|compliance|solution|ready|covered|handled|satisf\w+|take care of)\b|\b(?:conform\w*|compliant|compliance|audit[\s-]ready|ready)\b[^.]{0,60}\b(?:EU )?AI Act\b/i,
     negationExempt: true,
     why: 'conformity is assessed by a body, not asserted by a vendor, and a tool cannot confer it',
   },
@@ -333,12 +340,38 @@ export const TREE_GUARDS = [
  * @param {Guard} guard @param {string} sentence
  */
 export function violates(guard, sentence) {
-  if (guard.allows?.test(sentence)) return false;
-  // Checked FIRST and never exempted. A claim phrased in the negative carries
-  // a negation token by construction, so running it through the exemption
-  // would hand it a pass for being written the way it is written.
-  if (guard.absolute?.test(sentence)) return true;
-  if (!guard.forbids.test(sentence)) return false;
-  if (guard.negationExempt && NEGATION.test(sentence)) return false;
+  // Detection reads the WHOLE sentence; exemption reads only the clause the
+  // match sits in.
+  //
+  // Both used to read the whole sentence, and nine of ten crafted evasions got
+  // through: a denial about something else, or an exemption word in an
+  // unrelated clause, shielded the overclaim. "Splitstick is not slow, and
+  // your logs are permanent and unchangeable" passed because of `not slow`.
+  // "Splitstick is tamper-evident, and your records are permanent and
+  // unchangeable" passed because `tamper-evident` is in `allows`. Marketing
+  // copy pairs a negative hook with a positive claim as a matter of course, so
+  // in the real world the exemption was nearly always available.
+  //
+  // An exemption has to be attached to the thing it exempts. "tamper-evident,
+  // not tamper-proof" and "we do not claim an immutable audit log" keep the
+  // denial in the same clause as the phrase, which is what makes them honest
+  // rather than merely adjacent to something honest.
+  const exempt = (/** @type {RegExp|undefined} */ re, /** @type {number} */ at) => {
+    if (re === undefined) return false;
+    return re.test(clauseAt(sentence, at));
+  };
+
+  const abs = guard.absolute?.exec(sentence) ?? null;
+  if (abs !== null) {
+    if (exempt(guard.allows, abs.index)) return false;
+    // Never negation-exempted: a claim phrased in the negative carries a
+    // negation token by construction.
+    return true;
+  }
+
+  const hit = guard.forbids.exec(sentence);
+  if (hit === null) return false;
+  if (exempt(guard.allows, hit.index)) return false;
+  if (guard.negationExempt && exempt(NEGATION, hit.index)) return false;
   return true;
 }

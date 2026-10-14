@@ -204,3 +204,29 @@ It is a test that **checked the wrong artefact** and took its title from what it
 checked. No regex would have helped. The question a guard's companion has to answer is not
 only "does this pattern fire" but "is this the thing the requirement is about".
 
+### And the exemption is the part that rots
+
+M7's independent review found the guards sound and the **exemptions** broken: nine of ten
+crafted evasions walked through a fixed guard by wearing an unrelated denial. `No setup
+required: be audit-ready for the EU AI Act in an afternoon.` The denial is real. It is about
+setup.
+
+Every claim guard needs an escape hatch, because the correct way to write about a claim you
+refuse is to refuse it by name — and a guard that forbade that would be deleted within a
+week. So the hatch is not optional, which makes it the part to distrust:
+
+> **An exemption must be attached to the thing it exempts.** Same clause, not same sentence.
+> A denial, a precondition or a disclaimer that floats free of the phrase it is supposed to
+> qualify is not a qualification; it is a coincidence in the same paragraph.
+
+Four instruments in this repository had the floating kind, and three of them were in M7's own
+tooling: a bare `only` exempting a guarantee that qualified nothing, a bare `no` exempting
+"ensures no tool call escapes" — a guarantee written in the negative — and both scope-guard
+hatches reading the whole sentence. The fourth was the shared sentence splitter, which did not
+break after markdown emphasis and so handed every lint a paragraph where it expected a
+sentence, hiding findings from all of them at once.
+
+The one negation that IS a qualification is the negation of the claim verb itself: `does not
+prove`, `cannot establish`. In `ensures no tool call escapes`, the negative is part of what is
+being claimed. That distinction is the whole of it.
+

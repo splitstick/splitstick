@@ -34,7 +34,7 @@
 
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { paragraphs, sentences } from './claim-text.mjs';
+import { paragraphs, sentences, clauseAt } from './claim-text.mjs';
 
 const ROOT = new URL('..', import.meta.url).pathname;
 const REGISTER = join(ROOT, 'spec/assurance-register.json');
@@ -52,10 +52,24 @@ const OVERCLAIM = /\b(?:guarantee[sd]?|guaranteeing|prove[sdn]?|proof that|ensur
 
 /**
  * What rescues a sentence that uses one: it names the precondition, or marks
- * the limit, in the same sentence. This is the SEC-17 discipline — a
- * precondition a page away is read without it.
+ * the limit, IN THE SAME CLAUSE. This is the SEC-17 discipline — a
+ * precondition a page away is read without it — and the review found it had
+ * to be the clause rather than the sentence, for the same reason the scope
+ * guards did: a bare `only` anywhere exempted "It guarantees completeness,
+ * and only takes a second". The qualifying forms are `only under`, `only
+ * when`, `proves only`, and their kin; `only` on its own is an adverb about
+ * anything.
+ *
+ * The bare negation tokens went for the same reason, and this one is the third
+ * instance of the shape in M7: `\bno\b` exempted "It ENSURES NO tool call
+ * escapes the record", which is a guarantee phrased in the negative — exactly
+ * what SEC-16's `absolute` slot exists for. Every honest limit statement in
+ * this project carries a SPECIFIC marker instead: `the collector reported`,
+ * `self-reported`, `witness-asserted`, `not remote attestation`, `not
+ * externally verifiable`. Specific markers are what a qualification looks
+ * like; a bare negative is what a claim looks like when it is about absence.
  */
-const QUALIFIED = /\bonly\b|\bprecondition\b|\bnot externally verifiable\b|\boperator-declared\b|\bself-reported\b|\bdeclared\b|\basserts?\b|\bassertion\b|\bthe collector reported\b|\bnot remote attestation\b|\bwitness-asserted\b|\bunsigned\b|\bis not\b|\bdoes not\b|\bcannot\b|\bno\b/i;
+const QUALIFIED = /\bonly (?:under|when|if|that|to the extent)\b|\b(?:prove[sdn]?|establishes?|says?|shows?|means) only\b|\bprecondition\b|\bnot externally verifiable\b|\boperator-declared\b|\bself-reported\b|\bdeclared\b|\basserts?\b|\bassertion\b|\bthe collector reported\b|\bnot remote attestation\b|\bwitness-asserted\b|\bunsigned\b|\bnot (?:remote attestation|externally verifiable|established|verified here|confirmed)\b|\bprovides? none\b|\b(?:do|does|did|will|would|can|could|is|are)(?:n't| not) (?:prove|guarantee|ensure|establish|verif\w+|certif\w+|detect|close)\b|\bonly remote attestation\b/i;
 
 /** Sentences in the notes that look like an assurance claim and must be registered. */
 const ASSURANCE_SHAPED = /\b(?:guarantee[sd]?|prove[sdn]?|ensure[sd]?|detects?|establishes?|cannot be (?:altered|forged|rewritten)|never (?:holds?|sees?|leaves?))\b/i;
@@ -114,8 +128,11 @@ for (const c of register.claims ?? []) {
     if (!flat(para).includes(flat(c.claim))) continue;
     for (const s of sentences(para)) {
       if (!flat(s).includes(flat(c.claim)) && !flat(c.claim).includes(flat(s))) continue;
-      if (!OVERCLAIM.test(s)) continue;
-      if (QUALIFIED.test(s)) continue;
+      const hit = OVERCLAIM.exec(s);
+      if (hit === null) continue;
+      // Clause-local, so a qualification attached to something else does not
+      // rescue the claim.
+      if (QUALIFIED.test(clauseAt(s, hit.index))) continue;
       findings.push(`${where} [${c.class}]: worded as a verified guarantee with nothing in the `
         + 'sentence marking what it rests on. DOC-11: a claim resting only on the '
         + 'operator-controlled collector is worded as an assertion, never as a verified '
@@ -138,9 +155,23 @@ if (body === null) {
   findings.push(`${NOTES}: the "What ships in 1.0" section could not be located, so the drift `
     + 'check ran against nothing. Update this guard deliberately rather than leaving it inert');
 } else {
+  /**
+   * A paragraph that declares itself a limit is already doing what DOC-11
+   * asks, and its sentences are the explanation.
+   *
+   * The release notes' selective-disclosure section opens "**The honest
+   * limit:**" and then reasons about why the limit is unavoidable — "you
+   * cannot simultaneously claim 'nobody knows how many actions I took' and
+   * 'you can prove I deleted none'". That quotes a claim in order to deny it,
+   * and the drift check flagged it as an unregistered claim once the sentence
+   * splitter was fixed and could finally see it.
+   */
+  const LIMIT_PARA = /\bhonest limit\b|\bthe limit\b|\bwhat (?:this|it) does not\b|\bunavoidable\b|\btrade[\s-]?off\b|\bNOT closed\b|\bnot detectable\b/i;
+
   /** @type {string[]} */
   const unregistered = [];
   for (const para of paragraphs(body[1] ?? '')) {
+    if (LIMIT_PARA.test(para)) continue;
     for (const s of sentences(para)) {
       // A heading is not a claim. "### Disclosure — prove one action, reveal
       // one action" is a section title, and auditing titles would make the
@@ -150,8 +181,10 @@ if (body === null) {
       if (REGISTERED.some((/** @type {string} */ r) => flat(s).includes(flat(r))
         || flat(r).includes(flat(s)))) continue;
       // A sentence that states its own limit is not an unregistered claim; it
-      // is the project doing what DOC-11 asks.
-      if (QUALIFIED.test(s)) continue;
+      // is the project doing what DOC-11 asks — and the limit has to be in the
+      // clause that makes the claim, not merely in the sentence.
+      const shaped = ASSURANCE_SHAPED.exec(s);
+      if (shaped !== null && QUALIFIED.test(clauseAt(s, shaped.index))) continue;
       unregistered.push(s.replace(/\s+/g, ' ').slice(0, 130));
     }
   }

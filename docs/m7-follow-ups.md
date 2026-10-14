@@ -113,6 +113,61 @@ is exactly one, so the object now has to be the record.
 and cannot be removed — a true statement about a third party's retention, and an FR-47
 obligation.
 
+## Found in the independent review — the exemptions floated free
+
+The self-review fixed the patterns. The independent pass went at the **exemption mechanism**,
+and found that an overclaim could wear an unrelated denial and walk through. **Nine of ten
+crafted evasions got past the fixed guards.**
+
+| Evasion | Why it passed |
+|---|---|
+| a positive claim after a negative hook | `No setup required: …`, `Never lose an action again: …`, `Splitstick is not slow, and …` — the denial is real, it is just about something else |
+| a positive claim after an honest refusal | `Splitstick is tamper-evident, and your records are …` — `tamper-evident` is in `allows`, in a different clause |
+| a claim after the word `rejected` or `Cut` | `Rejected alternatives aside, we ship …` — the rejected-design exemption, borrowed |
+
+Both `negationExempt` and `allows` read the **whole sentence**, with no relationship to the
+forbidden phrase. Marketing copy pairs a negative hook with a positive claim as a matter of
+course, so in the real world the exemption was nearly always available. The realistic corpus
+from the self-review did not catch this because those sentences were realistic in
+*vocabulary* and not in *construction* — which is the same lesson one level further in.
+
+**An exemption now has to be attached to the thing it exempts**: the denial must be in the
+clause the match sits in. "tamper-evident, not tamper-proof" and "we do not claim an
+immutable audit log" keep the denial beside the phrase, which is what makes them honest
+rather than merely adjacent to something honest. The clause break is punctuation only —
+splitting on `and` broke "considered **and** rejected", where the exemption is the second
+half of a fixed phrase about the subject. All ten evasions are now caught, the corpus is kept
+permanently, and both companions fail against the pre-fix guards.
+
+### The same shape, three more times
+
+| Where | What the exemption let through |
+|---|---|
+| `lint-assurance.mjs` | a bare `only` anywhere exempted a guarantee: *"It guarantees completeness, and only takes a second"*. Narrowed to `only under`, `only when`, `proves only` and their kin |
+| `lint-assurance.mjs` | a bare `no` exempted *"It ensures **no** tool call escapes the record"* — a guarantee phrased in the negative, which is exactly what SEC-16's `absolute` slot exists for. The one negation form that IS a qualification is the negation of the assurance verb itself: `does not prove`, `cannot establish` |
+| `lint-assurance.mjs` | it had **no companion test at all** — probed by hand in M7 and then trusted. `test/assurance.test.mjs` now exists, and it found the second row above |
+
+And a shared-helper bug that had been hiding findings from every lint at once: the sentence
+splitter did not break after markdown emphasis, so `…(NFR-09).** The KMS half is…` made a
+whole paragraph into one unit and the assurance lint's per-sentence check landed on text it
+was not about. Fixing it surfaced two further false positives immediately — both honest limit
+statements the check had simply never been able to see.
+
+### Two false positives worth keeping as cases
+
+Tightening produced the opposite failure, which is always the other half:
+
+- `docs/threat-model.md`'s *"EU AI Act Article 12 asks for tamper-evident records, not
+  impossible ones"* fired LEG-14. Naming what a statute requires is how you write honestly
+  about it, so the guard narrowed to product *positioning* and dropped `Article \d+` and
+  `requirements` from its triggers.
+- `spec/witnesses.json` fired SEC-16 by disclosing that an OpenTimestamps entry is public and
+  cannot be removed. That file is a catalogue of **other people's** terms, and reading a JSON
+  value about somebody else's log as a claim about this product is a category error. It is
+  exempted from the prose guards and governed instead by `parseWitnessList`, which checks it
+  far more precisely: no field expressing preference, every capability class validated, every
+  entry required to state its position.
+
 ### A note on this document's own exemption
 
 `tools/lint-scope.mjs` exempts this file, and only this file among the follow-ups. Explaining
