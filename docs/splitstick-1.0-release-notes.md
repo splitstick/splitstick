@@ -333,14 +333,26 @@ half its design.
 
 ## Numbers we are signing up to
 
-| | |
-|---|---|
-| **<1 ms** | p99 append overhead per event |
-| **<2%** | added end-to-end run latency |
-| **10 s** | default mutability window |
-| **<2 s** | to verify a 100,000-event run, offline |
-| **0 bytes** | of content leaving your host |
-| **Recognition** | per novel tamper class found against us, while unfunded |
+Every figure names the benchmark that produces it and says whether a qualifying run exists
+(TRC-04, DOC-04). **A number without a qualifying run is a target, not a measurement**, and is
+labelled one here — including where the harness has produced good numbers on a development
+machine, because a development machine is not the reference environment and the harness
+itself reports those runs as regression metrics rather than acceptance.
+
+| | | Evidence | Benchmark |
+|---|---|---|---|
+| **p95 <1 ms, p99 <3 ms** | append overhead per event (NFR-01) | **TARGET** — no qualifying run | `bench/append.mjs` over ≥1e6 events, ≥3 repeats, on `bench/reference-env.json` |
+| **<2%** | added end-to-end run latency (NFR-02) | **TARGET** — measured against a scripted model at an assumed 400 ms per call, never against a real provider | `bench/run-latency.mjs`, interleaved paired A/B |
+| **<2 s** | to verify a 100,000-event run, offline (NFR-04) | **TARGET** — no qualifying run | `bench/verify.mjs` |
+| **10 s** | default mutability window (NFR-03) | **MEASURED** — a configuration value, asserted from the canonical default | `packages/core/test/config.test.mjs` |
+| **0 bytes** | of content leaving your host (PRIV-01) | **MEASURED** — a design property, not a performance figure: what crosses the wire is a checkpoint note, and the shipped default anchors outward to third parties | `test/zero-egress.test.mjs`, which traps seven outbound primitives and proves the trap works |
+| **Recognition** | per novel tamper class found against us, while unfunded (GOV-13, GOV-17) | n/a — not a measurement | — |
+
+The earlier version of this table published **<1 ms at p99** as the headline. That is the
+*stretch* target NFR-01 names, not its budget: M1 revised the budget to p95 under 1 ms and
+p99 under 3 ms after measuring, and the table kept the number the project had hoped for. It
+is corrected above, and `tools/lint-figures.mjs` now fails the build if a figure here loses
+its evidence class or its benchmark.
 
 ## Bounty terms
 

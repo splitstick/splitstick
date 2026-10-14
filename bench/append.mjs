@@ -2,7 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * NFR-01 — p99 append overhead below 1 ms per event.
+ * NFR-01 — append overhead per event: p95 below 1 ms, p99 below 3 ms.
+ *
+ * This header said "p99 below 1 ms" while the code below used p95=1 and p99=3. That
+ * figure is the STRETCH target NFR-01 names, not its budget, and the release notes
+ * published the stretch as the headline for the same reason — the number the project
+ * hoped for outlived the measurement that revised it. Corrected in M7.
  *
  * Measured early rather than last, because the design hardens around whatever
  * the numbers turn out to be. DES-17 puts this in M1 for exactly that reason,

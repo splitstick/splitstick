@@ -17,7 +17,7 @@
     "statement": "Added end-to-end agent run latency below 2%.",
     "source": "Numbers we are signing up to",
     "verify": "Interleaved A/B through the real OMA orchestrator, analysed as a paired difference because the arms alternate run by run. The verdict requires the whole 95% interval to sit below the budget; a budget falling inside the interval is reported as UNRESOLVED rather than as a pass. The harness records its environment and checks its clock resolution.",
-    "status": "done",
+    "status": "open",
     "evidence": "bench/run-latency.mjs \u2014 40 paired runs: added 0.864 ms, 95% interval [-1.612, 3.340] ms, entirely below the 16.975 ms the 2% budget allows, so the budget is established rather than merely not contradicted. Instruments self-checked in the same run."
   },
   {
