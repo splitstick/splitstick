@@ -37,6 +37,8 @@ export const TOOL_CALL = 'tools/call';
  * @property {string} tool
  * @property {Uint8Array} args the arguments as they were sent
  * @property {boolean} verbatim whether `args` is the wire bytes or a re-encoding
+ * @property {string} [ambiguousKey] the id key this call was detached from, when
+ *   two outstanding calls shared one id
  * @property {string} correlation
  * @property {number} at when the request was seen, for a timeout
  */
@@ -64,11 +66,23 @@ export class Pairing {
   #detached = 0;
 
   /**
-   * Ids that two outstanding calls have used, so no response may be attributed
-   * to either of them.
-   * @type {Set<string>}
+   * Ids two outstanding calls have used, mapped to the instant their
+   * QUARANTINE ends — `Infinity` while any of those calls is still pending.
+   *
+   * A set that was never emptied stood here, and an id that collided once was
+   * unusable for the lifetime of the proxy: every later call on it was
+   * detached and every response unattributable, long after the ambiguity had
+   * ended. Conservative handling of a real collision is right; permanent
+   * handling of a finished one degrades the record it was protecting.
+   *
+   * The window is the same `ms` the sweep uses to decide a call is unanswered.
+   * Past it, a response to one of the collided calls is a response the proxy
+   * has ALREADY declared never-arriving, so there is nothing left for a late
+   * one to be confused with — and before it there genuinely is, because a
+   * response carries nothing but the id.
+   * @type {Map<string, number>}
    */
-  #ambiguous = new Set();
+  #ambiguous = new Map();
 
   /**
    * @param {object} o
@@ -144,6 +158,7 @@ export class Pairing {
     const { args, verbatim } = argsBytes(bytes, msg);
     const key = idKey(msg.id);
 
+    this.#retireQuarantine(key);
     const clash = this.#pending.get(key);
     if (clash !== undefined || this.#ambiguous.has(key)) {
       // TWO OUTSTANDING CALLS ON ONE ID. `set()` used to overwrite, so the
@@ -162,15 +177,18 @@ export class Pairing {
       // and this module's rule is that a guess invents a tool result. Both
       // settle as attempts with no result, each keeping its own arguments and
       // correlation.
-      this.#ambiguous.add(key);
+      // Infinity while anything is outstanding: the quarantine clock starts
+      // when the last collided call settles, not when the collision happened.
+      this.#ambiguous.set(key, Infinity);
       if (clash !== undefined) {
         this.#pending.delete(key);
         this.#detached += 1;
-        this.#pending.set(`ambiguous:#${this.#detached}`, clash);
+        this.#pending.set(`ambiguous:#${this.#detached}`, { ...clash, ambiguousKey: key });
       }
       this.#detached += 1;
       this.#pending.set(`ambiguous:#${this.#detached}`, {
-        id: msg.id, tool, args, verbatim, correlation: this.newCorrelation(), at: this.now(),
+        id: msg.id, tool, args, verbatim, ambiguousKey: key,
+        correlation: this.newCorrelation(), at: this.now(),
       });
       return {
         what: 'ambiguous',
@@ -209,6 +227,7 @@ export class Pairing {
     }
     if (msg.id === undefined || msg.id === null) return null;     // a notification
     const key = idKey(msg.id);
+    this.#retireQuarantine(key);
     if (this.#ambiguous.has(key)) {
       // The id had two outstanding calls. Reported, never attributed: this
       // response answers one of them and nothing here can say which.
@@ -257,17 +276,50 @@ export class Pairing {
   expire(ms) {
     /** @type {Observation[]} */
     const out = [];
-    const cutoff = this.now() - ms;
+    const now = this.now();
+    const cutoff = now - ms;
+    /** @type {Set<string>} */
+    const touched = new Set();
     for (const [key, call] of [...this.#pending]) {
       if (call.at > cutoff) continue;
       this.#pending.delete(key);
+      if (call.ambiguousKey !== undefined) touched.add(call.ambiguousKey);
       out.push({
         what: 'timeout', tool: call.tool, args: call.args,
         outcome: 'timeout', correlation: call.correlation,
       });
     }
+
+    // Start the quarantine for any id whose LAST collided call just settled.
+    // Until then the deadline stays Infinity, because a response could still
+    // be answering a call that is genuinely outstanding.
+    for (const key of touched) {
+      const stillPending = [...this.#pending.values()].some(c => c.ambiguousKey === key);
+      if (!stillPending) this.#ambiguous.set(key, now + Math.max(0, ms));
+    }
+    // And let go of the ones whose window has passed, so an id that collided
+    // once does not cost memory or accuracy forever.
+    for (const [key, until] of [...this.#ambiguous]) {
+      if (now >= until) this.#ambiguous.delete(key);
+    }
     return out;
   }
+
+  /**
+   * Drop an id's quarantine if its window has passed.
+   *
+   * Called on the read paths as well as from `expire`, so an id becomes usable
+   * again at the moment it is safe rather than at the next sweep — a proxy
+   * with no sweep configured would otherwise keep the id poisoned.
+   * @param {string} key
+   */
+  #retireQuarantine(key) {
+    const until = this.#ambiguous.get(key);
+    if (until !== undefined && this.now() >= until) this.#ambiguous.delete(key);
+  }
+
+  /** Ids currently quarantined after a collision. For tests and diagnostics. */
+  get ambiguous() { return this.#ambiguous.size; }
 
   /** Every outstanding call, as a timeout. For shutdown — nothing is dropped. */
   closeAll() { return this.expire(-Infinity); }

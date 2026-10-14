@@ -202,6 +202,23 @@ the process chose to exit; killed instead, the record never existed. `settle.mjs
 on an interval, shared by both transports for the reason the pairing core is shared, and the
 bin settles on SIGINT/SIGTERM/SIGHUP before exiting.
 
+### P2 — a collided id was ambiguous forever
+
+The fix above added `#ambiguous`, and nothing emptied it. An id that collided once was
+unusable for the lifetime of the proxy: every later call on it was detached and every
+response unattributable, producing false timeouts long after the ambiguity had ended.
+Conservative handling of a real collision is right; permanent handling of a finished one
+degrades the record it was protecting.
+
+Ids now carry a QUARANTINE deadline rather than a permanent mark, and the window is the same
+`ms` the sweep uses to decide a call is unanswered. Past it, a response to one of the
+collided calls is one the proxy has already declared never-arriving, so there is nothing
+left for a late one to be confused with; before it there genuinely is, because a response
+carries nothing but the id. The clock starts when the LAST collided call settles, not when
+the collision happened — measuring from the collision would retire the ambiguity while the
+calls it covers were still in flight. Both halves are tested: inside the window a late
+response is still refused attribution, and past it the id pairs normally again.
+
 ### The crash window, bounded rather than closed
 
 A `SIGKILL` between a request and the next sweep still loses the pending call. The window is

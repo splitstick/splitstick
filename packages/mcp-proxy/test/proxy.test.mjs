@@ -1005,3 +1005,92 @@ test('a recording failure during settlement does not throw into the timer', asyn
   assert.equal(oob.length, 1);
   assert.match(String(oob[0]), /the traffic is unaffected/);
 });
+
+test('P2: a collided id becomes reusable once the ambiguity has ended', async () => {
+  // `#ambiguous` was a Set that nothing emptied, so an id that collided once
+  // was unusable for the lifetime of the proxy: every later call on it was
+  // detached and every response unattributable, producing false timeouts long
+  // after the ambiguity was over. Conservative handling of a real collision is
+  // right; permanent handling of a finished one degrades the record it was
+  // protecting.
+  let n = 0;
+  let clock = 0;
+  const p = new Pairing({ newCorrelation: () => `cor-${++n}`, now: () => clock });
+  const call = (/** @type {number} */ amount) => Buffer.from(JSON.stringify({
+    jsonrpc: '2.0', id: 7, method: 'tools/call',
+    params: { name: 'transfer_funds', arguments: { amount } },
+  }));
+
+  p.request(call(1));
+  assert.equal(p.request(call(2))?.what, 'ambiguous');
+  clock = 61_000;
+  assert.equal(p.expire(60_000).length, 2, 'both collided calls settle');
+  assert.equal(p.outstanding, 0);
+
+  // WITHIN the quarantine a late response could still be answering one of the
+  // settled calls, and nothing but the id distinguishes them — so the new call
+  // stays accountable and no result is attributed to it.
+  clock = 70_000;
+  assert.equal(p.request(call(3))?.what, 'ambiguous');
+  assert.equal(p.response(Buffer.from(JSON.stringify({
+    jsonrpc: '2.0', id: 7, result: { ok: true } })))?.what, 'unattributable');
+  assert.deepEqual(p.closeAll().map(o => o.outcome), ['timeout']);
+
+  // PAST it, the id is clean. A response to one of the collided calls is by
+  // then one the proxy has already declared never-arriving, so there is
+  // nothing left for a late one to be confused with.
+  let m = 0;
+  let c2 = 0;
+  const q = new Pairing({ newCorrelation: () => `k-${++m}`, now: () => c2 });
+  q.request(call(1));
+  q.request(call(2));
+  c2 = 61_000;
+  q.expire(60_000);
+  c2 = 200_000;
+  assert.equal(q.request(call(3)), null, 'a fresh call on that id is still being detached');
+  const paired = q.response(Buffer.from(JSON.stringify({
+    jsonrpc: '2.0', id: 7, result: { ok: true } })));
+  assert.equal(paired?.what, 'call', 'the id never became usable again');
+  assert.equal(Buffer.from(/** @type {any} */ (paired).args).toString('utf8'), '{"amount":3}');
+  assert.equal(q.outstanding, 0);
+  assert.equal(q.ambiguous, 0, 'the quarantine was never released');
+});
+
+test('P2: the quarantine clock starts when the last collided call settles', async () => {
+  // Not when the collision happened. While either call is still outstanding a
+  // response could legitimately be answering it, so the deadline stays open —
+  // measuring the window from the collision would retire the ambiguity while
+  // the calls it covers were still in flight.
+  let n = 0;
+  let clock = 0;
+  const p = new Pairing({ newCorrelation: () => `cor-${++n}`, now: () => clock });
+  const call = (/** @type {number} */ a) => Buffer.from(JSON.stringify({
+    jsonrpc: '2.0', id: 'z', method: 'tools/call', params: { name: 't', arguments: { a } },
+  }));
+  p.request(call(1));
+  p.request(call(2));
+
+  // Long past the window, but nothing has settled: still ambiguous.
+  clock = 10_000_000;
+  assert.equal(p.request(call(3))?.what, 'ambiguous');
+  assert.equal(p.outstanding, 3);
+  assert.equal(p.ambiguous, 1);
+
+  // The first two are overdue and settle; the third was only just made, so it
+  // is not. The quarantine stays OPEN because a collided call is still
+  // outstanding — a deadline measured from the collision would have retired
+  // the ambiguity while the call it covers was in flight.
+  assert.equal(p.expire(60_000).length, 2);
+  assert.equal(p.outstanding, 1);
+  assert.equal(p.ambiguous, 1, 'the quarantine closed while a collided call was still pending');
+
+  // The third settles, and only now does the window begin.
+  clock += 60_001;
+  assert.equal(p.expire(60_000).length, 1, 'every attempt is accounted for');
+  assert.equal(p.outstanding, 0);
+  assert.equal(p.ambiguous, 1, 'the quarantine opened at settlement');
+
+  clock += 60_001;
+  p.expire(60_000);
+  assert.equal(p.ambiguous, 0, 'and closes a window later');
+});

@@ -91,6 +91,9 @@ rightly disable.
 | 34 | the proxy is sent SIGTERM with calls outstanding | they settle before the process exits | 5 | out | |
 | 35 | the proxy is SIGKILLed with calls outstanding | the loss is bounded by the settle interval, as FR-61 bounds the observation counter. Stated, not claimed away | 6 | out | ✓ |
 | 36 | settlement itself fails to record | the traffic is unaffected and the failure is out of band. A throw from a timer callback would terminate the process — the collector stopping the run | 7 | out | ✓ |
+| 37 | an id is legitimately reused long after a collision | it pairs normally. A permanent mark would produce false timeouts for the life of the proxy, degrading the record it was protecting | 5 | in | |
+| 38 | a late response arrives inside the quarantine window | still refused attribution. Nothing but the id distinguishes it from a response to the new call, and attributing it would record a result against an invocation that may not have produced it | 7 | in | ✓ |
+| 39 | a collided call is still outstanding when the window would expire | the quarantine stays open. Measuring from the collision rather than from settlement would retire the ambiguity while the calls it covers were in flight | 6 | in | ✓ |
 
 ## The CLI contract — FR-49
 
