@@ -155,3 +155,28 @@ test('the default calendars are the project ones, named in one changeable place'
   const set = witnessesFromConfig({ witnesses: [{ id: 'ots', type: 'opentimestamps' }] });
   assert.equal(set[0].tier, 'rollup');
 });
+
+test('OPS-05, FR-48: the shipped default discloses its egress, not only its capability gap', () => {
+  // M7 inventory row 6. defaultWitnessWarning() disclosed that classes 4 and 5
+  // stay open and said nothing about the default reaching two public services.
+  // That egress is FR-48 working as intended — a default independent of us on
+  // day one — but an operator who has not read the config learns it from
+  // traffic, and "has not read the documentation" is the condition a default
+  // exists to serve.
+  const w = defaultWitnessWarning();
+  assert.ok(w.length >= 2, 'the default carries only one warning, so one of them was dropped');
+
+  const egress = w.find(x => /ANCHORS OUTWARD/.test(x));
+  assert.ok(egress, 'the shipped default no longer discloses that it reaches outward');
+  // What it reaches, named — "some third parties" is not a disclosure.
+  assert.match(egress, /RFC 3161/);
+  assert.match(egress, /OpenTimestamps/);
+  // What it carries, so the disclosure is not read as worse than it is.
+  assert.match(egress, /no payload \(PRIV-01\)/);
+  // And the way out, because a disclosure with no remedy is a warning label.
+  assert.match(egress, /docs\/self-hosted-witness\.md/);
+
+  // The capability gap is still there: the new disclosure must be additive.
+  assert.ok(w.some(x => /classes 4 \(truncation\) and 5 \(erasure\) are NOT closed/.test(x)),
+    'the capability warning was replaced rather than added to');
+});

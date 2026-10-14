@@ -26,8 +26,15 @@ jobs:
         run: npm run backlog
       - name: Specification review gate
         run: npm run review
-      - name: Verifier vocabulary and packaging
+      - name: Verifier vocabulary, packaging, and the claims audit
         run: npm run lint
+      - name: Claims audit against the scope guards
+        # TRC-05, as a step of its own so the gate names the thing it checked.
+        # Also in `npm run lint` above; duplicated deliberately, because the
+        # requirement is "run a claims audit before each release" and a
+        # requirement discharged only as a side effect of another step is one
+        # somebody removes while tidying.
+        run: npm run claims
       - name: The lockfile matches the workspaces
         # `npm ci` above already proves this, but it proves it by failing the
         # whole job at step one with an npm error. This says which package.

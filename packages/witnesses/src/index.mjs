@@ -219,10 +219,29 @@ export function describeWitnessSet(witnesses) {
 
 /** FR-48 — the warning an operator leaving the default in place must be given. */
 export function defaultWitnessWarning() {
-  return describeWitnessSet(witnessesFromConfig({
-    witnesses: [
-      { id: 'tsa', type: 'rfc3161', url: 'https://tsa.invalid' },
-      { id: 'ots', type: 'opentimestamps', tier: 'rollup' },
-    ],
-  })).warnings;
+  return [
+    ...describeWitnessSet(witnessesFromConfig({
+      witnesses: [
+        { id: 'tsa', type: 'rfc3161', url: 'https://tsa.invalid' },
+        { id: 'ots', type: 'opentimestamps', tier: 'rollup' },
+      ],
+    })).warnings,
+    // THE EGRESS, disclosed rather than discovered — added in M7.
+    //
+    // This function disclosed the capability gap and said nothing about the
+    // fact that the shipped default reaches two public third-party services.
+    // That is FR-48 working as intended: a default the project neither
+    // operates nor overloads, independent of us on day one. But an operator
+    // who has not read design/default-config.yaml learns it from traffic, and
+    // "has not read the documentation" is the condition a default exists to
+    // serve. OPS-05 supports a zero-egress deployment; it does not make this
+    // one silent.
+    'the shipped default ANCHORS OUTWARD: a public RFC 3161 timestamp authority per batch and '
+    + 'the OpenTimestamps calendars on the roll-up tier. Both are third parties this project '
+    + 'neither operates nor pays for (FR-48), which is what makes the default independent of us '
+    + '— and it is still traffic leaving your perimeter, carrying a checkpoint note: an origin, '
+    + 'a tree size, a root and signatures, and no payload (PRIV-01). For a deployment with no '
+    + 'egress at all, configure a witness you host yourself and remove these — see '
+    + 'docs/self-hosted-witness.md (OPS-03, OPS-05)',
+  ];
 }

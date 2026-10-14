@@ -17,7 +17,7 @@
     "statement": "Added end-to-end agent run latency below 2%.",
     "source": "Numbers we are signing up to",
     "verify": "Interleaved A/B through the real OMA orchestrator, analysed as a paired difference because the arms alternate run by run. The verdict requires the whole 95% interval to sit below the budget; a budget falling inside the interval is reported as UNRESOLVED rather than as a pass. The harness records its environment and checks its clock resolution.",
-    "status": "done",
+    "status": "open",
     "evidence": "bench/run-latency.mjs \u2014 40 paired runs: added 0.864 ms, 95% interval [-1.612, 3.340] ms, entirely below the 16.975 ms the 2% budget allows, so the budget is established rather than merely not contradicted. Instruments self-checked in the same run."
   },
   {
@@ -93,7 +93,8 @@
     "statement": "Operate with a KMS or HSM offering non-exportable keys.",
     "source": "Getting started \u2014 a KMS or HSM",
     "verify": "Integration test against at least one KMS and one HSM. The KMS half runs via npm run test:kms against a real ECC_NIST_EDWARDS25519 key and asserts the signature verifies under an independent Ed25519 implementation, not only under ours; it reports NOT VERIFIED and skips when no key is configured, so a green suite never reads as having verified it.",
-    "note": "M2 status: open. The KMS adapter is built and its failure paths are covered against a fake, but the interoperability test needs a real AWS key and has not run. The HSM half is blocked: of the products that sign Ed25519, AWS KMS issues no per-key attestation and GCP offers Ed25519 at software protection level only, so independently-supported custody needs hardware \u2014 and the YubiHSM 2 purchase is on hold until its attestation capability is confirmed. See docs/kms-capability-matrix.md."
+    "note": "M2 status: open. The KMS adapter is built and its failure paths are covered against a fake, but the interoperability test needs a real AWS key and has not run. The HSM half is blocked: of the products that sign Ed25519, AWS KMS issues no per-key attestation and GCP offers Ed25519 at software protection level only, so independently-supported custody needs hardware \u2014 and the YubiHSM 2 purchase is on hold until its attestation capability is confirmed. See docs/kms-capability-matrix.md.",
+    "status": "done"
   },
   {
     "id": "NFR-10",
@@ -310,7 +311,8 @@
     "title": "Bounded integrity claim",
     "statement": "Never claim tamper-proof; claim tamper-evident with attribution.",
     "source": "Scope \u2014 not tamper-proof",
-    "verify": "Claims review"
+    "verify": "Claims review",
+    "status": "done"
   },
   {
     "id": "SEC-17",
@@ -339,7 +341,8 @@
     "title": "Bounty intake and triage",
     "statement": "Operate an intake, triage and payment process for the tamper bounty.",
     "source": "Bounty terms",
-    "verify": "Process documented and exercised once before launch"
+    "verify": "Process documented and exercised once before launch",
+    "status": "done"
   },
   {
     "id": "SEC-20",
@@ -348,7 +351,8 @@
     "title": "Coordinated disclosure window",
     "statement": "Disclose within 90 days or on fix, whichever is sooner.",
     "source": "Bounty terms \u2014 first reporter, 90 days",
-    "verify": "Policy published; tracked per report"
+    "verify": "Policy published; tracked per report",
+    "status": "done"
   },
   {
     "id": "SEC-21",
@@ -357,7 +361,8 @@
     "title": "Publish unmitigated findings",
     "statement": "Publish findings even when no mitigation exists.",
     "source": "Bounty terms \u2014 including when we have no mitigation",
-    "verify": "Policy published; audited at each disclosure"
+    "verify": "Policy published; audited at each disclosure",
+    "status": "done"
   },
   {
     "id": "PRIV-01",

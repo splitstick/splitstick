@@ -92,3 +92,10 @@ buyers.
 - Two schemas to version, both under DES-16.
 - The commented-out lines ship in the default file. An operator should be able to see their
   options without reading documentation first.
+
+---
+
+**Not legal advice.** Statutes are cited here for orientation — to say which engineering
+property is relevant to which regime, and where it stops. Nothing in this document is legal
+advice, no conclusion about your obligations is offered, and nothing here certifies your
+compliance with anything (LEG-15, LEG-16, SCOPE-03).

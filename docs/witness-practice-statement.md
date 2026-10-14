@@ -235,3 +235,10 @@ state over it — the same honest limit as everything else here.
 | Version | Date | Change |
 |---|---|---|
 | 1.0 | 2026-10-12 | First published. LEG-03 states extension-by-consistency-proof rather than immediate succession, correcting a requirement whose wording predated DES-08's change to consistency proofs. §1.1 states that a `splitstick` witness's receipt time is unsigned. |
+
+---
+
+**Not legal advice.** Statutes are cited here for orientation — to say which engineering
+property is relevant to which regime, and where it stops. Nothing in this document is legal
+advice, no conclusion about your obligations is offered, and nothing here certifies your
+compliance with anything (LEG-15, LEG-16, SCOPE-03).

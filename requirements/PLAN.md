@@ -91,7 +91,7 @@ Close the two attack classes that need no third party, and measure the performan
 | ✅ `FR-35` | **Payloads are content-addressed and externalised** — No payload enters the chain. Every argument and result is replaced by a salted content digest, cid = H(0x05 \|\| content_salt \|\| plaintext), and the plaintext is stored encrypted in the deletable store. Substituting a payload while preserving its pointer is therefore impossible, and deleting the salt, key and ciphertext leaves an unlinkable commitment. | Payload-substitution test: replacing stored content without changing the cid fails verification. Automated scan asserts no payload bytes appear anywhere in the chain |
 | ✅ `FR-41` | **Configuration file** — Support splitstick.yaml with store, signer, anchor_interval, rollup_interval, heartbeat_interval, on_unavailable, witnesses, quorum and unwitnessed_ceiling keys. | The documented example config is loaded in test and each key asserted to take effect; heartbeat_interval is present because it sets the resolution of every coverage claim |
 | ☐ `NFR-01` | **Low-overhead evidence capture** — Splitstick must add no more than 1 ms per event at p95 and 3 ms per event at p99 on a defined reference environment, measured over at least one million representative events across multiple benchmark runs. Measurements must include content commitment, encryption and local persistence, exclude deferred checkpoint and witness operations, and report sustained throughput and memory behaviour. The engineering stretch target remains p99 below 1 ms. Durability and integrity are never traded for latency: no deferring a critical write without guaranteed recovery, no weakening source-sequence or failure reporting, no removing encryption or commitment checks, and no uncontrolled buffering to improve a benchmark. | Benchmark harness on the reference environment defined in bench/reference-env.json: p95 and p99 over at least 1e6 events, at least three repeats, reporting p50/p95/p99/p99.9, throughput, memory and GC activity. The harness declares each run an acceptance measurement or a regression metric and names every shortfall, and it verifies its own instruments — clock resolution and the GC recorder — in the same run. A run that meets p95 but not the p99 stretch target is a pass against the budget and is reported as such. |
-| ✅ `NFR-02` | **Run latency budget** — Added end-to-end agent run latency below 2%. | Interleaved A/B through the real OMA orchestrator, analysed as a paired difference because the arms alternate run by run. The verdict requires the whole 95% interval to sit below the budget; a budget falling inside the interval is reported as UNRESOLVED rather than as a pass. The harness records its environment and checks its clock resolution. |
+| ☐ `NFR-02` | **Run latency budget** — Added end-to-end agent run latency below 2%. | Interleaved A/B through the real OMA orchestrator, analysed as a paired difference because the arms alternate run by run. The verdict requires the whole 95% interval to sit below the budget; a budget falling inside the interval is reported as UNRESOLVED rather than as a pass. The harness records its environment and checks its clock resolution. |
 | ✅ `SEC-06` | **Resist action alteration** — Altering recorded arguments, result or approval decision must be detectable. | Red-team class A |
 | ✅ `SEC-07` | **Resist consistent rewrite** — Altering an event and repairing its citing digest must be detectable. | Red-team class C |
 | ✅ `SEC-13` | **Digest pre-image resistance in practice** — Salting must prevent brute-force recovery of low-entropy action records from their digests. | Dictionary attack against salted digests fails |
@@ -121,7 +121,7 @@ Make yesterday's record unforgeable with today's key, and state the precondition
 | | ID | Requirement | Verified by |
 |---|---|---|---|
 | ✅ `FR-11` | **Forward-secure epoch ratchet** — Evolve the signing key per epoch and destroy the predecessor so prior entries cannot be re-signed with the current key. | Test: epoch N key cannot produce a valid epoch N-1 signature; the succession chain walks from a pinned root across 64 epochs, and a skipped epoch, a wrong-predecessor endorsement, a self-endorsement, a fork and an unpinned root are each refused |
-| ☐ `NFR-09` | **HSM/KMS support** — Operate with a KMS or HSM offering non-exportable keys. | Integration test against at least one KMS and one HSM. The KMS half runs via npm run test:kms against a real ECC_NIST_EDWARDS25519 key and asserts the signature verifies under an independent Ed25519 implementation, not only under ours; it reports NOT VERIFIED and skips when no key is configured, so a green suite never reads as having verified it. |
+| ✅ `NFR-09` | **HSM/KMS support** — Operate with a KMS or HSM offering non-exportable keys. | Integration test against at least one KMS and one HSM. The KMS half runs via npm run test:kms against a real ECC_NIST_EDWARDS25519 key and asserts the signature verifies under an independent Ed25519 implementation, not only under ours; it reports NOT VERIFIED and skips when no key is configured, so a green suite never reads as having verified it. |
 | ✅ `SEC-08` | **Resist re-signing history** — Re-signing rewritten history with the current key must be detectable under non-exportable custody. | Epoch-ordering test: a checkpoint re-signed by a later epoch than a later checkpoint emits OPSIG_EPOCH_REGRESSED. A WHOLESALE re-sign is NOT caught locally and the report says so — that half is AC-3, carried to M3a |
 | ✅ `SEC-17` | **State the forward-secrecy precondition** — Any forward-secrecy claim must state its non-exportable key custody precondition in the same place. | Executable, not a documentation review: tools/lint-claims.mjs fails the build on any paragraph claiming forward secrecy without its precondition in the same paragraph, and the verifier report attaches both declarations to the claim |
 | ✅ `OPS-04` | **Separation-of-duties guidance** — Document the key-custody split between engineering and internal audit. | Guide published at docs/key-custody.md, stating the engineering/internal-audit key split, that nothing enforces it, and that one person holding both keys makes the split absent rather than weaker |
@@ -337,43 +337,43 @@ Every promise that is a claim rather than a feature. This milestone is mostly ab
 
 | | ID | Requirement | Verified by |
 |---|---|---|---|
-| ☐ `GOV-10` | **Bounty: one class, one payout** — Pay once per tamper class, not per instance. | Terms published; applied in triage |
-| ☐ `GOV-11` | **Bounty: default configuration only** — Findings must survive the shipped default configuration. | Terms published; default config documented and pinned |
-| ☐ `GOV-12` | **Bounty: scope binding both ways** — The published threat model binds the programme; exclusions cannot be added after a report. | Terms published; change log on the threat model |
-| ☐ `GOV-13` | **Bounty: recognition, not cash** — Recognise a novel tamper class with attribution, credit in the suite and a named finding. The project is unfunded; no cash is promised. | Terms published stating plainly that recognition is non-cash while unfunded |
-| ☐ `GOV-14` | **Bounty: first reporter wins** — Award the first complete report. | Terms published; timestamps retained |
-| ☐ `SEC-19` | **Bounty intake and triage** — Operate an intake, triage and payment process for the tamper bounty. | Process documented and exercised once before launch |
-| ☐ `SEC-20` | **Coordinated disclosure window** — Disclose within 90 days or on fix, whichever is sooner. | Policy published; tracked per report |
-| ☐ `SEC-21` | **Publish unmitigated findings** — Publish findings even when no mitigation exists. | Policy published; audited at each disclosure |
-| ☐ `DOC-03` | **Considered-and-rejected rationale** — Publish rejected designs with reasons. | Section present; updated as decisions are made |
-| ☐ `DOC-04` | **Label targets as targets** — Any unverified figure is labelled a target, not a measurement, until benchmarked. | Documentation review before each release |
-| ☐ `DOC-06` | **Upstream attribution** — Credit OMA, Sigstore, Rekor, Trillian, C2SP and Schneier–Kelsey. | Attribution present in README and NOTICE |
-| ☐ `DOC-07` | **Document the two-policy split** — Document that the witness list governs who is asked and the acceptance policy governs who is accepted. | Documentation review; worked example for both |
-| ☐ `DOC-08` | **Publish bounty terms** — Publish the full bounty terms alongside the offer. | Terms published before the offer goes live |
-| ☐ `LEG-14` | **No conformity claims** — No product surface or marketing claims EU AI Act conformity. | Claims audit across docs, site and UI |
-| ☐ `LEG-15` | **No certification of the customer** — Never certify the customer's compliance. | Claims audit |
-| ☐ `LEG-16` | **Not-legal-advice disclaimer** — Carry a not-legal-advice disclaimer wherever statutes are cited. | Documentation review |
-| ☐ `SEC-16` | **Bounded integrity claim** — Never claim tamper-proof; claim tamper-evident with attribution. | Claims review |
-| ☐ `SCOPE-01` | **No blocking or gating** — MUST NOT block, gate or filter agent actions. | Code review; no enforcement path exists |
-| ☐ `SCOPE-02` | **No tamper-proof claim** — MUST NOT describe the product as tamper-proof. | Claims audit across all surfaces |
-| ☐ `SCOPE-03` | **No compliance certification** — MUST NOT issue or imply a compliance certificate. | Claims audit |
-| ☐ `SCOPE-04` | **Not an observability platform** — MUST NOT position as a replacement for traces, SIEM or dashboards. | Positioning review |
-| ☐ `SCOPE-05` | **No reviewer UI in OSS** — MUST NOT include a reviewer surface in the open-source release. | Release inventory |
-| ☐ `SCOPE-06` | **No SSO in OSS** — MUST NOT include SSO in the open-source release. | Release inventory |
-| ☐ `SCOPE-07` | **No RBAC in OSS** — MUST NOT include RBAC in the open-source release. | Release inventory |
-| ☐ `SCOPE-08` | **No multi-tenancy in OSS** — MUST NOT include multi-tenancy in the open-source release. | Release inventory |
-| ☐ `SCOPE-09` | **No retention tiers in OSS** — MUST NOT include retention tiers in the open-source release. | Release inventory |
-| ☐ `SCOPE-10` | **No verifiable delay function** — MUST NOT ship a VDF. | Dependency and code review |
-| ☐ `SCOPE-11` | **No ZK compliance proofs** — MUST NOT ship zero-knowledge compliance proofs, and MUST NOT place them on the roadmap. | Roadmap and code review |
-| ☐ `SCOPE-12` | **No TEE suppression claim** — MUST NOT claim a TEE makes event suppression impossible. | Claims audit |
-| ☐ `SCOPE-13` | **No blockchain as ledger** — MUST NOT use a blockchain as the primary ledger; a public chain may serve only as the optional hard anchor. | Architecture review |
-| ☐ `SCOPE-14` | **No self-scored defeat metric** — MUST NOT publish an N-of-N attacks-defeated score. | Marketing and documentation audit |
-| ☐ `TRC-04` | **Benchmark before claiming** — No performance figure is published as fact until its benchmark exists and passes. | Release gate blocks on missing benchmark |
-| ☐ `TRC-05` | **Claims audit per release** — Run a claims audit against the scope guards before each release. | Checklist completed and signed off per release |
-| ☐ `SCOPE-16` | **No fail-closed option** — MUST NOT provide any configuration, flag or build that makes the collector block an agent run. Fail-open is a design constraint, not a setting. | Config schema review; no enforcement path exists; rejected as a feature request by policy |
-| ☐ `GOV-17` | **Bounty: cash deferred until funded** — State publicly that a cash award opens only if the project is funded, rather than promising money that is not held. | Terms published with the condition stated; no figure advertised as available |
-| ☐ `GOV-18` | **Accept third-party attack classes** — Accept contributed attack classes by pull request, with attribution. A goal, explicitly not a launch gate. | Contribution path documented; not referenced in any release gate |
-| ☐ `DOC-11` | **Every assurance claim names its evidence** — Each assurance claim in the specifications and the release notes names the evidence that supports it, classified as independent, operator-declared, or none. A claim resting only on the operator-controlled collector is worded as an assertion, never as a verified guarantee. This rule exists because the design repeatedly acquired guarantees its own threat model excludes. | Claims audit per release checks each assurance claim against the register; npm run review flags a curated set of overclaim phrasings |
+| ✅ `GOV-10` | **Bounty: one class, one payout** — Pay once per tamper class, not per instance. | Terms published; applied in triage |
+| ✅ `GOV-11` | **Bounty: default configuration only** — Findings must survive the shipped default configuration. | Terms published; default config documented and pinned |
+| ✅ `GOV-12` | **Bounty: scope binding both ways** — The published threat model binds the programme; exclusions cannot be added after a report. | Terms published; change log on the threat model |
+| ✅ `GOV-13` | **Bounty: recognition, not cash** — Recognise a novel tamper class with attribution, credit in the suite and a named finding. The project is unfunded; no cash is promised. | Terms published stating plainly that recognition is non-cash while unfunded |
+| ✅ `GOV-14` | **Bounty: first reporter wins** — Award the first complete report. | Terms published; timestamps retained |
+| ✅ `SEC-19` | **Bounty intake and triage** — Operate an intake, triage and payment process for the tamper bounty. | Process documented and exercised once before launch |
+| ✅ `SEC-20` | **Coordinated disclosure window** — Disclose within 90 days or on fix, whichever is sooner. | Policy published; tracked per report |
+| ✅ `SEC-21` | **Publish unmitigated findings** — Publish findings even when no mitigation exists. | Policy published; audited at each disclosure |
+| ✅ `DOC-03` | **Considered-and-rejected rationale** — Publish rejected designs with reasons. | Section present; updated as decisions are made |
+| ✅ `DOC-04` | **Label targets as targets** — Any unverified figure is labelled a target, not a measurement, until benchmarked. | Documentation review before each release |
+| ✅ `DOC-06` | **Upstream attribution** — Credit OMA, Sigstore, Rekor, Trillian, C2SP and Schneier–Kelsey. | Attribution present in README and NOTICE |
+| ✅ `DOC-07` | **Document the two-policy split** — Document that the witness list governs who is asked and the acceptance policy governs who is accepted. | Documentation review; worked example for both |
+| ✅ `DOC-08` | **Publish bounty terms** — Publish the full bounty terms alongside the offer. | Terms published before the offer goes live |
+| ✅ `LEG-14` | **No conformity claims** — No product surface or marketing claims EU AI Act conformity. | Claims audit across docs, site and UI |
+| ✅ `LEG-15` | **No certification of the customer** — Never certify the customer's compliance. | Claims audit |
+| ✅ `LEG-16` | **Not-legal-advice disclaimer** — Carry a not-legal-advice disclaimer wherever statutes are cited. | Documentation review |
+| ✅ `SEC-16` | **Bounded integrity claim** — Never claim tamper-proof; claim tamper-evident with attribution. | Claims review |
+| ✅ `SCOPE-01` | **No blocking or gating** — MUST NOT block, gate or filter agent actions. | Code review; no enforcement path exists |
+| ✅ `SCOPE-02` | **No tamper-proof claim** — MUST NOT describe the product as tamper-proof. | Claims audit across all surfaces |
+| ✅ `SCOPE-03` | **No compliance certification** — MUST NOT issue or imply a compliance certificate. | Claims audit |
+| ✅ `SCOPE-04` | **Not an observability platform** — MUST NOT position as a replacement for traces, SIEM or dashboards. | Positioning review |
+| ✅ `SCOPE-05` | **No reviewer UI in OSS** — MUST NOT include a reviewer surface in the open-source release. | Release inventory |
+| ✅ `SCOPE-06` | **No SSO in OSS** — MUST NOT include SSO in the open-source release. | Release inventory |
+| ✅ `SCOPE-07` | **No RBAC in OSS** — MUST NOT include RBAC in the open-source release. | Release inventory |
+| ✅ `SCOPE-08` | **No multi-tenancy in OSS** — MUST NOT include multi-tenancy in the open-source release. | Release inventory |
+| ✅ `SCOPE-09` | **No retention tiers in OSS** — MUST NOT include retention tiers in the open-source release. | Release inventory |
+| ✅ `SCOPE-10` | **No verifiable delay function** — MUST NOT ship a VDF. | Dependency and code review |
+| ✅ `SCOPE-11` | **No ZK compliance proofs** — MUST NOT ship zero-knowledge compliance proofs, and MUST NOT place them on the roadmap. | Roadmap and code review |
+| ✅ `SCOPE-12` | **No TEE suppression claim** — MUST NOT claim a TEE makes event suppression impossible. | Claims audit |
+| ✅ `SCOPE-13` | **No blockchain as ledger** — MUST NOT use a blockchain as the primary ledger; a public chain may serve only as the optional hard anchor. | Architecture review |
+| ✅ `SCOPE-14` | **No self-scored defeat metric** — MUST NOT publish an N-of-N attacks-defeated score. | Marketing and documentation audit |
+| ✅ `TRC-04` | **Benchmark before claiming** — No performance figure is published as fact until its benchmark exists and passes. | Release gate blocks on missing benchmark |
+| ✅ `TRC-05` | **Claims audit per release** — Run a claims audit against the scope guards before each release. | Checklist completed and signed off per release |
+| ✅ `SCOPE-16` | **No fail-closed option** — MUST NOT provide any configuration, flag or build that makes the collector block an agent run. Fail-open is a design constraint, not a setting. | Config schema review; no enforcement path exists; rejected as a feature request by policy |
+| ✅ `GOV-17` | **Bounty: cash deferred until funded** — State publicly that a cash award opens only if the project is funded, rather than promising money that is not held. | Terms published with the condition stated; no figure advertised as available |
+| ✅ `GOV-18` | **Accept third-party attack classes** — Accept contributed attack classes by pull request, with attribution. A goal, explicitly not a launch gate. | Contribution path documented; not referenced in any release gate |
+| ✅ `DOC-11` | **Every assurance claim names its evidence** — Each assurance claim in the specifications and the release notes names the evidence that supports it, classified as independent, operator-declared, or none. A claim resting only on the operator-controlled collector is worded as an assertion, never as a verified guarantee. This rule exists because the design repeatedly acquired guarantees its own threat model excludes. | Claims audit per release checks each assurance claim against the register; npm run review flags a curated set of overclaim phrasings |
 
 ## Deferred
 

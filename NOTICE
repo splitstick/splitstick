@@ -5,3 +5,61 @@ An independently verifiable record of AI agent actions.
 
 Includes reproducible tamper tests against AI agent run records, generated
 against @open-multi-agent/core (MIT), which is not redistributed by this project.
+
+
+UPSTREAM WORK THIS PROJECT DEPENDS ON — DOC-06
+==============================================
+
+Splitstick did not invent a protocol. It adopts formats and ideas that other
+people designed, tested in public and documented honestly, and it is a plugin
+rather than a fork so that stays true. Credit is a licence condition for some
+of these and a matter of accuracy for all of them.
+
+open-multi-agent / @open-multi-agent/core (MIT)
+    The run-journal primitive Splitstick collects through, and the project
+    whose README says plainly where its own guarantee stops: "It proves
+    lineage and content, not that the file was never edited." Projects that
+    oversell do not write that section. Splitstick is the layer that closes
+    that specific gap, and OMA's constraint is principled rather than an
+    oversight.
+    https://github.com/open-multi-agent/open-multi-agent
+
+C2SP — Community Cryptography Specification Project
+    The signed-note and tlog-checkpoint formats, and the tlog-witness
+    protocol. Checkpoints, cosignatures and the witness interaction are C2SP's
+    design, not ours; adopting them is what lets a third party implement a
+    witness without asking us anything.
+    https://c2sp.org
+
+Sigstore, and Rekor
+    The transparency-log model this project anchors into, and the working
+    demonstration that public, append-only, independently-witnessed logs are
+    operable at scale rather than only publishable. The Rekor adapter here
+    submits to infrastructure the Sigstore community runs and pays for; it is
+    opt-in precisely because a ten-second cadence against a public good is not
+    acceptable use.
+    https://www.sigstore.dev  ·  https://github.com/sigstore/rekor
+
+Trillian, and transparency-dev / witness
+    Trillian is the Merkle-tree log implementation the transparency-log
+    ecosystem was built on, and transparency-dev/witness is the stateful
+    witness whose refusal to cosign a shortened history is the only mechanism
+    that closes the attack this project exists for. The adapter in
+    packages/witness-tlog speaks its protocol.
+    https://github.com/google/trillian  ·  https://github.com/transparency-dev/witness
+
+Bruce Schneier and John Kelsey
+    "Secure Audit Logs to Support Computer Forensics" (1999) — the forward-
+    secure hash-chained audit log, and the argument that a log's integrity must
+    survive the compromise of the machine that wrote it. The epoch ratchet in
+    packages/core/src/ratchet.mjs is their construction; the honest statement
+    of its precondition, which this project is careful about, is also theirs:
+    they named the custody assumption rather than hiding it.
+    https://www.schneier.com/academic/paperfiles/paper-auditlogs.pdf
+
+RFC 8785 (JSON Canonicalization Scheme), RFC 6962 (Certificate Transparency),
+RFC 3161 (Time-Stamp Protocol), and the OpenTimestamps project
+    The canonical encoding, the Merkle tree and its inclusion and consistency
+    proofs, the timestamp-token format, and the free public calendar that
+    serves as the roll-up anchor no company can withdraw.
+    https://opentimestamps.org

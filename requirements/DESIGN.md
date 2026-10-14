@@ -100,7 +100,7 @@ What an epoch is, how the signing key evolves, how the predecessor is destroyed,
 |---|---|---|
 | `FR-10` | Batch signing with operator key | ✅ |
 | `FR-11` | Forward-secure epoch ratchet | ✅ |
-| `NFR-09` | HSM/KMS support | ☐ |
+| `NFR-09` | HSM/KMS support | ✅ |
 | `SEC-08` | Resist re-signing history | ✅ |
 | `SEC-14` | Operator key never leaves operator | ✅ |
 | `SEC-17` | State the forward-secrecy precondition | ✅ |
@@ -261,7 +261,7 @@ Fail-open behaviour, the durable queue, retry and backoff, late countersignature
 | `NFR-13` | Durable local queue | ✅ |
 | `OPS-02` | Queue drain and retry | ✅ |
 | `OPS-06` | Witness store durability | ✅ |
-| `SCOPE-16` | No fail-closed option | ☐ |
+| `SCOPE-16` | No fail-closed option | ✅ |
 | `FR-58` | Reserved slot for gap declarations | ✅ |
 | `FR-60` | Unknown-loss intervals | ✅ |
 | `FR-61` | Observation counter durability | ✅ |
@@ -291,7 +291,7 @@ Build reproducibility, provenance attestation, release signing, SBOM generation,
 | `SEC-22` | Build provenance attestation | ✅ |
 | `SEC-23` | Signed releases and SBOM | ✅ |
 | `NFR-01` | Low-overhead evidence capture | ☐ |
-| `NFR-02` | Run latency budget | ✅ |
+| `NFR-02` | Run latency budget | ☐ |
 | `FR-49` | Documented CLI contract | ✅ |
 
 ### [DES-18 — Witness practice statement structure](../design/DES-18-practice-statement-structure.md)
