@@ -105,20 +105,29 @@ test('the lock file always contains a complete identity, never a partial one', (
  *
  * Measured under a deliberately loaded host, four processes produced multiple
  * winners in five rounds out of twelve and ZERO overlapping holds.
+ *
+ * They are released by a BARRIER, not by a wall-clock instant chosen before
+ * they were spawned. Each child announces that it is up and then waits for a
+ * file the parent creates once all four have announced, so process startup is
+ * outside the race entirely. A fixed instant made contention something the
+ * test hoped for: on a loaded CI runner four node processes can boot further
+ * apart than the lease is long, every one of them finds a free lock, and
+ * `busy >= 1` fails for a reason that says nothing about the lock.
  */
 test('two separate processes contending for one collector: never two at once', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'splitstick-lock-'));
   const path = join(dir, 'contended.lock');
   const mod = fileURLToPath(new URL('../src/writelock.mjs', import.meta.url));
-  // The hold is long relative to process startup so that contention actually
-  // happens rather than being hoped for; the assertion below does not depend
-  // on it, which is the point.
   const script = `
+    import { existsSync, writeFileSync } from 'node:fs';
     import { WriteLock, StoreBusy } from ${JSON.stringify(mod)};
     const lock = new WriteLock(${JSON.stringify(path)});
-    // Start together, to land inside each other's claim window.
-    const at = Number(process.argv[2]);
-    while (Date.now() < at) {}
+    // Announce, then wait for the barrier. Startup is thereby outside the
+    // race: every process is already loaded and at the claim when it opens.
+    const id = process.argv[2];
+    const gate = process.argv[3];
+    writeFileSync(gate + '/ready-' + id, '');
+    while (!existsSync(gate + '/go')) { /* spin */ }
     try {
       lock.claim();
       const held = Date.now();
@@ -135,13 +144,24 @@ test('two separate processes contending for one collector: never two at once', a
   const scriptPath = join(dir, 'contend.mjs');
   writeFileSync(scriptPath, script);
 
-  const startAt = Date.now() + 250;
-  const run = () => new Promise((resolve) => {
-    execFile(process.execPath, [scriptPath, String(startAt)], (err, stdout, stderr) =>
+  const N = 4;
+  const run = (/** @type {number} */ i) => new Promise((resolve) => {
+    execFile(process.execPath, [scriptPath, String(i), dir], (err, stdout, stderr) =>
       resolve(stdout.trim() || `FAILED:${stderr.trim().slice(0, 80)}`));
   });
+  const running = Array.from({ length: N }, (_, i) => run(i));
 
-  const results = await Promise.all([run(), run(), run(), run()]);
+  // Open the gate only once every process is up and spinning on it.
+  const ready = () => Array.from({ length: N }, (_, i) => existsSync(join(dir, `ready-${i}`)))
+    .every(Boolean);
+  const deadline = Date.now() + 30_000;
+  while (!ready()) {
+    if (Date.now() > deadline) throw new Error('the contending processes never started');
+    await new Promise((r) => { setTimeout(r, 10); });
+  }
+  writeFileSync(join(dir, 'go'), '');
+
+  const results = await Promise.all(running);
   const busy = results.filter(r => r === 'BUSY').length;
   /** @type {[number, number][]} */
   const holds = results.filter(r => r.startsWith('WON'))

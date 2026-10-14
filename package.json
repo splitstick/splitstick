@@ -23,7 +23,7 @@
     "bench:latency": "node bench/run-latency.mjs",
     "sbom": "npm sbom --sbom-format cyclonedx --sbom-type library --omit dev",
     "bench:append:quick": "node bench/append.mjs --events 20000 --repeat 3",
-    "lint": "node tools/lint-failure-codes.mjs && node tools/lint-claims.mjs && node tools/lint-practice-statement.mjs",
+    "lint": "node tools/lint-failure-codes.mjs && node tools/lint-claims.mjs && node tools/lint-practice-statement.mjs && node tools/lint-packaging.mjs",
     "test:kms": "node --test packages/signer-aws-kms/test/integration.test.mjs",
     "drill:restore": "node packages/witness-self/drill/restore.mjs",
     "anchor-wps": "node tools/anchor-wps.mjs",

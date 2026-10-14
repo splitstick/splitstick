@@ -26,8 +26,12 @@ jobs:
         run: npm run backlog
       - name: Specification review gate
         run: npm run review
-      - name: Verifier vocabulary
+      - name: Verifier vocabulary and packaging
         run: npm run lint
+      - name: The lockfile matches the workspaces
+        # `npm ci` above already proves this, but it proves it by failing the
+        # whole job at step one with an npm error. This says which package.
+        run: node tools/lint-packaging.mjs
       - name: Generated files are up to date
         run: git diff --exit-code -- requirements/MATRIX.md requirements/PLAN.md requirements/DESIGN.md
 

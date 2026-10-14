@@ -96,6 +96,33 @@ The first probe for this replaced `Collector#action` wholesale, which bypassed e
 counter-spending under test and produced a false positive. Breaking the content store
 instead — the failure the mechanism was built for — showed it working.
 
+## Found by CI, fixed in M6
+
+Two packaging defects that every local gate passed through, because a test runs against a
+working tree and a user installs a package.
+
+**`@splitstick/witnesses` imported `@splitstick/witness-tlog` without declaring it.** It
+resolved locally because the workspace link was there — put there by hand, during the review
+— so nothing noticed. Anybody installing the package would have got a module-not-found at
+the first call that reached the new adapter.
+
+**`packages/witness-tlog` was a workspace with no entry in `package-lock.json`.** `npm ci` is
+the first step of every CI job and refuses a tree it cannot account for, so the whole matrix
+died at step one. Nothing local runs `npm ci`.
+
+Both are now checked by `tools/lint-packaging.mjs`, in `npm run lint` and as its own CI step
+so the failure names the package rather than arriving as an npm error. It also checks the
+third member of the family, which M6's review found separately: a declared bin that exists,
+carries a shebang, and is marked executable — `splitstick-verify` was the only published bin
+and it printed nothing and exited 0 when installed. Each of the three rules was verified by
+breaking the real thing and watching the lint catch it.
+
+And the write-lock contention test now releases its four processes through a **barrier**
+rather than a wall-clock instant chosen before they were spawned. The instant made contention
+something the test hoped for: on a loaded runner four node processes can boot further apart
+than the lease is long, every one finds a free lock, and the "somebody was refused" assertion
+fails for a reason that says nothing about the lock. Startup is now outside the race.
+
 ## Carried, not yet accepted
 
 ### The test suite leaks a temp directory per test

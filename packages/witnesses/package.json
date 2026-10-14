@@ -24,6 +24,7 @@
     "@splitstick/witness-ots": "0.1.0",
     "@splitstick/witness-rekor": "0.1.0",
     "@splitstick/witness-self": "0.1.0",
+    "@splitstick/witness-tlog": "0.1.0",
     "@splitstick/witness-tsa": "0.1.0"
   }
 }
