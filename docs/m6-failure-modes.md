@@ -77,7 +77,7 @@ rightly disable.
 | # | What happens if… | Expected | risk | bdy | adv |
 |---|---|---|---|---|---|
 | 24 | a fully self-hosted deployment runs | nothing leaves the perimeter: no account, no enrolment, no telemetry, no default witness reaching outward | 3 | out | ✓ |
-| 25 | the default configuration is used | it does NOT silently reach a public calendar. A default that egresses is a default that violates OPS-05 for anybody who did not read it | 7 | out | ✓ |
+| 25 | the default configuration is used | **CORRECTED IN M7.** As written this row said the default must not reach a public calendar, which overstated OPS-05 — that requirement is *support and verify* a deployment with no egress, and it conflicts with FR-48, which ships a default anchoring to a public TSA and OpenTimestamps precisely so a deployment is independent of us on day one. The property the default must have is that it reaches nobody *we* operate, and that its egress is DISCLOSED rather than discovered. A test written against this row asserted the wrong artefact for a milestone. See docs/m7-failure-modes.md rows 5–7 | 7 | out | ✓ |
 | 26 | an operator configures a qualified TSA | it works, and the report says the eIDAS presumption attaches to that anchor and not to our own witness | 2 | out | ✓ |
 | 27 | any surface implies the presumption attaches via our witness | the claims lint fails. LEG-12 is checked, not reviewed | 3 | out | ✓ |
 

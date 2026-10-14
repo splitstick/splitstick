@@ -333,12 +333,46 @@ test('OPS-05: the capture catches egress, so an empty capture is evidence', asyn
     `the capture recorded WHAT was reached, not merely that something was: ${attempts.join(', ')}`);
 });
 
-test('OPS-05: the shipped default configuration names no witness at all', () => {
-  // The highest-risk row in M6's inventory. A default that anchors to a public
-  // calendar is a default that violates OPS-05 for everybody who did not read
-  // the documentation — and "did not read the documentation" is the condition
-  // a default exists to serve.
+test('OPS-05: the parser invents no witness when none is configured', () => {
+  // RENAMED IN M7, because the old title was wrong about the artefact it
+  // named. It read "the shipped default configuration names no witness at
+  // all", and the shipped default is design/default-config.yaml, which names
+  // two — a public TSA and an OpenTimestamps roll-up, by FR-48, deliberately.
+  // What this actually checks is the parser: given a config that OMITS
+  // `witnesses:`, it does not invent any. That is a true and worthwhile
+  // property, and it was sitting under a claim about something else.
+  //
+  // No regex would have caught that. The test checked the wrong artefact and
+  // took its title from the thing it wished it had checked, which is why
+  // docs/risk-assessment.md now says a guard's companion has to answer "is
+  // this the thing the requirement is about" and not only "does the pattern
+  // fire".
   const cfg = parseConfig('version: 1\nstore: ./s\n', '/tmp');
   assert.deepEqual(cfg.witnesses, [],
-    'the default witness set must be empty: anchoring is a choice an operator makes');
+    'a config naming no witness must not acquire one: anchoring is a choice an operator makes');
+});
+
+test('OPS-05: the shipped default anchors only to parties we do not operate', () => {
+  // What OPS-05 actually obliges, against the artefact that actually ships.
+  // OPS-05 is "support and verify a deployment with no account, no enrolment
+  // with us, and no traffic leaving the perimeter" — SUPPORT, which the
+  // lifecycle test above verifies. It is not "the default must not egress",
+  // which is a stronger rule nobody agreed and which contradicts FR-48.
+  //
+  // So the property the default must have is the one FR-48 states: it anchors
+  // to parties this project neither operates nor overloads.
+  const yaml = readFileSync(join(REPO, 'design', 'default-config.yaml'), 'utf8');
+  const ids = [...yaml.matchAll(/^\s*-\s*\{\s*id:\s*([a-z0-9_.-]+)/gim)].map(m => String(m[1]));
+  assert.ok(ids.length >= 2, `the shipped default names ${ids.length} witness(es): ${ids}`);
+  // Nothing in the default is ours. A default pointing at infrastructure we
+  // run would make every deployment depend on us on day one, which is the
+  // thing FR-48 exists to prevent.
+  for (const id of ids) {
+    assert.ok(!/splitstick/i.test(id),
+      `the shipped default names ${id}, which is infrastructure this project operates`);
+  }
+  // And it reaches outward, which is why the egress has to be DISCLOSED rather
+  // than discovered. defaultWitnessWarning() carries that; asserted here so
+  // the disclosure cannot be dropped while the default stays.
+  assert.match(yaml, /opentimestamps/, 'the roll-up tier is no longer in the shipped default');
 });
