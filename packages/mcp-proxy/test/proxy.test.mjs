@@ -3,13 +3,14 @@ import assert from 'node:assert/strict';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { request as httpRequest } from 'node:http';
 import { PassThrough } from 'node:stream';
 import { Store } from '@splitstick/core/store';
 import { Collector } from '@splitstick/core/collector';
 import { parseConfig } from '@splitstick/core/config';
 import { generateDevSigner } from '@splitstick/core/signer-file';
 import { Pairing, stdioProxy, httpProxy } from '../src/index.mjs';
-import { tokenizeCommand, runProxy } from '../src/cli.mjs';
+import { tokenizeCommand, runProxy, parseArgs, isUrl } from '../src/cli.mjs';
 
 const ORIGIN = 'splitstick.dev/proxy';
 
@@ -89,7 +90,7 @@ test('FR-03: a CRLF-terminated message is forwarded with its CRLF', async () => 
   // terminator and reports the line without it, so `\r\n` went out as `\n`
   // and the record attested to a line the agent had not sent. The test beside
   // this one sent only `\n` and passed throughout — a seam exercised once.
-  const { c, store } = await rig();
+  const { collector, store } = await rig();
   const agentIn = new PassThrough();
   const agentOut = new PassThrough();
   const upIn = new PassThrough();
@@ -99,7 +100,7 @@ test('FR-03: a CRLF-terminated message is forwarded with its CRLF', async () => 
   upIn.on('data', (d) => seen.push(d));
   stdioProxy({
     agentIn, agentOut, upstreamIn: upIn, upstreamOut: upOut,
-    collector: c, newCorrelation: () => 'cor-crlf', onUnrecordable: () => {},
+    collector, newCorrelation: () => 'cor-crlf', onUnrecordable: () => {},
   });
 
   const req = JSON.stringify({
@@ -125,7 +126,7 @@ test('FR-03: a final message with no terminator is not dropped', async () => {
   // Splitting on the newline by hand introduces the chance of losing a
   // trailing partial, and the trailing one is the last call of a run — the
   // call most likely to be the one somebody is asking about.
-  const { c, store } = await rig();
+  const { collector, store } = await rig();
   const agentIn = new PassThrough();
   const agentOut = new PassThrough();
   const upIn = new PassThrough();
@@ -135,7 +136,7 @@ test('FR-03: a final message with no terminator is not dropped', async () => {
   upIn.on('data', (d) => seen.push(d));
   stdioProxy({
     agentIn, agentOut, upstreamIn: upIn, upstreamOut: upOut,
-    collector: c, newCorrelation: () => 'cor-tail', onUnrecordable: () => {},
+    collector, newCorrelation: () => 'cor-tail', onUnrecordable: () => {},
   });
   const req = JSON.stringify({
     jsonrpc: '2.0', id: 7, method: 'tools/call',
@@ -690,4 +691,186 @@ test('a response can never collide with an id-less call\'s pending key', async (
     assert.equal(obs?.what, 'unmatched', `id ${JSON.stringify(id)} reached the synthetic key`);
   }
   assert.equal(p.outstanding, 1);
+});
+
+// ── Review findings: the HTTP transport's boundary with the agent ──────────
+
+/** POST to a proxy with an exact request-line path, bypassing fetch's URL normalisation. */
+function rawPost(/** @type {number} */ port, /** @type {string} */ path, /** @type {string} */ body) {
+  return new Promise((resolve) => {
+    const r = httpRequest({
+      host: '127.0.0.1', port, method: 'POST', path,
+      headers: { 'content-type': 'application/json', 'content-length': Buffer.byteLength(body) },
+    }, (res) => {
+      let out = '';
+      res.on('data', (d) => { out += d; });
+      res.on('end', () => resolve({ status: res.statusCode, body: out }));
+    });
+    r.on('error', (e) => resolve({ status: 0, body: String(e) }));
+    r.end(body);
+  });
+}
+
+const CALL = JSON.stringify({
+  jsonrpc: '2.0', id: 1, method: 'tools/call',
+  params: { name: 'transfer_funds', arguments: { amount: 2000000 } },
+});
+
+test('FR-04: the agent cannot redirect the proxy to another host', async () => {
+  // `new URL(req.url, upstream)` reads a path of `//evil.example/x` as a
+  // protocol-relative URL and resolves it to `http://evil.example/x`. The
+  // agent's tool arguments and headers went to a host of the agent's choosing
+  // while the record said it had talked to the configured upstream — a
+  // confused deputy at the one boundary this proxy exists to police.
+  const { collector, store } = await rig();
+  /** @type {string[]} */
+  const targets = [];
+  const proxy = httpProxy({
+    upstream: 'http://upstream.invalid:9/mcp',
+    collector, newCorrelation: () => 'cor', onUnrecordable: () => {},
+    fetchImpl: async (url) => {
+      targets.push(String(url));
+      return new Response(JSON.stringify({ jsonrpc: '2.0', id: 1, result: { ok: true } }),
+        { status: 200, headers: { 'content-type': 'application/json' } });
+    },
+  });
+  const addr = /** @type {any} */ (await proxy.listen(0));
+  try {
+    for (const path of ['//evil.example/x', '/..//evil.example/y', '/mcp']) {
+      targets.length = 0;
+      await rawPost(addr.port, path, CALL);
+      assert.equal(targets.length, 1, `nothing was fetched for ${path}`);
+      assert.equal(new URL(String(targets[0])).origin, 'http://upstream.invalid:9',
+        `a request for ${path} reached ${targets[0]}`);
+    }
+  } finally {
+    await proxy.close();
+    store.close();
+  }
+});
+
+test('FR-04: a valid call to a down upstream is not reported as unparsed', async () => {
+  // `pairing.request()` returns null for a well-formed call, and a
+  // `?? { what: 'unparsed' }` stood behind it — so every valid tool call to an
+  // unreachable upstream was reported as traffic the proxy could not parse.
+  // False about the traffic, and it inflated the count an operator reads to
+  // judge how much of it the proxy did not understand.
+  const { collector, store } = await rig();
+  const proxy = httpProxy({
+    upstream: 'http://upstream.invalid:9/mcp',
+    collector, newCorrelation: () => 'cor', onUnrecordable: () => {},
+    fetchImpl: async () => { throw new Error('ECONNREFUSED'); },
+  });
+  const addr = /** @type {any} */ (await proxy.listen(0));
+  try {
+    const r = /** @type {any} */ (await rawPost(addr.port, '/mcp', CALL));
+    assert.equal(r.status, 502, 'the agent must see the upstream failure as one');
+    assert.equal(proxy.counts.unparsed, 0, 'a valid call was counted as unparsed');
+    assert.equal(proxy.pairing.outstanding, 1, 'and the attempt is still outstanding');
+    await proxy.close();
+    // It settles as a record: the call was attempted, and an attempt with no
+    // result is a timeout, never an absence.
+    assert.equal(proxy.counts.records, 1);
+  } finally {
+    store.close();
+  }
+});
+
+test('NFR-12: an unreadable upstream reply does not take the proxy down', async () => {
+  // `await upstreamRes.arrayBuffer()` rejected into the event loop, which
+  // terminates the process by default. An upstream that truncated a reply took
+  // the agent's MCP server with it — NFR-12 broken by the component whose
+  // first obligation it is, and triggerable from the side of the boundary that
+  // is not trusted.
+  const { collector, store } = await rig();
+  const proxy = httpProxy({
+    upstream: 'http://upstream.invalid:9/mcp',
+    collector, newCorrelation: () => 'cor', onUnrecordable: () => {},
+    fetchImpl: async () => /** @type {any} */ ({
+      status: 200,
+      headers: new Headers(),
+      arrayBuffer: async () => { throw new Error('upstream reply truncated'); },
+    }),
+  });
+  const addr = /** @type {any} */ (await proxy.listen(0));
+  try {
+    const r = /** @type {any} */ (await rawPost(addr.port, '/mcp', CALL));
+    assert.equal(r.status, 502, 'the agent got no answer at all');
+    assert.equal(proxy.server.listening, true, 'the proxy stopped serving');
+    // And a SECOND request still works, which is the property that matters:
+    // one bad reply must not end the run.
+    const again = /** @type {any} */ (await rawPost(addr.port, '/mcp', CALL));
+    assert.equal(again.status, 502);
+  } finally {
+    await proxy.close();
+    store.close();
+  }
+});
+
+test('NFR-12: an oversized upstream reply is refused, not buffered without limit', async () => {
+  // The request body had a ceiling and the response did not, so an untrusted
+  // upstream could exhaust memory through the collector.
+  const { collector, store } = await rig();
+  const proxy = httpProxy({
+    upstream: 'http://upstream.invalid:9/mcp',
+    collector, newCorrelation: () => 'cor', onUnrecordable: () => {},
+    maxBodyBytes: 1024,
+    fetchImpl: async () => new Response('x'.repeat(4096), { status: 200 }),
+  });
+  const addr = /** @type {any} */ (await proxy.listen(0));
+  try {
+    const r = /** @type {any} */ (await rawPost(addr.port, '/mcp', CALL));
+    assert.equal(r.status, 502);
+    assert.match(r.body, /unreadable/);
+    assert.equal(proxy.pairing.outstanding, 1, 'the call settles as a timeout, not as a result');
+  } finally {
+    await proxy.close();
+    store.close();
+  }
+});
+
+// ── Review findings: the CLI contract ──────────────────────────────────────
+
+test('a flag given twice is refused, not silently last-wins', async () => {
+  // The operator named two evidence stores and one was discarded without a
+  // word. Same class as a flag nobody reads: the tool quietly answered a
+  // different question than the one asked.
+  const r = parseArgs(['--upstream', 'cmd', '--out', '/a', '--out', '/b']);
+  assert.notEqual(r.err, '');
+  assert.equal(r.exit, 2);
+  assert.match(r.err, /--out was given twice, as "\/a" and "\/b"/);
+  assert.match(r.err, /an evidence store, or a server, that somebody is expecting/);
+
+  const u = parseArgs(['--upstream', 'a', '--upstream', 'b', '--out', '/o']);
+  assert.match(u.err, /--upstream was given twice/);
+});
+
+test('a flag the chosen mode does not read is refused', async () => {
+  // `--listen 8080` with a command upstream was accepted and dropped, so an
+  // operator who believed they were serving HTTP on a port had nothing
+  // listening on it and no indication why. The project has shipped this shape
+  // three times — `--vkey`, `padding`, `retention`.
+  const stdio = parseArgs(['--upstream', 'node x.mjs', '--out', '/o', '--listen', '8080']);
+  assert.equal(stdio.exit, 2);
+  assert.match(stdio.err, /--listen only applies when --upstream is an http\(s\) URL/);
+  assert.match(stdio.err, /nothing would have been listening on it/);
+
+  // Extra arguments are a command's arguments; a URL upstream takes none.
+  const http = parseArgs(['--upstream', 'http://u/', '--out', '/o', 'extra', 'args']);
+  assert.equal(http.exit, 2);
+  assert.match(http.err, /an http\(s\) upstream takes none/);
+
+  // And the legitimate combinations still parse, so the check refuses the
+  // wrong thing rather than everything.
+  assert.equal(parseArgs(['--upstream', 'node x.mjs', '--out', '/o', '--', '--verbose']).err, '');
+  assert.equal(parseArgs(['--upstream', 'http://u/', '--out', '/o', '--listen', '0']).err, '');
+});
+
+test('an upstream scheme is recognised whatever its case', async () => {
+  // A scheme is case-insensitive in the URL grammar, and `HTTP://x` taken for
+  // a command produces an ENOENT about a program nobody meant to run.
+  assert.equal(isUrl('HTTP://u/'), true);
+  assert.equal(isUrl('HttpS://u/'), true);
+  assert.equal(isUrl('node ./server.mjs'), false);
+  assert.equal(parseArgs(['--upstream', 'HTTP://u/', '--out', '/o', '--listen', '0']).err, '');
 });

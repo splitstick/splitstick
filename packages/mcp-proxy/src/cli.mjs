@@ -68,6 +68,19 @@ export function parseArgs(argv) {
     if (v === undefined || String(v).startsWith('--')) {
       return { exit: 2, flags: {}, rest: [], err: `${a} needs a value\n\n${USAGE}` };
     }
+    if (flags[name] !== undefined) {
+      // Given twice. Taking the last silently is the same defect as accepting
+      // a flag nobody reads: the operator stated two evidence stores, or two
+      // upstreams, and one of them was discarded without a word. `--out /a
+      // --out /b` wrote to /b while the operator had every reason to look in
+      // /a for the record.
+      return {
+        exit: 2, flags: {}, rest: [],
+        err: `${a} was given twice, as ${JSON.stringify(flags[name])} and ${JSON.stringify(String(v))}. `
+          + 'Refused rather than taking the last: a value silently discarded here is an evidence '
+          + `store, or a server, that somebody is expecting.\n\n${USAGE}`,
+      };
+    }
     flags[name] = String(v);
     i += 1;
   }
@@ -76,11 +89,41 @@ export function parseArgs(argv) {
       return { exit: 2, flags: {}, rest: [], err: `--${required} is required\n\n${USAGE}` };
     }
   }
+
+  // A flag the chosen mode does not read is refused, not ignored. `--listen`
+  // with a command upstream used to be accepted and dropped, so an operator
+  // who believed they were serving HTTP on a port had nothing listening on it
+  // and no indication why. This project has shipped that shape three times
+  // already — `--vkey`, `padding`, `retention` — and each time the cost was
+  // the tool answering a question nobody asked.
+  const http = isUrl(/** @type {string} */ (flags.upstream));
+  if (!http && flags.listen !== undefined) {
+    return {
+      exit: 2, flags: {}, rest: [],
+      err: `--listen only applies when --upstream is an http(s) URL. ${JSON.stringify(flags.upstream)} `
+        + 'is a command, which is proxied over stdio and listens on no port. Refused rather than '
+        + `ignored: nothing would have been listening on it.\n\n${USAGE}`,
+    };
+  }
+  if (http && rest.length > 0) {
+    return {
+      exit: 2, flags: {}, rest: [],
+      err: `${JSON.stringify(rest.join(' '))} was given as extra arguments, and an http(s) upstream `
+        + 'takes none — they are the arguments of a command, and this upstream is a URL. Refused '
+        + `rather than dropped.\n\n${USAGE}`,
+    };
+  }
   return { err: '', exit: 0, flags, rest };
 }
 
-/** Whether an upstream is a URL (HTTP mode) or a command (stdio mode). */
-export const isUrl = (/** @type {string} */ u) => /^https?:\/\//.test(u);
+/**
+ * Whether an upstream is a URL (HTTP mode) or a command (stdio mode).
+ *
+ * Case-insensitive: a scheme is case-insensitive in the URL grammar, and
+ * `HTTP://x` taken for a command produces an ENOENT about a program nobody
+ * meant to run.
+ */
+export const isUrl = (/** @type {string} */ u) => /^https?:\/\//i.test(u);
 
 /**
  * Split an upstream command into a program and its arguments.

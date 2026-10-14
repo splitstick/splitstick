@@ -109,6 +109,50 @@ fails if a test file calls `mkdtempSync` without it. Offered as its own small ch
 than folded into a milestone, because it touches almost every test file and would bury the
 diff of whatever it travelled with.
 
+## Found in the second (independent) review, fixed in M6
+
+The first self-review covered the pairing core, the stdio transport and the tlog adapter.
+This pass went at the four surfaces it had not touched: the HTTP transport, the proxy CLI,
+the witness-list parser, and the conformance suite. Each finding was reproduced with a probe
+before anything changed, and each regression run against the pre-fix code.
+
+**The conformance suite certified a witness that never signs anything.** `C1` asserted
+`sigs.length >= 2` and nothing else, so a "witness" returning the note with the OPERATOR'S
+own signature line repeated passed 7 of 7, green, and would have been reported conformant.
+That is the third time this project has counted presence as anchoring — PR #8's finding 15,
+PR #9's P1, and now the suite a third party certifies against under GOV-05, where the defect
+would have travelled into somebody else's implementation. `C1` now requires a signature
+under a key id that is not the log's, and the suite's own self-test carries that witness as
+a fourth broken implementation, caught by `C1`.
+
+**The agent could redirect the proxy to any host it liked.** `new URL(req.url, upstream)`
+reads a request path of `//evil.example/x` as a protocol-relative URL and resolves it to
+`http://evil.example/x`, so tool arguments and the agent's headers went wherever the agent
+pointed them while the record said the configured upstream. A confused deputy at the one
+boundary the proxy exists to police, in a threat model where the operator is the adversary.
+The path is now applied to a copy of the upstream URL, and the origin is asserted afterwards
+— "assigning pathname cannot change the host" is a fact about the URL specification, not one
+this file had checked.
+
+**An unreadable upstream reply killed the collector.** `await upstreamRes.arrayBuffer()`
+rejected into the event loop, which terminates the process by default, so an upstream that
+truncated a reply took the agent's MCP server down with it. NFR-12 broken by the component
+whose first obligation it is, triggerable from the untrusted side. The handler is wrapped
+and the response body is now capped the way the request body already was.
+
+Also:
+
+| What | The shape it had |
+|---|---|
+| a valid call to a down upstream was counted as `unparsed` | `pairing.request()` returns null for a well-formed call and a `?? { what: 'unparsed' }` stood behind it. False about the traffic, and it inflated the count an operator reads to judge how much of it the proxy did not understand |
+| `--out /a --out /b` silently wrote to `/b` | the operator named two evidence stores and one was discarded without a word |
+| `--listen` with a command upstream was accepted and ignored | nothing was listening on the port the operator believed they had opened. The fourth instance of this shape |
+| the witness list accepted `sponsored`, `premium`, `featured`, `vetted`, `best_for` | GOV-09 forbids vetting, ranking **or charging** for inclusion, and the check was a denylist of words that had not anticipated the commercial ones. It is now an allowlist: a new field is a deliberate act |
+| the list accepted `establishes: ['everything']` | an unrecognised capability class, unvalidated, where an unknown witness *type* was carefully refused. An operator reading it would choose that witness believing it covered time and sequence |
+| the list accepted `establishes: []` and `endpoints: []` | `[]` is neither undefined nor `''`, so it walked past the required-field check — the same "absent reads as permissive" hole that check exists to close, through a different door |
+| `C5` reported its status instead of asserting it | its three sibling checks pin theirs, so a witness answering 500 passed a check the others would have failed |
+| two tests from the FIRST review passed `collector: c` where the rig returns `collector` | they asserted forwarded bytes, which was still valid, but the recording half of those tests was dead. Found while adding the HTTP tests |
+
 ### A record-format gap, left as a decision rather than taken
 
 An id-less `tools/call` is now recorded, and it settles as an attempt with `outcome:

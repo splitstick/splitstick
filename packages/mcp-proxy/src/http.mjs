@@ -18,9 +18,23 @@
  * request gets truncated. Hop-by-hop headers are dropped because they describe
  * the agent's connection to the proxy and not the proxy's to the upstream.
  *
- * NFR-12: a recording failure never becomes an HTTP error. The upstream's
- * status and body are returned exactly as received whatever happens on the
- * recording side.
+ * THE UPSTREAM IS WHAT THE OPERATOR CONFIGURED, AND THE AGENT DOES NOT GET A
+ * VOTE. The request's path is applied to a copy of the upstream URL rather
+ * than resolved against it: `new URL(req.url, upstream)` treats a path of
+ * `//evil.example/x` as a protocol-relative URL and resolves it to
+ * `http://evil.example/x`, so an agent could send its tool arguments, with its
+ * own headers, to any host it liked while the record said it had talked to the
+ * configured server. A confused deputy at the one boundary this proxy exists
+ * to police. The origin is asserted after construction as well, because
+ * "assigning pathname cannot change the host" is a fact about the URL spec and
+ * not a fact this file has checked.
+ *
+ * NFR-12: a recording failure never becomes an HTTP error, AND NOTHING HERE
+ * MAY THROW OUT OF THE REQUEST HANDLER. An upstream reply whose body could not
+ * be read used to reject into the event loop, which terminates the process by
+ * default: the agent lost its MCP server entirely, triggered from the side of
+ * the boundary that is not trusted. The handler is wrapped, and the response
+ * body is capped the way the request body already was.
  */
 
 import { createServer } from 'node:http';
@@ -47,7 +61,10 @@ const HOP_BY_HOP = new Set([
  * @param {typeof globalThis.fetch} [o.fetchImpl] injected, so a test makes no
  *   network call and a deployment can route through its own client
  * @param {number} [o.maxBodyBytes] refused loudly at a stated limit rather
- *   than silently truncated — inventory row 11
+ *   than silently truncated — inventory row 11. Applies to the upstream's
+ *   RESPONSE as well: the request had a ceiling and the response did not, so
+ *   an untrusted upstream could exhaust memory through the component whose
+ *   first obligation is not to stop the run
  * @param {() => number} [o.now]
  */
 export function httpProxy(o) {
@@ -61,6 +78,9 @@ export function httpProxy(o) {
     collector: o.collector, run: o.run ?? null,
     ...(o.onUnrecordable ? { onUnrecordable: o.onUnrecordable } : {}),
   });
+
+  /** The configured origin. Nothing the agent sends may change it. */
+  const origin = upstream.origin;
 
   const server = createServer((req, res) => {
     /** @type {Buffer[]} */
@@ -83,6 +103,54 @@ export function httpProxy(o) {
     });
     req.on('end', async () => {
       if (refused) return;
+      try {
+        await handle(req, res, chunks);
+      } catch (cause) {
+        // NFR-12, absolutely. This used to reject into the event loop, which
+        // terminates the process by default — so an upstream that truncated a
+        // reply took the agent's MCP server down with it. The agent gets an
+        // answer, the proxy keeps serving, and the failure is surfaced out of
+        // band where it belongs.
+        o.onUnrecordable?.({
+          detail: 'the proxy failed while handling a request; the agent was answered and the '
+            + 'proxy is still serving, because a collector that can stop a run is one an '
+            + 'operator disables',
+          cause,
+        });
+        if (!res.headersSent) {
+          res.writeHead(502, { 'content-type': 'text/plain' });
+          res.end('proxy error\n');
+        } else {
+          res.end();
+        }
+      }
+    });
+  });
+
+  /**
+   * Read an upstream reply, or null if it cannot be read or will not fit.
+   * @param {any} response @param {number} cap
+   * @returns {Promise<Buffer|null>}
+   */
+  async function readCapped(response, cap) {
+    try {
+      const declared = Number(response.headers?.get?.('content-length') ?? NaN);
+      if (Number.isFinite(declared) && declared > cap) return null;
+      const buf = Buffer.from(await response.arrayBuffer());
+      return buf.length > cap ? null : buf;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * The request, once its body is in hand.
+   * @param {import('node:http').IncomingMessage} req
+   * @param {import('node:http').ServerResponse} res
+   * @param {Buffer[]} chunks
+   */
+  async function handle(req, res, chunks) {
+    {
       const body = Buffer.concat(chunks);
 
       /** @type {Record<string, string>} */
@@ -96,7 +164,28 @@ export function httpProxy(o) {
       headers.host = upstream.host;
       if (body.length > 0) headers['content-length'] = String(body.length);
 
-      const target = new URL(req.url ?? '/', upstream);
+      // The path and query are APPLIED TO the upstream URL, never resolved
+      // against it. See the header: resolution reads `//host/x` as a new
+      // origin.
+      const target = new URL(upstream);
+      const raw = req.url ?? '/';
+      const q = raw.indexOf('?');
+      target.pathname = q === -1 ? raw : raw.slice(0, q);
+      target.search = q === -1 ? '' : raw.slice(q);
+      if (target.origin !== origin) {
+        // Unreachable by construction today. Asserted anyway: the construction
+        // is only safe because of how the URL pathname setter behaves, and a
+        // boundary that holds because of something another specification says
+        // is a boundary this file has not checked.
+        o.onUnrecordable?.({
+          detail: `a request for ${JSON.stringify(raw)} resolved to ${target.origin}, which is `
+            + `not the configured upstream ${origin}; it was refused rather than sent`,
+          cause: null,
+        });
+        res.writeHead(400, { 'content-type': 'text/plain' });
+        res.end('the request path does not address the configured upstream\n');
+        return;
+      }
 
       let upstreamRes;
       try {
@@ -114,11 +203,35 @@ export function httpProxy(o) {
         res.end('upstream unreachable\n');
         // The request is still a call that was attempted, so it is left
         // outstanding and settled as a timeout by expire()/close().
-        rec.emit(pairing.request(body) ?? { what: 'unparsed', detail: 'forwarded, upstream down' });
+        //
+        // Whatever the pairing layer actually says, and nothing invented. A
+        // `?? { what: 'unparsed' }` used to stand here, and `request()` returns
+        // null for a well-formed call — so every valid tool call to a down
+        // upstream was reported as traffic the proxy could not parse, which was
+        // false about the traffic and inflated the count an operator reads to
+        // judge how much of it the proxy did not understand.
+        const asked = pairing.request(body);
+        if (asked !== null) rec.emit(asked);
         return;
       }
 
-      const out = Buffer.from(await upstreamRes.arrayBuffer());
+      const out = await readCapped(upstreamRes, maxBodyBytes);
+      if (out === null) {
+        // The upstream's reply could not be read, or would not fit. Returned as
+        // the upstream failure it is; the call stays outstanding and settles as
+        // a timeout, which is the honest end for a call whose result never
+        // arrived intact.
+        o.onUnrecordable?.({
+          detail: `the reply from ${target} could not be read within ${maxBodyBytes} bytes; the `
+            + 'call is left outstanding and settles as a timeout',
+          cause: null,
+        });
+        res.writeHead(502, { 'content-type': 'text/plain' });
+        res.end('upstream reply unreadable\n');
+        const asked = pairing.request(body);
+        if (asked !== null) rec.emit(asked);
+        return;
+      }
       /** @type {Record<string, string>} */
       const back = {};
       upstreamRes.headers.forEach((v, k) => {
@@ -133,8 +246,8 @@ export function httpProxy(o) {
       if (asked !== null) rec.emit(asked);
       const answered = pairing.response(out);
       if (answered !== null) rec.emit(answered);
-    });
-  });
+    }
+  }
 
   return {
     server,

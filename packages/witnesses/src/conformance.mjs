@@ -28,7 +28,7 @@
  * that cannot tell them apart pages on both.
  */
 
-import { checkpointText, encodeNote, parseNote, parseCheckpointText } from '@splitstick/core/note';
+import { checkpointText, encodeNote, parseNote, parseCheckpointText, noteKeyId } from '@splitstick/core/note';
 import { signNote } from '@splitstick/core/signer';
 import { treeRoot, consistencyProof } from '@splitstick/core/merkle';
 
@@ -108,15 +108,39 @@ export async function runConformance({ makeWitness, signer, origin = 'conformanc
   const must = (c, why) => { if (!c) throw new Error(why); };
 
   // ── C1: it accepts a first submission and countersigns it ────────────────
-  await check('C1', 'a first submission is accepted and countersigned', async () => {
+  //
+  // COUNTING SIGNATURES IS NOT CHECKING THEM. This asserted `sigs.length >= 2`
+  // and nothing else, so a "witness" that echoed the operator's own signature
+  // line back — never signing anything, never holding a key — passed this
+  // suite 7 of 7, green, and could have shipped as conformant. That is the
+  // third time this project has counted presence as anchoring, and the worst
+  // place for it: this suite is what somebody else certifies against (GOV-05,
+  // FR-46), so the defect would have travelled into their implementation.
+  //
+  // What makes a countersignature a countersignature is that it is NOT the
+  // log's own. The key id is compared, because that is what can be established
+  // without the witness's public key — `makeWitness` is deliberately opaque,
+  // since prescribing how a witness is provisioned would make this a
+  // conformance test for ours.
+  await check('C1', 'a first submission is countersigned by a key that is not the log\'s', async () => {
     const w = await makeWitness();
     const { note } = await checkpoint({ origin, signer, size: 4 });
     const res = await w.addCheckpoint({ note });
-    const sigs = parseNote(res.note).signatures;
+    const parsed = parseNote(res.note);
+    const sigs = parsed.signatures;
     must(sigs.length >= 2, `expected the operator signature and the witness's, got ${sigs.length}`);
-    const cp = parseCheckpointText(parseNote(res.note).text);
+
+    const ours = noteKeyId(origin, signer.publicKey);
+    const theirs = sigs.filter(x => !Buffer.from(x.keyId).equals(Buffer.from(ours)));
+    must(theirs.length >= 1,
+      `every signature on the returned note is under the LOG'S OWN key id `
+      + `${Buffer.from(ours).toString('hex')}. A note carrying the operator's signature twice is `
+      + 'not a countersigned note: the witness has attested nothing, and a reader counting '
+      + 'signatures would read it as anchored');
+
+    const cp = parseCheckpointText(parsed.text);
     must(cp?.tree_size === 4, 'the countersigned note must be over the submitted checkpoint');
-    return `countersigned by ${sigs.length - 1} witness signature(s)`;
+    return `countersigned under ${theirs.length} key id(s) that are not the log's`;
   });
 
   // ── C2: it extends its own history ───────────────────────────────────────
@@ -175,7 +199,16 @@ export async function runConformance({ makeWitness, signer, origin = 'conformanc
     } catch (e) { refused = e; }
     must(refused !== null,
       'the witness accepted a successor without proof that it extends the history it holds');
-    return `refused with ${/** @type {any} */ (refused).status}`;
+    // Asserted, not merely reported. C3, C4 and C6 pin their status and this
+    // one printed whatever arrived, so a witness answering 500 — or 200 with
+    // an error body it then threw on — passed a check the others would have
+    // failed. An unprovable successor is a conflict about history, which is
+    // the same class as a regression and a fork: 409, stop and investigate.
+    must(/** @type {any} */ (refused).status === 409,
+      `expected 409 for a successor that cannot be proved to extend the history, got `
+      + `${JSON.stringify(/** @type {any} */ (refused).status)}. It is a conflict, not a `
+      + 'transient failure, and a monitor that cannot tell them apart pages on both');
+    return 'refused with 409';
   });
 
   // ── C6: it refuses what it cannot read, rather than guessing ─────────────
@@ -301,12 +334,43 @@ export async function selfTest({ signer, witnessKey }) {
     return w;
   };
 
+  /**
+   * Correct in every other way, and it never signs anything: it returns the
+   * note with the OPERATOR'S own signature line repeated.
+   *
+   * This passed the whole suite 7 of 7 before C1 compared key ids — the third
+   * time this project has counted presence as anchoring, and the worst place
+   * for it, since this suite is what a third party certifies against.
+   */
+  const unsigning = () => {
+    const b = base();
+    const w = {
+      async addCheckpoint(/** @type {any} */ req) {
+        const cp = b.read(req.note);
+        const prev = b.held;
+        if (prev !== null && (cp.tree_size < prev.size
+          || (cp.tree_size === prev.size && cp.root.toString('base64') !== prev.root))) {
+          const e = new Error('regression or fork'); /** @type {any} */ (e).status = 409; throw e;
+        }
+        if (prev !== null && (req.consistency_proof ?? []).length === 0) {
+          const e = new Error('no proof'); /** @type {any} */ (e).status = 409; throw e;
+        }
+        b.held = { size: cp.tree_size, root: cp.root.toString('base64') };
+        const trimmed = String(req.note).trimEnd();
+        return { note: `${trimmed}\n${trimmed.split('\n').at(-1)}\n` };
+      },
+      reopen() { return w; },
+    };
+    return w;
+  };
+
   /** @type {{ broken: string, expect: string, caught: boolean, by: string[] }[]} */
   const results = [];
   for (const [broken, expect, makeWitness] of /** @type {const} */ ([
     ['accepts a regression and a fork', 'C3', permissive],
     ['forgets its height across a restart', 'C7', forgetful],
     ['refuses a regression with 503 instead of 409', 'C3', miscoded],
+    ['never signs: it echoes the operator\'s own signature back', 'C1', unsigning],
   ])) {
     const r = await runConformance({ makeWitness: /** @type {any} */ (makeWitness), signer });
     const by = r.results.filter(x => !x.passed).map(x => x.id);

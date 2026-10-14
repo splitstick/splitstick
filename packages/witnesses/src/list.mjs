@@ -14,11 +14,15 @@
  * choosing a witness is choosing who learns their anchor cadence (PRIV-08) and
  * under whose terms, and a blank is not an answer to either.
  *
- * A field expressing preference — recommended, rating, rank, tier, score,
- * verified, trusted — is REFUSED. GOV-09 says this project does not gatekeep
- * the list, and a `recommended: true` would be gatekeeping wearing a different
- * name. The refusal is here rather than in a review checklist because a review
- * is a thing somebody skips.
+ * A field this reader does not know is REFUSED, and that is an ALLOWLIST on
+ * purpose. GOV-09 says this project does not vet, rank OR CHARGE for
+ * inclusion, and the first version of this check was a list of forbidden
+ * words — `recommended`, `rating`, `rank`, `score`. `sponsored`, `premium`,
+ * `featured`, `official`, `vetted` and `best_for` all walked straight through
+ * it, and `sponsored` is precisely the charging case the requirement names. A
+ * denylist of words has to anticipate the word somebody chooses; an allowlist
+ * makes a new field a deliberate act. The forbidden words are kept only to
+ * give a sharper message when an unknown field is obviously one of them.
  *
  * An unknown witness type is REFUSED rather than skipped, for the same reason
  * `witnessesFromConfig` refuses one: a silently shrunk witness set leaves an
@@ -26,6 +30,7 @@
  */
 
 import { readFileSync } from 'node:fs';
+import { CAPABILITY_CLASSES } from '@splitstick/core/anchor';
 import { WITNESS_TYPES, WitnessConfigError } from './index.mjs';
 
 /** Fields every entry must state. An absent one is not a permissive default. */
@@ -34,17 +39,22 @@ const REQUIRED = Object.freeze([
   'acceptable_use', 'rate_limits', 'retains_publicly',
 ]);
 
+/** Fields an entry may also carry. Everything outside REQUIRED + these is refused. */
+const OPTIONAL = Object.freeze(['retention_note']);
+
 /**
- * Field names that would express a preference. GOV-09.
+ * Names that are obviously a preference or a payment, for a better message.
  *
- * Matched as whole words against the entry's own keys, so a `retention_note`
- * is not caught by `note` and an honest field is never refused for containing
- * a letter sequence.
+ * NOT the check — the check is the allowlist above, because a denylist has to
+ * anticipate the word somebody chooses and this one did not anticipate
+ * `sponsored`. These only decide which refusal an author is shown.
  */
 const RANKING_FIELDS = Object.freeze([
   'recommended', 'recommendation', 'rating', 'rank', 'ranking', 'score',
   'tier_rating', 'preferred', 'endorsed', 'verified', 'trusted', 'certified',
-  'quality', 'stars', 'grade',
+  'quality', 'stars', 'grade', 'sponsored', 'premium', 'featured', 'official',
+  'approved', 'vetted', 'curated', 'popularity', 'best_for', 'recommended_for',
+  'partner', 'paid', 'promoted',
 ]);
 
 /**
@@ -98,13 +108,17 @@ export function parseWitnessList(raw) {
       }
     }
     for (const k of Object.keys(entry)) {
-      if (RANKING_FIELDS.includes(k)) {
-        throw new WitnessConfigError(
-          `witness list entry ${id} carries a ${JSON.stringify(k)} field. GOV-09: this project `
-          + 'does not vet, rank or charge for inclusion, and a field expressing preference is '
-          + 'gatekeeping wearing a different name',
-        );
-      }
+      if (REQUIRED.includes(k) || OPTIONAL.includes(k)) continue;
+      throw new WitnessConfigError(
+        RANKING_FIELDS.includes(k)
+          ? `witness list entry ${id} carries a ${JSON.stringify(k)} field. GOV-09: this project `
+            + 'does not vet, rank or charge for inclusion, and a field expressing preference or '
+            + 'payment is gatekeeping wearing a different name'
+          : `witness list entry ${id} carries a ${JSON.stringify(k)} field, which this reader does `
+            + `not know. Entries carry ${[...REQUIRED, ...OPTIONAL].join(', ')} and nothing else: `
+            + 'an unknown field is refused rather than ignored because GOV-09 cannot be enforced '
+            + 'by a list of forbidden words, and adding one has to be a deliberate act',
+      );
     }
     if (!WITNESS_TYPES.includes(/** @type {string} */ (entry.type))) {
       throw new WitnessConfigError(
@@ -115,6 +129,36 @@ export function parseWitnessList(raw) {
     }
     if (!Array.isArray(entry.endpoints) || !Array.isArray(entry.establishes)) {
       throw new WitnessConfigError(`witness list entry ${id} needs endpoints and establishes as lists`);
+    }
+    // An entry that claims nothing is an entry an operator cannot choose on
+    // informed grounds, which is the whole point of FR-47. `[]` passed the
+    // required-field check because it is neither undefined nor '' — the same
+    // "absent reads as permissive" hole the check exists to close, through a
+    // different door.
+    if (entry.establishes.length === 0) {
+      throw new WitnessConfigError(
+        `witness list entry ${id} establishes nothing. An entry that claims no capability class `
+        + 'cannot be chosen on informed grounds, and an empty list is not a disclosure (FR-47)',
+      );
+    }
+    for (const cls of entry.establishes) {
+      if (!CAPABILITY_CLASSES.includes(/** @type {string} */ (cls))) {
+        throw new WitnessConfigError(
+          `witness list entry ${id} claims to establish ${JSON.stringify(cls)}, which is not one `
+          + `of ${CAPABILITY_CLASSES.join(', ')}. An unrecognised class is refused for the same `
+          + 'reason an unknown type is: an operator reading it would choose this witness '
+          + 'believing it covers something nothing here can deliver',
+        );
+      }
+    }
+    // Only the operator-hosted witness has no public endpoint — it is the one
+    // you stand up yourself (FR-17). For anything else, no endpoint means an
+    // entry nobody can reach, listed as though they could.
+    if (entry.endpoints.length === 0 && entry.type !== 'splitstick') {
+      throw new WitnessConfigError(
+        `witness list entry ${id} names no endpoint. Only the self-hosted type may omit one, `
+        + 'because it is the one an operator stands up themselves',
+      );
     }
     if (typeof entry.retains_publicly !== 'boolean'
       || typeof entry.operated_by_splitstick !== 'boolean') {

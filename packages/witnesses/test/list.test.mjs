@@ -173,7 +173,7 @@ test('FR-46: the suite CAN fail, and each break is caught by its own check', asy
   const witnessKey = await generateDevSigner('reference.witness');
   const st = await selfTest({ signer, witnessKey });
   assert.equal(st.passed, true, JSON.stringify(st.results, null, 1));
-  assert.deepEqual(st.results.map(x => x.expect), ['C3', 'C7', 'C3']);
+  assert.deepEqual(st.results.map(x => x.expect), ['C3', 'C7', 'C3', 'C1']);
   for (const x of st.results) {
     assert.ok(x.by.includes(x.expect), `${x.broken} was not caught by ${x.expect}`);
   }
@@ -217,4 +217,83 @@ test('FR-46: each case builds a FRESH witness, so no case depends on another', a
   for (const d of dirs) rmSync(d, { recursive: true, force: true });
   assert.equal(r.passed, true);
   assert.equal(made, 7, 'one witness per case, not one shared across them');
+});
+
+// ── Review findings: what the list parser lets through ─────────────────────
+
+test('GOV-09: an unknown field is refused, because a denylist of words cannot win', async () => {
+  // The check used to be a list of forbidden words. `sponsored`, `premium`,
+  // `featured`, `official`, `vetted` and `best_for` all walked through it —
+  // and GOV-09 says this project does not vet, rank OR CHARGE for inclusion,
+  // so `sponsored` is precisely the case the requirement names. A denylist has
+  // to anticipate the word somebody chooses.
+  const base = JSON.parse(readFileSync(LIST, 'utf8'));
+  for (const field of ['sponsored', 'premium', 'featured', 'official', 'approved',
+    'vetted', 'curated', 'popularity', 'best_for', 'recommended_for', 'tier',
+    'anything_at_all']) {
+    const broken = structuredClone(base);
+    broken.entries[0][field] = true;
+    assert.throws(() => parseWitnessList(broken),
+      (/** @type {any} */ e) => e instanceof WitnessConfigError && new RegExp(field).test(e.message),
+      `${field} was accepted`);
+  }
+  // The obviously-commercial ones still get the sharper message, so an author
+  // is told what rule they hit rather than only that a field is unknown.
+  const paid = structuredClone(base);
+  paid.entries[0].sponsored = true;
+  assert.throws(() => parseWitnessList(paid),
+    (/** @type {any} */ e) => /does not vet, rank or charge for inclusion/.test(e.message));
+
+  // And the honest optional field is still accepted: the allowlist refuses the
+  // right thing, not everything.
+  const honest = structuredClone(base);
+  honest.entries[0].retention_note = 'entries are public forever';
+  assert.doesNotThrow(() => parseWitnessList(honest));
+});
+
+test('FR-47: an entry that claims nothing, or claims a class that does not exist, is refused', async () => {
+  // `establishes: []` passed the required-field check because `[]` is neither
+  // undefined nor '' — the same "absent reads as permissive" hole that check
+  // exists to close, through a different door. And an unrecognised class was
+  // never checked at all, so an entry could advertise `everything` and an
+  // operator would choose it believing it covered time and sequence.
+  const base = JSON.parse(readFileSync(LIST, 'utf8'));
+
+  const empty = structuredClone(base);
+  empty.entries[0].establishes = [];
+  assert.throws(() => parseWitnessList(empty),
+    (/** @type {any} */ e) => /establishes nothing/.test(e.message));
+
+  for (const cls of ['everything', 'integrity', 'Sequence', '']) {
+    const bogus = structuredClone(base);
+    bogus.entries[0].establishes = [cls];
+    assert.throws(() => parseWitnessList(bogus),
+      (/** @type {any} */ e) => /is not one of sequence, time, existence/.test(e.message),
+      `establishes: [${JSON.stringify(cls)}] was accepted`);
+  }
+
+  // The real classes still parse.
+  for (const cls of ['sequence', 'time', 'existence']) {
+    const ok = structuredClone(base);
+    ok.entries[0].establishes = [cls];
+    assert.doesNotThrow(() => parseWitnessList(ok));
+  }
+});
+
+test('FR-47: only the self-hosted witness may name no endpoint', async () => {
+  // An entry nobody can reach, listed as though they could. The self-hosted
+  // one is the exception by design — it is the witness an operator stands up
+  // themselves (FR-17) — and the published list relies on that.
+  const base = JSON.parse(readFileSync(LIST, 'utf8'));
+  const unreachable = structuredClone(base);
+  const i = unreachable.entries.findIndex((/** @type {any} */ e) => e.type !== 'splitstick');
+  unreachable.entries[i].endpoints = [];
+  assert.throws(() => parseWitnessList(unreachable),
+    (/** @type {any} */ e) => /names no endpoint/.test(e.message));
+
+  // And the published list, which contains exactly that exception, still parses.
+  const list = readWitnessList(LIST);
+  const selfHosted = list.entries.find(e => e.type === 'splitstick');
+  assert.ok(selfHosted, 'the published list no longer carries the self-hosted entry');
+  assert.equal(selfHosted.endpoints.length, 0);
 });
