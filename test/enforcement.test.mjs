@@ -156,3 +156,67 @@ test('SCOPE-16: an unknown config key is refused, so a blocking flag cannot be a
       `the config accepted ${key}`);
   }
 });
+
+test('SCOPE-01: slow recording cannot delay the OUTBOUND request either', async () => {
+  // The review found the HTTP structural guard covered only the response leg:
+  // that the agent gets its answer before anything is recorded. It said
+  // nothing about the way IN, so a change that recorded before calling the
+  // upstream would have put a recording outcome between the agent and its tool
+  // and passed the lint.
+  //
+  // `tools/lint-enforcement.mjs` now checks that leg in the source. This is
+  // the behavioural half: with a recorder that takes a visible amount of time
+  // and then throws, the upstream must still be called BEFORE any of that
+  // happens.
+  const { collector, store } = await rig();
+  /** @type {string[]} */
+  const order = [];
+  /** @type {boolean|null} */
+  let recordedBeforeForward = null;
+  const { httpProxy } = await import('@splitstick/mcp-proxy');
+
+  collector.action = () => {
+    order.push('record');
+    const until = Date.now() + 40;
+    while (Date.now() < until) { /* a slow fsync, then a failure */ }
+    throw new Error('the recorder exploded');
+  };
+
+  const proxy = httpProxy({
+    upstream: 'http://upstream.invalid:9/mcp',
+    collector, newCorrelation: () => 'cor', onUnrecordable: () => {},
+    fetchImpl: async () => {
+      // Captured AT THE MOMENT OF FORWARDING. Asserting afterwards only tells
+      // you the final order; asserting here says that at the instant the
+      // request left for the upstream, nothing had been recorded — which is
+      // the invariant, and it gives a failure message that names it.
+      recordedBeforeForward = order.includes('record');
+      order.push('forward');
+      return new Response(JSON.stringify({ jsonrpc: '2.0', id: 1, result: { ok: true } }),
+        { status: 200, headers: { 'content-type': 'application/json' } });
+    },
+  });
+  const addr = /** @type {any} */ (await proxy.listen(0));
+  try {
+    const res = await fetch(`http://127.0.0.1:${addr.port}/mcp`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0', id: 1, method: 'tools/call',
+        params: { name: 'transfer_funds', arguments: { amount: 2_000_000 } },
+      }),
+    });
+    assert.equal(res.status, 200, 'the agent did not get the upstream\'s answer');
+    await new Promise((r) => { setTimeout(r, 120); });
+
+    assert.equal(recordedBeforeForward, false,
+      'something was recorded BEFORE the request went upstream, so a recording outcome now '
+      + 'sits between the agent and its tool on the way in — the enforcement path SCOPE-01 '
+      + `forbids. Order observed: ${order.join(' then ')}`);
+    assert.ok(order.includes('record'), 'the recorder was never reached at all, so this '
+      + 'case proves nothing about ordering');
+  } finally {
+    await proxy.close();
+    store.close();
+  }
+});

@@ -168,6 +168,24 @@ Tightening produced the opposite failure, which is always the other half:
   far more precisely: no field expressing preference, every capability class validated, every
   entry required to state its position.
 
+## Found in PR #12 review, fixed in M7
+
+**The HTTP enforcement guard covered only the response leg.** It checked that the agent gets
+the upstream's answer before anything is recorded, and said nothing about the way *in*: a
+change that recorded before calling the upstream would have put a recording outcome between
+the agent and its tool on the outbound path — an availability dependency of exactly the kind
+SCOPE-01 forbids — and would have passed the lint. Correct in the implementation today
+(`fetchImpl` at line 207, the first `pairing.request` at 228), simply unguarded.
+
+Both halves now exist. The structural guard checks a region that *ends* at the first recording
+call, so the test is whether the forward sits inside it — if recording moves earlier the
+region shortens and the forward falls out. And a behavioural test captures the invariant **at
+the moment of forwarding**: with a recorder that burns 40 ms and then throws, nothing may have
+been recorded at the instant the request left. Asserting afterwards would only report the
+final order; asserting there names what broke.
+
+Both fail against a source reordered to record first.
+
 ### A note on this document's own exemption
 
 `tools/lint-scope.mjs` exempts this file, and only this file among the follow-ups. Explaining

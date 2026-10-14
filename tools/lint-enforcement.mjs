@@ -25,9 +25,13 @@
  *   1. the config admits exactly ONE `on_unavailable` value, and it is not an
  *      enforcement value. SCOPE-16 names config schema review.
  *   2. no config key is an enforcement switch.
- *   3. THE ORDERING. In both transports the traffic is forwarded before
- *      anything on the recording side runs, so there is no point at which a
- *      recording outcome could gate it. That is a property of the source and
+ *   3. THE ORDERING, ON BOTH LEGS. In both transports the traffic is forwarded
+ *      before anything on the recording side runs, so there is no point at
+ *      which a recording outcome could gate it. The HTTP transport is checked
+ *      twice — outbound and inbound — because the first version of this guard
+ *      checked only the response, and a change that recorded before calling
+ *      the upstream would have passed it while putting a recording outcome
+ *      between the agent and its tool on the way in. That is a property of the source and
  *      it is checked in the source, because it is the one an edit would break
  *      silently — a reordering that put `observe` first would pass every test
  *      that only asserts traffic eventually arrives.
@@ -104,6 +108,25 @@ const ORDERINGS = [
     forward: /res\.end\(out\)/,
     record: /pairing\.request\(body\)/,
     why: 'the HTTP proxy must return the upstream\'s answer before it records anything',
+  },
+  {
+    // THE REQUEST PATH, which the review found unguarded. The entry above
+    // covers only the RESPONSE: that the agent gets its answer before anything
+    // is recorded. It says nothing about the outbound leg, so a change that
+    // moved recording ahead of the upstream call would put a recording outcome
+    // between the agent and its tool on the way IN — an availability
+    // dependency of exactly the kind SCOPE-01 forbids — and would have passed
+    // this lint.
+    //
+    // The region deliberately ENDS at the first recording call, so the check
+    // is simply that the forward is inside it. If recording moved earlier the
+    // region shortens, `fetchImpl` falls outside, and the missing-forward
+    // branch reports it.
+    file: 'packages/mcp-proxy/src/http.mjs',
+    within: /async function handle\([\s\S]*?pairing\.request\(body\)/,
+    forward: /await fetchImpl\(target/,
+    record: /pairing\.request\(body\)/,
+    why: 'the HTTP proxy must send the request upstream before it records anything about it',
   },
 ];
 
