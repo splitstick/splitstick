@@ -159,3 +159,37 @@ described — including in the report itself. A limit documented in a design fil
 is a limit the person reading the report does not see. The report is the surface
 an auditor acts on, so that is where it has to be, and a test has to assert it
 is there.
+
+## M7's shape: the instrument that certifies our own honesty
+
+M7 turns thirty-seven "claims audit" and "documentation review" verifies into checks. That
+makes it the milestone where shape 3 — *a check that reads its own documentation as code* —
+and the broader failure of *an instrument reporting a conclusion it had not established* do
+the most damage, because the conclusion being reported is **"we have not overclaimed"**.
+
+A review that somebody skips fails visibly: nobody signed it off. A check whose pattern is
+too narrow fails invisibly: the build is green and the release ships. The second is worse,
+and replacing the first with the second is exactly what this milestone does.
+
+So the rule for M7, and for every guard added after it:
+
+> **A guard ships with a companion that breaks it on purpose** — against text violating
+> exactly that guard, and against honest prose that must not fire. Not a sample of the
+> guards. Each one.
+
+Five precedents in this repository, every one found after the guard was written and
+believed:
+
+| The guard | What it could not see |
+|---|---|
+| LEG-12's sentence splitter | it cut the eIDAS article reference in half, so the rule could never fire on the one sentence it existed to catch |
+| OPS-05's static check | `await import('node:net')` and `globalThis.fetch(…)` — two of the four ways in |
+| the conformance suite's `C1` | it counted signatures instead of checking whose they were, and certified a witness that never signed anything |
+| GOV-09's field check | a denylist of words that had not anticipated `sponsored` or `premium` |
+| OPS-05's own test name | it said "the shipped default configuration" and parsed a config that omits the key, while the shipped default names two witnesses |
+
+The last of those is the one to keep in mind, because it is not a pattern that was too narrow.
+It is a test that **checked the wrong artefact** and took its title from what it wished it had
+checked. No regex would have helped. The question a guard's companion has to answer is not
+only "does this pattern fire" but "is this the thing the requirement is about".
+
