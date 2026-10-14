@@ -23,9 +23,11 @@
  */
 export function recorder({ collector, run = null, onUnrecordable }) {
   /** @type {{ records: number, unrecordable: number, unparsed: number, unmatched: number,
-   *            unverbatim: number, notification: number }} */
+   *            unverbatim: number, notification: number, ambiguous: number,
+   *            unattributable: number }} */
   const counts = {
     records: 0, unrecordable: 0, unparsed: 0, unmatched: 0, unverbatim: 0, notification: 0,
+    ambiguous: 0, unattributable: 0,
   };
 
   /**
@@ -65,6 +67,10 @@ export function recorder({ collector, run = null, onUnrecordable }) {
       // The call itself IS recorded — it is pending, and settles as an attempt
       // with no result. This counts the fact that it could never have had one.
       if (o.what === 'notification') counts.notification += 1;
+      // Two outstanding calls on one id. Both are pending and both settle; what
+      // is counted here is that no response can be attributed to either.
+      if (o.what === 'ambiguous') counts.ambiguous += 1;
+      if (o.what === 'unattributable') counts.unattributable += 1;
       onUnrecordable?.({ detail: o.detail ?? o.what, cause: null });
       return false;
     } catch (cause) {

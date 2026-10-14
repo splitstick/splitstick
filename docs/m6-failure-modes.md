@@ -81,6 +81,17 @@ rightly disable.
 | 26 | an operator configures a qualified TSA | it works, and the report says the eIDAS presumption attaches to that anchor and not to our own witness | 2 | out | ✓ |
 | 27 | any surface implies the presumption attaches via our witness | the claims lint fails. LEG-12 is checked, not reviewed | 3 | out | ✓ |
 
+## The pairing boundary, after PR #11's review
+
+| # | What happens if… | Expected | risk | bdy | adv |
+|---|---|---|---|---|---|
+| 31 | two outstanding calls reuse one JSON-RPC id | both stay accountable and neither is paired. A response bearing that id answers one of them and nothing can say which, so attributing it would invent a tool result | 8 | in | ✓ |
+| 32 | a response arrives for an id two calls used | reported, never attributed. Both attempts settle with their own arguments and correlation | 6 | in | ✓ |
+| 33 | a call is never answered and the proxy keeps running | it becomes a durable timeout record within the settle interval, not at shutdown | 8 | out | ✓ |
+| 34 | the proxy is sent SIGTERM with calls outstanding | they settle before the process exits | 5 | out | |
+| 35 | the proxy is SIGKILLed with calls outstanding | the loss is bounded by the settle interval, as FR-61 bounds the observation counter. Stated, not claimed away | 6 | out | ✓ |
+| 36 | settlement itself fails to record | the traffic is unaffected and the failure is out of band. A throw from a timer callback would terminate the process — the collector stopping the run | 7 | out | ✓ |
+
 ## The CLI contract — FR-49
 
 | # | What happens if… | Expected | risk | bdy | adv |

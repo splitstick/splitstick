@@ -180,6 +180,45 @@ Also:
 | `C5` reported its status instead of asserting it | its three sibling checks pin theirs, so a witness answering 500 passed a check the others would have failed |
 | two tests from the FIRST review passed `collector: c` where the rig returns `collector` | they asserted forwarded bytes, which was still valid, but the recording half of those tests was dead. Found while adding the HTTP tests |
 
+## Found in PR #11 review, fixed in M6
+
+Two P1s, both the same property: every consequential invocation crossing the observation
+boundary stays accountable, even when the protocol participant misbehaves or the process
+exits unexpectedly.
+
+**Two outstanding calls on one JSON-RPC id erased the first.** `#pending.set(idKey(id), …)`
+overwrote, so the first invocation was forwarded, very likely executed, and gone from the
+record with no timeout behind it — while the response that arrived was attributed to
+whichever call happened to be in the map. Reusing an outstanding id breaks JSON-RPC, but a
+proxy that exists because the agent is not trusted to report its own actions cannot answer
+misbehaviour by discarding what it saw. Both attempts are now kept, each under a key no
+response can produce, and the id is marked ambiguous: a response bearing it answers one of
+them and nothing here can say which, so neither is paired and both settle as attempts with
+no result, each keeping its own arguments and correlation.
+
+**`expire()` had no caller except shutdown.** A long-running proxy held every unanswered
+invocation in memory indefinitely — observed, forwarded, and with no durable record until
+the process chose to exit; killed instead, the record never existed. `settle.mjs` now sweeps
+on an interval, shared by both transports for the reason the pairing core is shared, and the
+bin settles on SIGINT/SIGTERM/SIGHUP before exiting.
+
+### The crash window, bounded rather than closed
+
+A `SIGKILL` between a request and the next sweep still loses the pending call. The window is
+now the settle interval rather than the process lifetime, which is the difference between a
+bounded loss and an open-ended one, and it matches what FR-61 already does for the
+observation counter: flushed at each batch, so an unrecoverable crash loses at most the
+current window.
+
+Closing it completely is what the review suggested — record the attempt **before** forwarding
+it and append the outcome later. That is two records where DES-01 specifies one, and FR-01's
+shape ("the call and its result are one record") is what a verifier and the disclosure format
+are both built around. It is a record-format decision with the same weight as the `OUTCOMES`
+question below, and it is not one to take during a review. What would make it tractable: an
+attempt record whose outcome is amended by a later record referencing its correlation, which
+needs a verifier rule for the pair and a disclosure rule for what a single-event pack
+contains.
+
 ### A record-format gap, left as a decision rather than taken
 
 An id-less `tools/call` is now recorded, and it settles as an attempt with `outcome:

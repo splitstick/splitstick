@@ -40,6 +40,7 @@
 import { createServer } from 'node:http';
 import { Pairing } from './pairing.mjs';
 import { recorder } from './record.mjs';
+import { settler } from './settle.mjs';
 
 /**
  * Headers that describe one connection and must not be relayed to the next.
@@ -65,6 +66,9 @@ const HOP_BY_HOP = new Set([
  *   RESPONSE as well: the request had a ceiling and the response did not, so
  *   an untrusted upstream could exhaust memory through the component whose
  *   first obligation is not to stop the run
+ * @param {number} [o.call_timeout_ms] how long a call may go unanswered
+ * @param {number} [o.settle_interval_ms] how often the sweep runs
+ * @param {boolean} [o.autosettle] false in tests, which drive `settle()` by hand
  * @param {() => number} [o.now]
  */
 export function httpProxy(o) {
@@ -77,6 +81,17 @@ export function httpProxy(o) {
   const rec = recorder({
     collector: o.collector, run: o.run ?? null,
     ...(o.onUnrecordable ? { onUnrecordable: o.onUnrecordable } : {}),
+  });
+
+  // On a clock, not on shutdown. An unanswered call used to sit in memory
+  // until the process chose to exit, and never became a record if it was
+  // killed instead.
+  const sweep = settler({
+    pairing, rec,
+    ...(o.call_timeout_ms !== undefined ? { timeout_ms: o.call_timeout_ms } : {}),
+    ...(o.settle_interval_ms !== undefined ? { interval_ms: o.settle_interval_ms } : {}),
+    ...(o.onUnrecordable ? { onUnrecordable: o.onUnrecordable } : {}),
+    ...(o.autosettle === false ? { autostart: false } : {}),
   });
 
   /** The configured origin. Nothing the agent sends may change it. */
@@ -253,6 +268,8 @@ export function httpProxy(o) {
     server,
     pairing,
     counts: rec.counts,
+    /** Settle overdue calls now. The interval does this on its own. */
+    settle: sweep.settle,
     /** @param {number} [port] @param {string} [host] */
     listen(port = 0, host = '127.0.0.1') {
       return new Promise((resolve) => {
@@ -260,6 +277,7 @@ export function httpProxy(o) {
       });
     },
     close() {
+      sweep.stop();
       for (const t of pairing.closeAll()) rec.emit(t);
       return new Promise((resolve) => server.close(() => resolve(undefined)));
     },

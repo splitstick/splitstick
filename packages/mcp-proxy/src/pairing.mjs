@@ -43,7 +43,8 @@ export const TOOL_CALL = 'tools/call';
 
 /**
  * @typedef {object} Observation
- * @property {'call'|'unmatched'|'unparsed'|'timeout'|'unverbatim'|'notification'} what
+ * @property {'call'|'unmatched'|'unparsed'|'timeout'|'unverbatim'|'notification'
+ *   |'ambiguous'|'unattributable'} what
  * @property {string} [tool]
  * @property {Uint8Array} [args]
  * @property {Uint8Array} [result]
@@ -58,6 +59,16 @@ export class Pairing {
 
   /** Counts id-less tools/call messages, so each gets a distinct pending key. */
   #notifications = 0;
+
+  /** Counts calls moved off a colliding id, so each keeps its own pending key. */
+  #detached = 0;
+
+  /**
+   * Ids that two outstanding calls have used, so no response may be attributed
+   * to either of them.
+   * @type {Set<string>}
+   */
+  #ambiguous = new Set();
 
   /**
    * @param {object} o
@@ -131,7 +142,46 @@ export class Pairing {
     // re-serialisation would commit to bytes the server never saw, so the
     // record would attest to a request that was never made.
     const { args, verbatim } = argsBytes(bytes, msg);
-    this.#pending.set(idKey(msg.id), {
+    const key = idKey(msg.id);
+
+    const clash = this.#pending.get(key);
+    if (clash !== undefined || this.#ambiguous.has(key)) {
+      // TWO OUTSTANDING CALLS ON ONE ID. `set()` used to overwrite, so the
+      // first invocation was erased: forwarded, executed, and gone from the
+      // record with no timeout behind it, while the response that arrived was
+      // attributed to whichever call happened to be in the map. A transfer
+      // observed crossing this boundary left no trace at all.
+      //
+      // Reusing an outstanding id breaks JSON-RPC, but a proxy that exists
+      // because the agent is not trusted to report its own actions cannot
+      // answer misbehaviour by discarding what it saw.
+      //
+      // So both attempts are kept, each under a key no response can produce,
+      // and the id is marked ambiguous. Neither can be paired: a response
+      // bearing that id answers one of them and nothing here can say which,
+      // and this module's rule is that a guess invents a tool result. Both
+      // settle as attempts with no result, each keeping its own arguments and
+      // correlation.
+      this.#ambiguous.add(key);
+      if (clash !== undefined) {
+        this.#pending.delete(key);
+        this.#detached += 1;
+        this.#pending.set(`ambiguous:#${this.#detached}`, clash);
+      }
+      this.#detached += 1;
+      this.#pending.set(`ambiguous:#${this.#detached}`, {
+        id: msg.id, tool, args, verbatim, correlation: this.newCorrelation(), at: this.now(),
+      });
+      return {
+        what: 'ambiguous',
+        detail: `a second tools/call for ${JSON.stringify(tool)} reused the outstanding JSON-RPC `
+          + `id ${JSON.stringify(msg.id)}. Both attempts are kept and both settle with no result: `
+          + 'a response carrying that id answers one of them and nothing here can say which, and '
+          + 'attributing it would invent a tool result. Neither invocation is discarded',
+      };
+    }
+
+    this.#pending.set(key, {
       id: msg.id, tool, args, verbatim, correlation: this.newCorrelation(), at: this.now(),
     });
     return verbatim ? null : {
@@ -159,6 +209,17 @@ export class Pairing {
     }
     if (msg.id === undefined || msg.id === null) return null;     // a notification
     const key = idKey(msg.id);
+    if (this.#ambiguous.has(key)) {
+      // The id had two outstanding calls. Reported, never attributed: this
+      // response answers one of them and nothing here can say which.
+      return {
+        what: 'unattributable',
+        detail: `a response arrived with id ${JSON.stringify(msg.id)}, which two outstanding `
+          + 'calls used. It is reported rather than attributed to either, because attributing it '
+          + 'would record a result against an invocation that may not have produced it. Both '
+          + 'attempts are accounted for as attempts with no result',
+      };
+    }
     const call = this.#pending.get(key);
     if (call === undefined) {
       // An id nobody sent. Reported, never matched to the nearest request: the

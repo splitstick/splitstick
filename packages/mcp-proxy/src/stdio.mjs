@@ -37,6 +37,7 @@
 
 import { Pairing } from './pairing.mjs';
 import { recorder } from './record.mjs';
+import { settler } from './settle.mjs';
 
 /**
  * @param {object} o
@@ -48,6 +49,9 @@ import { recorder } from './record.mjs';
  * @param {string|null} [o.run]
  * @param {() => string} o.newCorrelation
  * @param {(e: { detail: string, cause: unknown }) => void} [o.onUnrecordable]
+ * @param {number} [o.call_timeout_ms] how long a call may go unanswered
+ * @param {number} [o.settle_interval_ms] how often the sweep runs
+ * @param {boolean} [o.autosettle] false in tests, which drive `settle()` by hand
  * @param {() => number} [o.now]
  */
 export function stdioProxy(o) {
@@ -55,6 +59,16 @@ export function stdioProxy(o) {
   const rec = recorder({
     collector: o.collector, run: o.run ?? null,
     ...(o.onUnrecordable ? { onUnrecordable: o.onUnrecordable } : {}),
+  });
+  // On a clock, not on shutdown. An unanswered call used to sit in memory
+  // until the process chose to exit, and never became a record if it was
+  // killed instead.
+  const sweep = settler({
+    pairing, rec,
+    ...(o.call_timeout_ms !== undefined ? { timeout_ms: o.call_timeout_ms } : {}),
+    ...(o.settle_interval_ms !== undefined ? { interval_ms: o.settle_interval_ms } : {}),
+    ...(o.onUnrecordable ? { onUnrecordable: o.onUnrecordable } : {}),
+    ...(o.autosettle === false ? { autostart: false } : {}),
   });
 
   /**
@@ -117,6 +131,8 @@ export function stdioProxy(o) {
   return {
     pairing,
     counts: rec.counts,
+    /** Settle overdue calls now. The interval does this on its own. */
+    settle: sweep.settle,
     /**
      * Settle anything still outstanding, as timeouts. Nothing is dropped: a
      * call whose result never arrived is a timeout, and a dropped one would
@@ -124,6 +140,7 @@ export function stdioProxy(o) {
      * asking.
      */
     close() {
+      sweep.stop();
       for (const t of pairing.closeAll()) rec.emit(t);
       a.close();
       b.close();

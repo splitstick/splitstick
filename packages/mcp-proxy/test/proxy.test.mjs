@@ -874,3 +874,134 @@ test('an upstream scheme is recognised whatever its case', async () => {
   assert.equal(isUrl('node ./server.mjs'), false);
   assert.equal(parseArgs(['--upstream', 'HTTP://u/', '--out', '/o', '--listen', '0']).err, '');
 });
+
+// ── PR #11 review: every observed invocation stays accountable ─────────────
+
+test('P1: two outstanding calls on one id BOTH stay accountable', async () => {
+  // `#pending.set(idKey(id), …)` overwrote, so the first invocation was erased:
+  // forwarded, very likely executed, and gone from the record with no timeout
+  // behind it — while the response that arrived was attributed to whichever
+  // call happened to be in the map. A transfer observed crossing this boundary
+  // left no trace at all.
+  let n = 0;
+  const p = new Pairing({ newCorrelation: () => `cor-${++n}` });
+  const call = (/** @type {number} */ amount) => Buffer.from(JSON.stringify({
+    jsonrpc: '2.0', id: 7, method: 'tools/call',
+    params: { name: 'transfer_funds', arguments: { amount } },
+  }));
+
+  assert.equal(p.request(call(1_000_000)), null);
+  const clash = p.request(call(2));
+  assert.equal(clash?.what, 'ambiguous');
+  assert.match(String(clash?.detail), /reused the outstanding JSON-RPC id 7/);
+  assert.match(String(clash?.detail), /Neither invocation is discarded/);
+  assert.equal(p.outstanding, 2, 'an observed invocation was discarded');
+
+  // A response for that id answers one of them and nothing can say which.
+  const answered = p.response(Buffer.from(JSON.stringify({ jsonrpc: '2.0', id: 7, result: { ok: true } })));
+  assert.equal(answered?.what, 'unattributable');
+  assert.match(String(answered?.detail), /attributing it would record a result against an/);
+  assert.equal(p.outstanding, 2, 'a response consumed a call it could not be attributed to');
+
+  // Both settle, each keeping ITS OWN arguments and correlation — the
+  // unmatched-response diagnostic preserved neither.
+  const settled = p.closeAll();
+  assert.equal(settled.length, 2);
+  assert.deepEqual(settled.map(o => Buffer.from(/** @type {any} */ (o).args).toString('utf8')),
+    ['{"amount":1000000}', '{"amount":2}']);
+  assert.deepEqual(settled.map(o => o.correlation), ['cor-1', 'cor-2']);
+  for (const s of settled) assert.equal(s.outcome, 'timeout');
+});
+
+test('P1: a third call on the same id is still accountable', async () => {
+  // The id is already marked ambiguous by then, so the branch that handles it
+  // is a different one from the first collision — and a call arriving there
+  // must not be dropped either.
+  let n = 0;
+  const p = new Pairing({ newCorrelation: () => `cor-${++n}` });
+  for (const amount of [1, 2, 3]) {
+    p.request(Buffer.from(JSON.stringify({
+      jsonrpc: '2.0', id: 'x', method: 'tools/call',
+      params: { name: 't', arguments: { amount } },
+    })));
+  }
+  assert.equal(p.outstanding, 3);
+  assert.deepEqual(p.closeAll().map(o => Buffer.from(/** @type {any} */ (o).args).toString('utf8')),
+    ['{"amount":1}', '{"amount":2}', '{"amount":3}']);
+});
+
+test('P1: an unanswered call becomes a record while the proxy is still running', async () => {
+  // `expire()` existed and NOTHING called it except `closeAll()` at shutdown,
+  // so a long-running proxy held every unanswered invocation in memory
+  // indefinitely — observed, forwarded, executed, and with no durable record
+  // until the process chose to exit. Killed instead, the record never existed.
+  const { collector, store } = await rig();
+  const agentIn = new PassThrough();
+  const agentOut = new PassThrough();
+  const upIn = new PassThrough();
+  const upOut = new PassThrough();
+  let clock = 0;
+  const p = stdioProxy({
+    agentIn, agentOut, upstreamIn: upIn, upstreamOut: upOut,
+    collector, newCorrelation: () => 'cor-1', onUnrecordable: () => {},
+    now: () => clock, call_timeout_ms: 1_000, settle_interval_ms: 20,
+  });
+
+  agentIn.write(`${JSON.stringify({
+    jsonrpc: '2.0', id: 1, method: 'tools/call',
+    params: { name: 'transfer_funds', arguments: { amount: 2_000_000 } },
+  })}\n`);
+  await new Promise((r) => { setTimeout(r, 40); });
+  assert.equal(p.pairing.outstanding, 1);
+  assert.equal(store.readChain().length, 0, 'nothing is recorded before the timeout elapses');
+
+  // Time passes. NOTHING is closed — the proxy is still serving.
+  clock = 5_000;
+  await new Promise((r) => { setTimeout(r, 120); });
+
+  assert.equal(p.pairing.outstanding, 0, 'the sweep never ran');
+  const recs = store.readChain().map(e => /** @type {any} */ (e).record);
+  assert.equal(recs.length, 1, 'the observed invocation has no durable record');
+  assert.equal(recs[0].outcome, 'timeout');
+  assert.equal(recs[0].tool, 'transfer_funds');
+  p.close();
+  store.close();
+});
+
+test('the settle timer never keeps the process alive', async () => {
+  // A proxy whose agent and upstream have both finished should exit. A timer
+  // that held the loop open would hang every run that used this.
+  const { settler } = await import('../src/settle.mjs');
+  const p = new Pairing({ newCorrelation: () => 'cor' });
+  const s = settler({ pairing: p, rec: { emit: () => true }, interval_ms: 10 });
+  assert.equal(s.running, true);
+  // `unref` is what makes it safe; asserted through the handle's own state
+  // rather than by hoping the test process exits.
+  const handles = /** @type {any} */ (process)._getActiveHandles?.() ?? [];
+  assert.ok(!handles.some((/** @type {any} */ h) => h?.hasRef?.() && h === s),
+    'the settle timer is holding a reference on the event loop');
+  s.stop();
+  assert.equal(s.running, false);
+});
+
+test('a recording failure during settlement does not throw into the timer', async () => {
+  // NFR-12. A throw from a timer callback rejects into the event loop and
+  // terminates the process by default — the collector stopping the run it is
+  // supposed to be recording.
+  const { settler } = await import('../src/settle.mjs');
+  const p = new Pairing({ newCorrelation: () => 'cor' });
+  p.request(Buffer.from(JSON.stringify({
+    jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 't', arguments: { a: 1 } },
+  })));
+  /** @type {string[]} */
+  const oob = [];
+  const s = settler({
+    pairing: p,
+    rec: { emit: () => { throw new Error('disk full'); } },
+    timeout_ms: -1, interval_ms: 10_000, autostart: false,
+    onUnrecordable: (e) => oob.push(e.detail),
+  });
+  assert.doesNotThrow(() => s.settle());
+  assert.equal(oob.length, 1);
+  assert.match(String(oob[0]), /the traffic is unaffected/);
+});
