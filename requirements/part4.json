@@ -126,7 +126,8 @@
     "title": "Bounty: cash deferred until funded",
     "statement": "State publicly that a cash award opens only if the project is funded, rather than promising money that is not held.",
     "source": "Resourcing",
-    "verify": "Terms published with the condition stated; no figure advertised as available"
+    "verify": "Terms published with the condition stated; no figure advertised as available",
+    "status": "done"
   },
   {
     "id": "GOV-18",
@@ -135,7 +136,8 @@
     "title": "Accept third-party attack classes",
     "statement": "Accept contributed attack classes by pull request, with attribution. A goal, explicitly not a launch gate.",
     "source": "Attack class section \u2014 the suite is open, contributions are invited",
-    "verify": "Contribution path documented; not referenced in any release gate"
+    "verify": "Contribution path documented; not referenced in any release gate",
+    "status": "done"
   },
   {
     "id": "SCOPE-16",
@@ -144,7 +146,8 @@
     "title": "No fail-closed option",
     "statement": "MUST NOT provide any configuration, flag or build that makes the collector block an agent run. Fail-open is a design constraint, not a setting.",
     "source": "Operations \u2014 a design constraint, not a setting",
-    "verify": "Config schema review; no enforcement path exists; rejected as a feature request by policy"
+    "verify": "Config schema review; no enforcement path exists; rejected as a feature request by policy",
+    "status": "done"
   },
   {
     "id": "GOV-19",
@@ -384,7 +387,8 @@
     "title": "Every assurance claim names its evidence",
     "statement": "Each assurance claim in the specifications and the release notes names the evidence that supports it, classified as independent, operator-declared, or none. A claim resting only on the operator-controlled collector is worded as an assertion, never as a verified guarantee. This rule exists because the design repeatedly acquired guarantees its own threat model excludes.",
     "source": "Threat model \u2014 detection, not prevention",
-    "verify": "Claims audit per release checks each assurance claim against the register; npm run review flags a curated set of overclaim phrasings"
+    "verify": "Claims audit per release checks each assurance claim against the register; npm run review flags a curated set of overclaim phrasings",
+    "status": "done"
   },
   {
     "id": "FR-70",

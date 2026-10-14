@@ -119,6 +119,14 @@
       "class": "operator-declared",
       "why": "the drill is in this repository and anybody can run it, but what it establishes is that the SOFTWARE recovers. Whether a particular operator's witness store is replicated, and whether they ever ran the drill, is their assertion and nothing in a pack can confirm it",
       "evidence": "packages/witness-self/drill/restore.mjs, run by `npm run drill:restore`; docs/witness-restore-drill.md"
+    },
+    {
+      "id": "A-15",
+      "claim": "**The HSM half has not been tested against hardware.**",
+      "surface": "docs/splitstick-1.0-release-notes.md",
+      "class": "none",
+      "why": "NFR-09's carry allowed two outcomes and forbade a third: a real HSM attestation through FR-70's five checks, or the published claim narrowed to what the KMS half supports. No hardware was available, so the text is narrowed. FR-70's checks are implemented and unit tested; whether a given HSM emits a conformant attestation document is unconfirmed and not claimed",
+      "evidence": "packages/signer-aws-kms/test/integration.test.mjs for the KMS half, which skips and reports NOT VERIFIED without a key; docs/kms-capability-matrix.md"
     }
   ]
 }

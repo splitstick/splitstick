@@ -63,3 +63,10 @@ quarter contradicts a record truncated below it today.
 `complete: false` is the honest flag on a selective disclosure: this proves the included actions
 happened, and says nothing about the ones it omits. A full-range pack sets it `true`, and only
 then does coverage attestation (DES-10) mean anything about the whole window.
+
+---
+
+**Not legal advice.** Statutes are cited here for orientation — to say which engineering
+property is relevant to which regime, and where it stops. Nothing in this document is legal
+advice, no conclusion about your obligations is offered, and nothing here certifies your
+compliance with anything (LEG-15, LEG-16, SCOPE-03).

@@ -410,6 +410,16 @@ npx @splitstick/disclose ./splitstick --event 8f2c91 --out invoice-4471.pack
 Requires Node.js 20+ and a KMS or HSM offering non-exportable keys for the forward-secure ratchet.
 Tested against `@open-multi-agent/core` 1.21.x and MCP servers over stdio and HTTP.
 
+**What has actually been tested, narrowed at the launch gate (NFR-09).** The KMS half is
+delivered and exercised against a real AWS KMS `ECC_NIST_EDWARDS25519` key, with the
+signature checked under an independent Ed25519 implementation rather than only our own —
+`npm run test:kms`, which reports NOT VERIFIED and skips when no key is configured, so a
+green suite never reads as having verified it. **The HSM half has not been tested against
+hardware.** The signer seam and FR-70's five attestation checks are implemented and unit
+tested, so an HSM that produces a conformant attestation document will work; whether any
+particular HSM produces one is unconfirmed, and we are not claiming it. Until that run
+exists, read the sentence above as *KMS, tested; HSM, implemented and untested*.
+
 Note that `witnesses` decides who is *asked* to countersign, while the verifier's `--policy` decides
 whose signature is *accepted*. They are separate files on purpose: if only the first were
 configurable, the openness would be decorative, because every verification would still terminate at

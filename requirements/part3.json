@@ -142,7 +142,8 @@
     "title": "No conformity claims",
     "statement": "No product surface or marketing claims EU AI Act conformity.",
     "source": "Legal posture \u2014 nothing claims conformity",
-    "verify": "Claims audit across docs, site and UI"
+    "verify": "Claims audit across docs, site and UI",
+    "status": "done"
   },
   {
     "id": "LEG-15",
@@ -151,7 +152,8 @@
     "title": "No certification of the customer",
     "statement": "Never certify the customer's compliance.",
     "source": "Legal posture \u2014 Splitstick does not certify you",
-    "verify": "Claims audit"
+    "verify": "Claims audit",
+    "status": "done"
   },
   {
     "id": "LEG-16",
@@ -160,7 +162,8 @@
     "title": "Not-legal-advice disclaimer",
     "statement": "Carry a not-legal-advice disclaimer wherever statutes are cited.",
     "source": "Legal posture; footer",
-    "verify": "Documentation review"
+    "verify": "Documentation review",
+    "status": "done"
   },
   {
     "id": "LEG-17",
@@ -286,7 +289,8 @@
     "title": "Bounty: one class, one payout",
     "statement": "Pay once per tamper class, not per instance.",
     "source": "Bounty terms",
-    "verify": "Terms published; applied in triage"
+    "verify": "Terms published; applied in triage",
+    "status": "done"
   },
   {
     "id": "GOV-11",
@@ -295,7 +299,8 @@
     "title": "Bounty: default configuration only",
     "statement": "Findings must survive the shipped default configuration.",
     "source": "Bounty terms",
-    "verify": "Terms published; default config documented and pinned"
+    "verify": "Terms published; default config documented and pinned",
+    "status": "done"
   },
   {
     "id": "GOV-12",
@@ -304,7 +309,8 @@
     "title": "Bounty: scope binding both ways",
     "statement": "The published threat model binds the programme; exclusions cannot be added after a report.",
     "source": "Bounty terms",
-    "verify": "Terms published; change log on the threat model"
+    "verify": "Terms published; change log on the threat model",
+    "status": "done"
   },
   {
     "id": "GOV-13",
@@ -313,7 +319,8 @@
     "title": "Bounty: recognition, not cash",
     "statement": "Recognise a novel tamper class with attribution, credit in the suite and a named finding. The project is unfunded; no cash is promised.",
     "source": "Bounty terms; Resourcing",
-    "verify": "Terms published stating plainly that recognition is non-cash while unfunded"
+    "verify": "Terms published stating plainly that recognition is non-cash while unfunded",
+    "status": "done"
   },
   {
     "id": "GOV-14",
@@ -322,7 +329,8 @@
     "title": "Bounty: first reporter wins",
     "statement": "Award the first complete report.",
     "source": "Bounty terms",
-    "verify": "Terms published; timestamps retained"
+    "verify": "Terms published; timestamps retained",
+    "status": "done"
   },
   {
     "id": "GOV-15",
@@ -470,7 +478,8 @@
     "title": "No blocking or gating",
     "statement": "MUST NOT block, gate or filter agent actions.",
     "source": "Scope \u2014 not a policy engine",
-    "verify": "Code review; no enforcement path exists"
+    "verify": "Code review; no enforcement path exists",
+    "status": "done"
   },
   {
     "id": "SCOPE-02",
@@ -479,7 +488,8 @@
     "title": "No tamper-proof claim",
     "statement": "MUST NOT describe the product as tamper-proof.",
     "source": "Scope \u2014 not tamper-proof",
-    "verify": "Claims audit across all surfaces"
+    "verify": "Claims audit across all surfaces",
+    "status": "done"
   },
   {
     "id": "SCOPE-03",
@@ -488,7 +498,8 @@
     "title": "No compliance certification",
     "statement": "MUST NOT issue or imply a compliance certificate.",
     "source": "Scope \u2014 not a compliance certificate",
-    "verify": "Claims audit"
+    "verify": "Claims audit",
+    "status": "done"
   },
   {
     "id": "SCOPE-04",
@@ -497,7 +508,8 @@
     "title": "Not an observability platform",
     "statement": "MUST NOT position as a replacement for traces, SIEM or dashboards.",
     "source": "Scope \u2014 not an observability platform",
-    "verify": "Positioning review"
+    "verify": "Positioning review",
+    "status": "done"
   },
   {
     "id": "SCOPE-05",
@@ -506,7 +518,8 @@
     "title": "No reviewer UI in OSS",
     "statement": "MUST NOT include a reviewer surface in the open-source release.",
     "source": "Scope \u2014 belongs to the operated control plane",
-    "verify": "Release inventory"
+    "verify": "Release inventory",
+    "status": "done"
   },
   {
     "id": "SCOPE-06",
@@ -515,7 +528,8 @@
     "title": "No SSO in OSS",
     "statement": "MUST NOT include SSO in the open-source release.",
     "source": "Scope",
-    "verify": "Release inventory"
+    "verify": "Release inventory",
+    "status": "done"
   },
   {
     "id": "SCOPE-07",
@@ -524,7 +538,8 @@
     "title": "No RBAC in OSS",
     "statement": "MUST NOT include RBAC in the open-source release.",
     "source": "Scope",
-    "verify": "Release inventory"
+    "verify": "Release inventory",
+    "status": "done"
   },
   {
     "id": "SCOPE-08",
@@ -533,7 +548,8 @@
     "title": "No multi-tenancy in OSS",
     "statement": "MUST NOT include multi-tenancy in the open-source release.",
     "source": "Scope",
-    "verify": "Release inventory"
+    "verify": "Release inventory",
+    "status": "done"
   },
   {
     "id": "SCOPE-09",
@@ -542,7 +558,8 @@
     "title": "No retention tiers in OSS",
     "statement": "MUST NOT include retention tiers in the open-source release.",
     "source": "Scope",
-    "verify": "Release inventory"
+    "verify": "Release inventory",
+    "status": "done"
   },
   {
     "id": "SCOPE-10",
@@ -551,7 +568,8 @@
     "title": "No verifiable delay function",
     "statement": "MUST NOT ship a VDF.",
     "source": "Considered and rejected",
-    "verify": "Dependency and code review"
+    "verify": "Dependency and code review",
+    "status": "done"
   },
   {
     "id": "SCOPE-11",
@@ -560,7 +578,8 @@
     "title": "No ZK compliance proofs",
     "statement": "MUST NOT ship zero-knowledge compliance proofs, and MUST NOT place them on the roadmap.",
     "source": "Considered and rejected",
-    "verify": "Roadmap and code review"
+    "verify": "Roadmap and code review",
+    "status": "done"
   },
   {
     "id": "SCOPE-12",
@@ -569,7 +588,8 @@
     "title": "No TEE suppression claim",
     "statement": "MUST NOT claim a TEE makes event suppression impossible.",
     "source": "Considered and rejected",
-    "verify": "Claims audit"
+    "verify": "Claims audit",
+    "status": "done"
   },
   {
     "id": "SCOPE-13",
@@ -578,7 +598,8 @@
     "title": "No blockchain as ledger",
     "statement": "MUST NOT use a blockchain as the primary ledger; a public chain may serve only as the optional hard anchor.",
     "source": "Considered and rejected",
-    "verify": "Architecture review"
+    "verify": "Architecture review",
+    "status": "done"
   },
   {
     "id": "SCOPE-14",
@@ -587,7 +608,8 @@
     "title": "No self-scored defeat metric",
     "statement": "MUST NOT publish an N-of-N attacks-defeated score.",
     "source": "Attack class section \u2014 we deliberately publish no score",
-    "verify": "Marketing and documentation audit"
+    "verify": "Marketing and documentation audit",
+    "status": "done"
   },
   {
     "id": "SCOPE-15",
@@ -629,7 +651,8 @@
     "title": "Considered-and-rejected rationale",
     "statement": "Publish rejected designs with reasons.",
     "source": "Considered and rejected",
-    "verify": "Section present; updated as decisions are made"
+    "verify": "Section present; updated as decisions are made",
+    "status": "done"
   },
   {
     "id": "DOC-04",
@@ -638,7 +661,8 @@
     "title": "Label targets as targets",
     "statement": "Any unverified figure is labelled a target, not a measurement, until benchmarked.",
     "source": "Draft banner; footer",
-    "verify": "Documentation review before each release"
+    "verify": "Documentation review before each release",
+    "status": "done"
   },
   {
     "id": "DOC-05",
@@ -658,7 +682,8 @@
     "title": "Upstream attribution",
     "statement": "Credit OMA, Sigstore, Rekor, Trillian, C2SP and Schneier\u2013Kelsey.",
     "source": "Credit",
-    "verify": "Attribution present in README and NOTICE"
+    "verify": "Attribution present in README and NOTICE",
+    "status": "done"
   },
   {
     "id": "DOC-07",
@@ -667,7 +692,8 @@
     "title": "Document the two-policy split",
     "statement": "Document that the witness list governs who is asked and the acceptance policy governs who is accepted.",
     "source": "Getting started \u2014 separate files on purpose",
-    "verify": "Documentation review; worked example for both"
+    "verify": "Documentation review; worked example for both",
+    "status": "done"
   },
   {
     "id": "DOC-08",
@@ -676,7 +702,8 @@
     "title": "Publish bounty terms",
     "statement": "Publish the full bounty terms alongside the offer.",
     "source": "Bounty terms",
-    "verify": "Terms published before the offer goes live"
+    "verify": "Terms published before the offer goes live",
+    "status": "done"
   },
   {
     "id": "RM-01",
@@ -808,7 +835,8 @@
     "title": "Benchmark before claiming",
     "statement": "No performance figure is published as fact until its benchmark exists and passes.",
     "source": "Numbers we are signing up to; footer",
-    "verify": "Release gate blocks on missing benchmark"
+    "verify": "Release gate blocks on missing benchmark",
+    "status": "done"
   },
   {
     "id": "TRC-05",
@@ -817,6 +845,7 @@
     "title": "Claims audit per release",
     "statement": "Run a claims audit against the scope guards before each release.",
     "source": "Scope; Considered and rejected",
-    "verify": "Checklist completed and signed off per release"
+    "verify": "Checklist completed and signed off per release",
+    "status": "done"
   }
 ]

@@ -226,6 +226,31 @@ mark, and recognition rather than cash for findings — all stated in the
 The software is unaffected. Everything in 1.0 is buildable at zero cost and anchors by default
 to a public transparency log this project does not operate.
 
+## Credit — DOC-06
+
+Splitstick did not invent a protocol. The full attribution, with what each piece of upstream
+work actually contributes, is in [NOTICE](NOTICE); the short version:
+
+- **[open-multi-agent](https://github.com/open-multi-agent/open-multi-agent)** built the run-journal
+  primitive and then documented exactly where it stopped, in a section titled "What it does not
+  prove." Projects that oversell do not write that section.
+- **[C2SP](https://c2sp.org)** designed the signed-note, `tlog-checkpoint` and `tlog-witness`
+  formats this project adopts rather than reinvents — which is what lets somebody else implement
+  a witness without asking us anything.
+- **[Sigstore](https://www.sigstore.dev)** and **[Rekor](https://github.com/sigstore/rekor)**
+  demonstrated that public, independently-witnessed append-only logs are operable at scale, and
+  run the infrastructure the opt-in Rekor adapter submits to.
+- **[Trillian](https://github.com/google/trillian)** and
+  **[transparency-dev/witness](https://github.com/transparency-dev/witness)** are the log
+  implementation the ecosystem was built on and the stateful witness whose refusal to cosign a
+  shortened history is the only mechanism that closes the attack this project exists for.
+- **Schneier and Kelsey**, *Secure Audit Logs to Support Computer Forensics* (1999) — the
+  forward-secure hash-chained log, and the discipline of naming the custody assumption instead
+  of hiding it.
+- **RFC 8785**, **RFC 6962**, **RFC 3161** and
+  **[OpenTimestamps](https://opentimestamps.org)** for the canonical encoding, the tree and its
+  proofs, the timestamp token, and the free public anchor no company can withdraw.
+
 ## Licence
 
 Apache-2.0, including the patent grant. See [LICENSE](LICENSE) and [NOTICE](NOTICE).

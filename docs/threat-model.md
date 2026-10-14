@@ -162,3 +162,10 @@ implied.
 | Rev | Change |
 |---|---|
 | 1 | Extracted from the release notes into a standalone document, expanded with the residual-risk section and the attack-class-to-milestone mapping. |
+
+---
+
+**Not legal advice.** Statutes are cited here for orientation — to say which engineering
+property is relevant to which regime, and where it stops. Nothing in this document is legal
+advice, no conclusion about your obligations is offered, and nothing here certifies your
+compliance with anything (LEG-15, LEG-16, SCOPE-03).

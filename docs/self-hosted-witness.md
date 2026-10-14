@@ -155,3 +155,10 @@ And the reader's side, which is the only check that matters to somebody who does
 you: give them the store and your acceptance policy, and let them run
 `splitstick-verify` themselves. If audit's countersignature does not verify against the
 public key audit publishes, nothing in this guide was true.
+
+---
+
+**Not legal advice.** Statutes are cited here for orientation — to say which engineering
+property is relevant to which regime, and where it stops. Nothing in this document is legal
+advice, no conclusion about your obligations is offered, and nothing here certifies your
+compliance with anything (LEG-15, LEG-16, SCOPE-03).
