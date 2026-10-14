@@ -29,6 +29,10 @@
  * never wrong.
  */
 
+import { NEGATION, sentences, paragraphs } from './claim-text.mjs';
+
+export { NEGATION };
+
 /** Art. 41 itself, however it is spelled. Not every mention of eIDAS: the
  *  requirement is about the PRESUMPTION, and a page may reference the
  *  regulation for other reasons. */
@@ -42,32 +46,6 @@ export const QUALIFIED = /\bqualified\b/i;
 export const OURS =
   /splitstick'?s own witness|splitstick'?s witness|our own witness|our witness|the hosted witness|self-hosted witness|witness (?:this project|we) operates?|\bsplitstick\b|\bwe\b|\bus\b|\bour\b/i;
 
-/** Anything that turns the sentence into a denial. */
-export const NEGATION =
-  /\bnot\b|\bn't\b|\bnever\b|\bno\b|\bnone\b|\bnothing\b|\bnobody\b|\bneither\b|\bnor\b|\bcannot\b|\bcan't\b|\bwithout\b|\bunless\b|\bonly (?:when|if|via|through|by)\b|\bexcept\b|\brather than\b|\bfails? to\b/i;
-
-/**
- * Sentences, roughly, plus the separators this repository's prose uses to join
- * clauses a negation does NOT carry across — semicolons and bullet boundaries.
- *
- * The lookahead for a capital is load-bearing, and its absence was a real bug:
- * splitting on any `.` plus space cut `Art. 41` in half, so neither fragment
- * matched the presumption pattern and R2 could NEVER fire on the one sentence
- * it exists to catch — `Splitstick's witness gives you the eIDAS Art. 41
- * presumption.` A check that cannot fire is worse than no check, because the
- * build goes green and somebody stops looking.
- *
- * Where it is wrong it is wrong towards splitting MORE (an abbreviation
- * followed by a capitalised word), and a shorter fragment is less likely to
- * contain a negation, so the error lands on the side of asking rather than of
- * passing a claim.
- * @param {string} para
- */
-const sentences = (para) => para
-  .split(/(?<=[.!?])\s+(?=["'(\[]?[A-Z])|\n\s*[-*|]\s*|;\s+/)
-  .map(s => s.trim())
-  .filter(s => s !== undefined && s !== '');
-
 /**
  * @param {string} text
  * @returns {{ rule: 'R1'|'R2', para: number, text: string }[]}
@@ -75,7 +53,7 @@ const sentences = (para) => para
 export function presumptionFindings(text) {
   /** @type {{ rule: 'R1'|'R2', para: number, text: string }[]} */
   const out = [];
-  const paras = text.split(/\n\s*\n/);
+  const paras = paragraphs(text);
   for (let i = 0; i < paras.length; i += 1) {
     const para = paras[i] ?? '';
     if (!PRESUMPTION.test(para)) continue;
