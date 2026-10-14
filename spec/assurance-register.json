@@ -1,0 +1,124 @@
+{
+  "version": 1,
+  "requirement": "DOC-11",
+  "note": "Every assurance claim in the specifications and the release notes, with the evidence that supports it. The classes are the only three there are. `independent` means a reader can establish it themselves, from the bytes and from a second party's signature, without taking our word or the operator's. `operator-declared` means the operator asserts it and nothing in the evidence can confirm it \u2014 those claims are worded as assertions, never as verified guarantees. `none` means nothing establishes it and the text says so. DOC-11 exists because the design repeatedly acquired guarantees its own threat model excludes; the point of the register is that the class is written down next to the claim rather than inferred by a reader who is hoping.",
+  "classes": {
+    "independent": "a reader establishes it from the bytes, or from a signature made by a party who is not the operator",
+    "operator-declared": "the operator asserts it; the evidence cannot confirm it",
+    "none": "nothing here establishes it, and the surface says so"
+  },
+  "claims": [
+    {
+      "id": "A-01",
+      "claim": "Every event carries a digest of its predecessor",
+      "surface": "docs/splitstick-1.0-release-notes.md",
+      "class": "independent",
+      "why": "the chain is arithmetic over bytes the reader holds; recomputing it needs nobody's cooperation",
+      "evidence": "packages/verify/src/verify.mjs CHAIN check; redteam gate AC-1"
+    },
+    {
+      "id": "A-02",
+      "claim": "salted with a per-leaf random nonce",
+      "surface": "docs/splitstick-1.0-release-notes.md",
+      "class": "independent",
+      "why": "the salt is in the pack and the leaf digest is recomputable from it",
+      "evidence": "packages/core/src/leaf.mjs; packages/core/test/leaf.test.mjs"
+    },
+    {
+      "id": "A-03",
+      "claim": "Forward-secure epoch ratchet",
+      "surface": "docs/splitstick-1.0-release-notes.md",
+      "class": "operator-declared",
+      "why": "it holds only under non-exportable key custody, and key destruction is not externally verifiable. The surface states the precondition rather than the stronger claim, which is what DOC-11 requires of this class",
+      "evidence": "SEC-17's lint requires the precondition in the same paragraph; packages/verify/src/verify.mjs reports custody as operator-declared"
+    },
+    {
+      "id": "A-04",
+      "claim": "Batches are signed with **your** key. Splitstick never holds it, sees it, or asks for it.",
+      "surface": "docs/splitstick-1.0-release-notes.md",
+      "class": "independent",
+      "why": "a reader pins the operator identity themselves and the signature either verifies against it or does not",
+      "evidence": "packages/verify/src/verify.mjs OP-SIG check"
+    },
+    {
+      "id": "A-05",
+      "claim": "Witnesses receive **salted roots only**",
+      "surface": "docs/splitstick-1.0-release-notes.md",
+      "class": "independent",
+      "why": "what crosses the wire is a checkpoint note, and the submission path is readable in the adapters",
+      "evidence": "test/zero-egress.test.mjs; packages/witness-tlog/src/index.mjs PRIV-01 comment"
+    },
+    {
+      "id": "A-06",
+      "claim": "a window without one is as loud as a broken hash",
+      "surface": "docs/splitstick-1.0-release-notes.md",
+      "class": "operator-declared",
+      "why": "heartbeats establish that the collector was running and reporting. They cannot establish that it reported everything it saw: a collector that stops is detectable, and one that is patched to report selectively is not",
+      "evidence": "packages/verify/src/coverage.mjs COVERAGE_UNKNOWN findings; DOC-10's lint requires the patch limit on all three coverage surfaces"
+    },
+    {
+      "id": "A-07",
+      "claim": "stopping is detectable and patching is not",
+      "surface": "docs/splitstick-1.0-release-notes.md",
+      "class": "none",
+      "why": "this is the limit itself, stated. A patched collector controls what it reports and can emit the original build digest; closing it needs remote attestation, which this release does not provide and SCOPE-12 rejects as a claim",
+      "evidence": "docs/threat-model.md; redteam gate AC-6 records G2 as NOT CLOSED"
+    },
+    {
+      "id": "A-08",
+      "claim": "100% of tool calls **the collector reported** were captured",
+      "surface": "docs/splitstick-1.0-release-notes.md",
+      "class": "operator-declared",
+      "why": "the qualifier is the claim. Every count is of what the collector reported, and an action it never observed leaves no trace in the evidence and is not missing from the numbers \u2014 it was never in them",
+      "evidence": "packages/verify/src/coverage-report.mjs prints that sentence in the report itself"
+    },
+    {
+      "id": "A-09",
+      "claim": "needs **no network, no credentials, no account**",
+      "surface": "docs/splitstick-1.0-release-notes.md",
+      "class": "independent",
+      "why": "verification opens files and does arithmetic, and the offline property is checked rather than asserted",
+      "evidence": "test/zero-egress.test.mjs static and dynamic halves, plus the control proving the capture works"
+    },
+    {
+      "id": "A-10",
+      "claim": "The acceptance policy is an **input, not a hardcoded trust store**",
+      "surface": "docs/splitstick-1.0-release-notes.md",
+      "class": "independent",
+      "why": "two readers with different policies reach different, internally consistent verdicts from one pack, which a reader can demonstrate to themselves",
+      "evidence": "packages/verify/test/presumption.test.mjs; FR-30"
+    },
+    {
+      "id": "A-11",
+      "claim": "the agent does not stop",
+      "surface": "docs/splitstick-1.0-release-notes.md",
+      "class": "independent",
+      "why": "fail-open is checked in the structure and the behaviour, not promised",
+      "evidence": "tools/lint-enforcement.mjs; test/enforcement.test.mjs"
+    },
+    {
+      "id": "A-12",
+      "claim": "A late countersignature records the witness's *real* time",
+      "surface": "docs/splitstick-1.0-release-notes.md",
+      "class": "operator-declared",
+      "why": "a C2SP note has nowhere inside it to carry a time, so a receipt time sits beside the proof rather than under it. The verifier says which basis a time rests on and never assumes the batch's own timestamp",
+      "evidence": "packages/verify/src/verify.mjs received_at_basis, reported as 'witness-asserted, unsigned'"
+    },
+    {
+      "id": "A-13",
+      "claim": "the **eIDAS Art. 41 presumption**",
+      "surface": "docs/splitstick-1.0-release-notes.md",
+      "class": "none",
+      "why": "qualified status lives in the EU trusted list, which verification does not consult and by NFR-05 never will. The presumption is a conclusion the reader draws from their own declaration, and the report says so in the sentence that mentions it",
+      "evidence": "tools/leg12.mjs; packages/verify/test/presumption.test.mjs"
+    },
+    {
+      "id": "A-14",
+      "claim": "The witness store is **replicated and recoverable**",
+      "surface": "docs/splitstick-1.0-release-notes.md",
+      "class": "operator-declared",
+      "why": "the drill is in this repository and anybody can run it, but what it establishes is that the SOFTWARE recovers. Whether a particular operator's witness store is replicated, and whether they ever ran the drill, is their assertion and nothing in a pack can confirm it",
+      "evidence": "packages/witness-self/drill/restore.mjs, run by `npm run drill:restore`; docs/witness-restore-drill.md"
+    }
+  ]
+}

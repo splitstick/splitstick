@@ -217,7 +217,9 @@ consequential failure mode in the design, and it is addressed rather than assume
 - The witness **publishes its own signed tree head**, so a rolled-back or equivocating witness is
   detectable by the operator or any third party, not just suspected.
 - The witness store is **replicated and recoverable**, with a documented recovery point objective
-  and a restore drill that proves it.
+  and a restore drill — `npm run drill:restore` — that establishes the software recovers. Whether
+  your store is actually replicated, and whether you have run the drill, is yours to assert: no
+  pack can show it, so it is operator-declared (DOC-11, A-14).
 - **Witness keys rotate** while historical countersignatures stay verifiable, through a signed key
   history. A rotation is not an amnesty for everything signed before it.
 - **Operator key compromise** is recoverable as a *declared, countersigned discontinuity* — never a
