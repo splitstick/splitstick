@@ -55,6 +55,25 @@ jobs:
         run: npm run backlog
       - name: Specification review gate
         run: npm run review
+      # These three were missing, under a comment saying nothing is published
+      # that has not passed the gates. The claims audit ran on every push and
+      # pull request and not on the tag that actually publishes — so TRC-04's
+      # "release gate blocks on missing benchmark" and TRC-05's "run a claims
+      # audit before each release" were both enforced everywhere except at a
+      # release.
+      - name: Verifier vocabulary, packaging, claims and scope guards
+        run: npm run lint
+      - name: Claims audit against the scope guards
+        # TRC-05 as a step of its own. Also inside `npm run lint`; duplicated
+        # deliberately, because a requirement discharged only as a side effect
+        # of another step is one somebody removes while tidying.
+        run: npm run claims
+      - name: The tag may not claim an unfinished release
+        # TRC-04, TRC-05. Every individual surface can be honest about an open
+        # requirement and a `1.0.0` on npm still says "this is 1.0" more loudly
+        # than any README can qualify. A pre-1.0 version claims nothing and
+        # passes.
+        run: node tools/lint-release.mjs "${{ github.ref_name }}"
 
       # SEC-23 — an SBOM with pinned dependencies. npm produces CycloneDX
       # itself, so this adds no dependency to produce the document that lists
