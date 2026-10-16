@@ -75,6 +75,26 @@ function race(dir, seedFile) {
   })));
 }
 
+/**
+ * One submission, alone, with no handshake.
+ *
+ * `race` passes a peer label and the child waits for it; omitting the peer
+ * makes the child submit immediately. Used to ask whether the witness is
+ * USABLE, which is a different question from who won a race.
+ * @param {string} dir @param {string} seedFile @param {string} label
+ */
+function submitAlone(dir, seedFile, label) {
+  return new Promise((resolve) => {
+    execFile(process.execPath, [SUBMIT, dir, seedFile, label], { timeout: 40_000 },
+      (err, stdout, stderr) => {
+        const line = String(stdout).trim().split('\n').filter(Boolean).at(-1);
+        resolve(line ? JSON.parse(line) : {
+          label, accepted: false, crashed: String(stderr).slice(0, 300),
+        });
+      });
+  });
+}
+
 /** @param {string} dir */
 function rootsAt(dir, size) {
   const p = join(dir, 'roots.jsonl');
@@ -164,9 +184,68 @@ test('the loser is told it lost, in protocol terms', async () => {
 test('a lock left by a dead process does not wedge the witness', async () => {
   // A witness that needs manual recovery after a crash is a witness an
   // operator will stop running, and then there is no second party at all.
+  //
+  // THE PROPERTY IS LIVENESS, and this used to assert a proxy for it that is
+  // timing-dependent: that exactly one of two racing processes is accepted.
+  // Both processes have to notice the dead lock and break it, and two that
+  // break it at the same instant can each then see the OTHER's fresh lock and
+  // back off — so `accepted` is legitimately 0, a real client would retry, and
+  // the witness is not wedged at all. It failed about once in twenty runs on
+  // Node 20, which is often enough to redden an unrelated pull request and
+  // rare enough that the evidence was gone before anybody looked.
+  //
+  // So safety and liveness are asserted separately, on their own terms.
   const { dir, seedFile } = await seeded();
   const lockPath = join(dir, '.lock');
   writeFileSync(lockPath, JSON.stringify({ pid: 999_999, at: new Date().toISOString() }));
+
   const results = await race(dir, seedFile);
-  assert.equal(results.filter(r => r.accepted).length, 1, JSON.stringify(results));
+  const accepted = results.filter(r => r.accepted);
+
+  // SAFETY, which is not timing-dependent and must never bend: a stale lock
+  // must not let both conflicting successors through. This is the assertion
+  // that would catch a lock-breaking bug, and it is strictly stronger than
+  // what the old `=== 1` checked.
+  assert.ok(accepted.length <= 1,
+    `both conflicting successors were accepted after breaking a stale lock: ${JSON.stringify(results)}`);
+  const roots = rootsAt(dir, 20);
+  assert.equal(new Set(roots).size, Math.min(roots.length, 1),
+    `the witness retained two roots at height 20: ${JSON.stringify(roots)}`);
+
+  // Neither process may fail for a reason other than losing the race — a
+  // crash, or a handshake that never completed, would make the liveness check
+  // below meaningless.
+  for (const r of results) {
+    assert.equal(r.crashed, undefined, `a submitter crashed: ${JSON.stringify(r)}`);
+    assert.ok(r.accepted || r.status === 409 || r.status === 400 || r.message !== undefined,
+      `a submitter failed without saying why: ${JSON.stringify(r)}`);
+  }
+
+  // LIVENESS, asked directly instead of inferred. If the race left nobody
+  // accepted, the question is not who won but whether the witness still
+  // works: a stale lock that wedges it would refuse this too, forever.
+  if (accepted.length === 0) {
+    const retry = await submitAlone(dir, seedFile, 'C');
+    assert.equal(retry.accepted, true,
+      `the stale lock wedged the witness: a lone submission after the race was also refused — `
+      + `${JSON.stringify(retry)}`);
+  }
+});
+
+test('a stale lock is BROKEN, not merely survived', async () => {
+  // The other half of the same requirement, and the one a proxy assertion can
+  // hide: the dead process's lock file must not still be sitting there holding
+  // the witness shut. A single submission against a stale lock has no race in
+  // it at all, so this is deterministic.
+  const { dir, seedFile } = await seeded();
+  writeFileSync(join(dir, '.lock'),
+    JSON.stringify({ pid: 999_999, at: new Date().toISOString() }));
+
+  const r = await submitAlone(dir, seedFile, 'A');
+  assert.equal(r.accepted, true, `a stale lock refused a lone submission: ${JSON.stringify(r)}`);
+  // And the witness is usable again afterwards, which is what an operator
+  // actually needs: the recovery is not single-use.
+  const again = await submitAlone(dir, seedFile, 'A');
+  assert.ok(again.accepted || again.status === 409,
+    `the witness became unusable after recovering from a stale lock: ${JSON.stringify(again)}`);
 });

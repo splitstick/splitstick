@@ -241,6 +241,45 @@ A small thing worth recording: the first draft of the fix's own comment stated t
 as fact and **the claims audit refused it**, because they come from a machine the harness
 reports as a regression metric. M7's guard caught M7's author on new content, which is the
 first evidence it works on something it was not fitted to.
+## A flake that cost a pull request, and the evidence that was lost
+
+`a lock left by a dead process does not wedge the witness` failed once on Node 20 in a run of
+an unrelated pull request, and passed on re-run with no change — which is what a flake is, by
+definition. The evidence was gone by then: the obvious next move is to press re-run, and a
+green re-run leaves nothing to read.
+
+Measured rate before the fix: one failure in five isolated runs on Node 20, then none in
+twelve, then none in ten at load average 107. Rare, and not load-sensitive in the way M6's
+write-lock flake was — so a reproduction could not be relied on to confirm the diagnosis.
+It was read out of the code instead.
+
+**The assertion was a timing-dependent proxy for liveness.** The requirement is that a lock
+left by a dead process must not wedge the witness. The test asserted that exactly one of two
+racing processes is accepted — and both processes have to notice the dead lock and break it,
+so two that break it at the same instant can each then see the *other's* fresh lock and back
+off. `accepted` is legitimately 0 there, a real client would retry, and the witness is not
+wedged at all.
+
+Safety and liveness are now asserted separately, on their own terms:
+
+- **Safety**, which never bends: at most one of two conflicting successors is accepted, and
+  the witness retains one root at that height. This is *stronger* than the old `=== 1` — and
+  it still catches a real lock-breaking bug, verified by disabling exclusion entirely, where
+  four of the file's five tests fail.
+- **Liveness**, asked directly rather than inferred: if the race left nobody accepted, a lone
+  submission afterwards must succeed. A stale lock that wedged the witness would refuse that
+  too, forever.
+- And a new deterministic case — a stale lock is **broken**, not merely survived — because a
+  single submission against a stale lock has no race in it, and the recovery must not be
+  single-use.
+
+37 runs after the fix (25 isolated, 12 at load average 135): zero failures.
+
+**The second half of the problem was that the evidence vanished.** `ci.yml` now tees each
+unit run to a file, prints the failing assertions in a collapsed group in the step that
+failed, and uploads the log as an artifact kept for thirty days. The summary comes before the
+artifact deliberately: what was actually needed was something a reader could see without
+downloading anything.
 
 ## Carried, still not accepted
 
