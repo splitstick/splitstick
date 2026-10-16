@@ -73,7 +73,18 @@ jobs:
         # requirement and a `1.0.0` on npm still says "this is 1.0" more loudly
         # than any README can qualify. A pre-1.0 version claims nothing and
         # passes.
-        run: node tools/lint-release.mjs "${{ github.ref_name }}"
+        #
+        # EVERY INPUT IS PASSED EXPLICITLY, because the first version took only
+        # the ref name and treated anything unparseable as "claims nothing" —
+        # so a manual run on `main` with `dry_run: false`, which reaches the
+        # publish step below, sailed through it. The gate now refuses a branch,
+        # refuses a ref that is not a strict version tag, and refuses a tag the
+        # package manifests do not carry. A dry run publishes nothing and is
+        # always allowed.
+        run: |
+          node tools/lint-release.mjs --gate "${{ github.ref_name }}" \
+            --ref-type "${{ github.ref_type }}" \
+            --dry-run "${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}"
 
       # SEC-23 — an SBOM with pinned dependencies. npm produces CycloneDX
       # itself, so this adds no dependency to produce the document that lists

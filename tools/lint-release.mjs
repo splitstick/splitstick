@@ -2,93 +2,246 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * A tag may not claim a release whose requirements are still open —
+ * A publish may not claim a release whose requirements are still open —
  * TRC-04, TRC-05.
  *
- * The release workflow ran the tests, the tamper suites, the traceability
+ * The release workflow ran the tests, both tamper suites, the traceability
  * check and the specification review, under a comment saying "nothing is
  * published that has not passed the gates. A release is the one moment where
  * skipping them is most tempting and least defensible." It did not run the
- * claims audit, and it had no opinion at all about whether the version being
- * tagged was a version the project had actually finished.
+ * claims audit, and it had no opinion about whether the version being tagged
+ * was a version the project had actually finished.
  *
- * So `v1.0.0` could have been published with five 1.0 requirements open —
- * including the two M7's own exit criteria name, and three published
- * performance figures that the documentation correctly labels TARGET. Every
- * individual surface was honest. The TAG would not have been: a 1.0.0 on npm
- * says "this is 1.0" more loudly than any README can qualify.
+ * ── THE FIRST VERSION OF THIS GATE FAILED OPEN ───────────────────────────
  *
- * Usage: node tools/lint-release.mjs <version>
+ * It took a single argument and treated anything it could not parse as "this
+ * version claims no release", which exited 0. The workflow also publishes on a
+ * manual `workflow_dispatch` with `dry_run: false`, where `github.ref_name` is
+ * whatever ref was selected — `main`, typically. So the gate passed `main`,
+ * passed an empty string, passed `release-1.0`, and the publish step ran.
  *
- * In the workflow the version comes from the tag. Run with no argument it
- * reports the state and exits 0, which is what makes it useful to a human
- * deciding whether to cut one.
+ * A gate that treats an unrecognised input as permission is the fail-open
+ * shape this project refuses everywhere else, and it was built into the one
+ * tool whose entire job is to refuse. Found by review, reproduced in one
+ * command.
+ *
+ * So there are now two modes and they are not the same code path:
+ *
+ *   --report                 what a human runs before deciding. Prints the
+ *                            state of every release and exits 0. Claims
+ *                            nothing about eligibility.
+ *   --gate <ref> …           what the workflow runs. Every input must be
+ *                            recognised, and ANYTHING UNRECOGNISED IS A
+ *                            REFUSAL.
+ *
+ * In gate mode, publishing requires all of:
+ *
+ *   - a dry run, which publishes nothing and is always allowed; or
+ *   - a ref that is a TAG, because a branch is not a release; and
+ *   - a strict, fully anchored version tag — `v1.2.3` or `v1.2.3-rc.1`, not
+ *     `v1.2.3garbage`, which the first version accepted by matching a prefix;
+ *     and
+ *   - a version that every publishable workspace package already carries,
+ *     because a tag that disagrees with the manifests publishes something
+ *     other than what it names; and
+ *   - no open requirement in the release that version claims.
+ *
+ * A PRERELEASE OF A 1.x STILL CLAIMS 1.0. `1.0.0-rc.1` on a registry reads as
+ * 1.0 to anyone scanning, and the honest way to publish while requirements are
+ * open already exists: a 0.x version, which claims nothing and passes.
+ *
+ * Usage:
+ *   node tools/lint-release.mjs --report
+ *   node tools/lint-release.mjs --gate <ref> --ref-type <tag|branch> --dry-run <true|false>
+ *   node tools/lint-release.mjs --requirements <dir>   (fixtures, for tests)
  */
 
-import { readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 const ROOT = new URL('..', import.meta.url).pathname;
 
-/** @type {{ id: string, title: string, release: string, status?: string, verify?: string }[]} */
-const all = [];
-for (const f of readdirSync(join(ROOT, 'requirements'))) {
-  if (!/^part\d+\.json$/.test(f)) continue;
-  const parsed = JSON.parse(readFileSync(join(ROOT, 'requirements', f), 'utf8'));
-  const items = Array.isArray(parsed) ? parsed
-    : (parsed.requirements ?? parsed.items
-      ?? Object.values(parsed).flat().filter(x => x && typeof x === 'object'));
-  for (const r of /** @type {any[]} */ (items)) if (r?.id) all.push(r);
+// ── arguments, read strictly ─────────────────────────────────────────────
+const argv = process.argv.slice(2);
+/** @param {string} name */
+const flag = (name) => {
+  const i = argv.indexOf(`--${name}`);
+  return i === -1 ? undefined : argv[i + 1];
+};
+const wants = (/** @type {string} */ name) => argv.includes(`--${name}`);
+
+const KNOWN = new Set(['report', 'gate', 'ref-type', 'dry-run', 'requirements', 'packages']);
+for (const a of argv.filter(x => x.startsWith('--'))) {
+  if (!KNOWN.has(a.slice(2))) {
+    console.error(`\n  ${a} is not a flag this reads. Refused rather than ignored: a misspelled `
+      + 'flag on a release gate would be a release gate that did not run.\n');
+    process.exit(2);
+  }
 }
 
-/** The requirement release a package version is claiming. `1.x` claims 1.0. */
-const claimedBy = (/** @type {string} */ version) => {
-  const m = /^v?(\d+)\.(\d+)\.(\d+)/.exec(version);
-  if (m === null) return null;
-  const major = Number(m[1]);
-  // 0.x claims nothing: a pre-1.0 version is the honest way to publish while
-  // requirements are open, and this guard must not stand in the way of that.
-  if (major === 0) return null;
-  return `${major}.0`;
+/** Requirements, from the repository or from a fixture directory. */
+function requirements(dir = join(ROOT, 'requirements')) {
+  if (!existsSync(dir) || !statSync(dir).isDirectory()) {
+    console.error(`\n  ${dir} is not a directory of requirement files.\n`);
+    process.exit(2);
+  }
+  /** @type {{ id: string, title: string, release: string, status?: string, verify?: string }[]} */
+  const all = [];
+  let files = 0;
+  for (const f of readdirSync(dir)) {
+    if (!/^part\d+\.json$/.test(f)) continue;
+    files += 1;
+    const parsed = JSON.parse(readFileSync(join(dir, f), 'utf8'));
+    const items = Array.isArray(parsed) ? parsed
+      : (parsed.requirements ?? parsed.items
+        ?? Object.values(parsed).flat().filter(x => x && typeof x === 'object'));
+    for (const r of /** @type {any[]} */ (items)) if (r?.id) all.push(r);
+  }
+  if (files === 0) {
+    // A gate that found no requirements must not conclude that none are open.
+    console.error(`\n  ${dir} holds no partN.json requirement files, so this gate read nothing. `
+      + 'That is refused rather than reported as clean: an empty read is not an empty backlog.\n');
+    process.exit(2);
+  }
+  return all;
+}
+
+const reqDir = flag('requirements');
+const all = requirements(reqDir === undefined ? undefined : reqDir);
+const releases = [...new Set(all.map(r => String(r.release)))].sort();
+/** @param {string} rel */
+const openIn = (rel) => all.filter(r => String(r.release) === rel && r.status !== 'done');
+
+/**
+ * Publishable workspace package versions, by name.
+ *
+ * The directory is injectable for the same reason the requirements are: the
+ * companion tests have to exercise the state where 1.0 IS complete, and they
+ * cannot do that against a repository whose packages all say 0.1.0 and whose
+ * requirements are open. Testing a gate only against today's state is how the
+ * first version of these tests came to fail on the first legitimately
+ * releasable build.
+ * @param {string} [dir]
+ */
+function packageVersions(dir = join(ROOT, 'packages')) {
+  /** @type {Map<string, string>} */
+  const out = new Map();
+  if (!existsSync(dir)) return out;
+  for (const d of readdirSync(dir)) {
+    const man = join(dir, d, 'package.json');
+    if (!existsSync(man)) continue;
+    const m = JSON.parse(readFileSync(man, 'utf8'));
+    if (m.private === true) continue;
+    out.set(String(m.name), String(m.version));
+  }
+  return out;
+}
+
+/** A strict, fully anchored release tag. */
+const TAG = /^v(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?$/;
+
+/** @param {string[]} lines */
+const refuse = (lines) => {
+  console.error('\nRELEASE GATE FAILED\n');
+  for (const l of lines) console.error(`  ${l}`);
+  console.error('');
+  process.exit(1);
 };
 
-const version = process.argv[2];
-const release = version === undefined ? null : claimedBy(version);
-
-/** @param {string} rel */
-const openIn = (rel) => all.filter(r => r.release === rel && r.status !== 'done');
-
-if (release === null) {
-  // Reporting mode. No argument, or a 0.x version: say where things stand.
-  for (const rel of ['1.0', '2.0']) {
-    const group = all.filter(r => r.release === rel);
-    if (group.length === 0) continue;
+function report() {
+  for (const rel of releases) {
+    const group = all.filter(r => String(r.release) === rel);
     const out = openIn(rel);
     console.log(`\n  ${rel}: ${group.length - out.length}/${group.length} done`);
-    for (const r of out) console.log(`       OPEN  ${r.id.padEnd(8)} ${r.title.trim()}`);
+    for (const r of out) console.log(`       OPEN  ${r.id.padEnd(8)} ${String(r.title).trim()}`);
   }
-  if (version !== undefined) {
-    console.log(`\n  ${version} is a pre-1.0 version and claims no requirement release, which is`);
-    console.log('  the honest way to publish while anything is open.\n');
-  } else {
-    console.log('\n  Pass a version to check whether a tag may claim it.\n');
-  }
+  const versions = [...new Set(packageVersions(flag('packages')).values())];
+  console.log(`\n  package version(s): ${versions.join(', ') || '(none)'}`);
+  console.log('\n  This is a report, not an eligibility decision. The gate the workflow runs is');
+  console.log('  `--gate <tag> --ref-type tag --dry-run false`.\n');
+}
+
+// ── report mode ──────────────────────────────────────────────────────────
+if (wants('report') || argv.length === 0 || (reqDir !== undefined && !wants('gate'))) {
+  report();
   process.exit(0);
 }
 
-const outstanding = openIn(release);
-if (outstanding.length > 0) {
-  console.error(`\nRELEASE GATE FAILED — ${version} claims release ${release}\n`);
-  console.error(`  ${outstanding.length} requirement(s) in ${release} are not done:\n`);
-  for (const r of outstanding) {
-    console.error(`  ${r.id}  ${r.title.trim()}`);
-    console.error(`      verify: ${(r.verify ?? '').trim().slice(0, 150)}\n`);
-  }
-  console.error(`  A ${release} tag says "this is ${release}" more loudly than any README can`);
-  console.error('  qualify. Close them, narrow the requirements deliberately, or publish a');
-  console.error('  pre-1.0 version — which claims nothing and is the honest option while');
-  console.error('  anything is open.\n');
-  process.exit(1);
+// ── gate mode ────────────────────────────────────────────────────────────
+const ref = flag('gate');
+const refType = flag('ref-type');
+const dryRun = flag('dry-run');
+
+if (dryRun !== 'true' && dryRun !== 'false') {
+  refuse([`--dry-run must be exactly true or false; got ${JSON.stringify(dryRun ?? null)}.`,
+    'A gate cannot guess whether a run publishes.']);
+}
+if (dryRun === 'true') {
+  console.log('\n  release: dry run — nothing is published, so eligibility is not gated.');
+  console.log('           The state of every release, for the record:');
+  report();
+  process.exit(0);
 }
 
-console.log(`\n  release: ${version} claims ${release}, and every ${release} requirement is done\n`);
+// From here on, this run publishes.
+if (refType !== 'tag') {
+  refuse([`publishing requires a tag; --ref-type is ${JSON.stringify(refType ?? null)}.`,
+    'A manual run on a branch reaches the publish step through `dry_run: false`, and a branch',
+    'is not a release. Tag the commit and run the workflow on the tag.']);
+}
+
+const m = ref === undefined ? null : TAG.exec(ref);
+if (m === null) {
+  refuse([`${JSON.stringify(ref ?? null)} is not a release tag.`,
+    'Publishing requires a strict `vMAJOR.MINOR.PATCH` with an optional prerelease suffix —',
+    '`v1.2.3` or `v1.2.3-rc.1`. An unrecognised ref is REFUSED and never treated as a version',
+    'that claims nothing: that is how the first version of this gate let `main` through.']);
+}
+
+const version = `${m[1]}.${m[2]}.${m[3]}${m[4] === undefined ? '' : `-${m[4]}`}`;
+const major = Number(m[1]);
+
+// The tag must agree with what is actually being published.
+const versions = packageVersions(flag('packages'));
+const disagree = [...versions].filter(([, v]) => v !== version);
+if (versions.size === 0) {
+  refuse(['no publishable workspace package was found, so the tag could not be checked against',
+    'anything. Refused rather than passed: a gate that reads nothing must not report clean.']);
+}
+if (disagree.length > 0) {
+  refuse([`tag ${ref} names version ${version} and these packages do not carry it:`,
+    ...disagree.map(([n, v]) => `  ${n} is ${v}`),
+    'A tag that disagrees with the manifests publishes something other than what it names.']);
+}
+
+// 0.x claims no requirement release. That is the honest way to publish while
+// anything is open, and the gate must not stand in its way.
+if (major === 0) {
+  console.log(`\n  release: ${ref} publishes ${version}, a pre-1.0 version that claims no`);
+  console.log('           requirement release — the honest option while anything is open.\n');
+  process.exit(0);
+}
+
+const claimed = `${major}.0`;
+if (!releases.includes(claimed)) {
+  refuse([`${ref} claims release ${claimed}, and no requirement declares that release.`,
+    'Refused rather than passed: a version claiming a release nobody has specified is a',
+    'claim with no backlog behind it.']);
+}
+
+const outstanding = openIn(claimed);
+if (outstanding.length > 0) {
+  refuse([`${ref} claims release ${claimed}, and ${outstanding.length} requirement(s) are open:`,
+    '',
+    ...outstanding.flatMap(r => [
+      `  ${r.id}  ${String(r.title).trim()}`,
+      `      verify: ${String(r.verify ?? '').trim().slice(0, 150)}`,
+      '',
+    ]),
+    `A ${claimed} tag says "this is ${claimed}" more loudly than any README can qualify, and a`,
+    'prerelease of it says the same thing. Close them, narrow the requirements deliberately, or',
+    'publish a 0.x version — which claims nothing and passes.']);
+}
+
+console.log(`\n  release: ${ref} publishes ${version}, claims ${claimed}, and every ${claimed}`);
+console.log('           requirement is done.\n');
