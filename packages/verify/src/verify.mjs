@@ -254,6 +254,13 @@ export async function verifyStore(root, opts = {}) {
 
   // 5 TREE, 6 OP-SIG — over the checkpoints on disk.
   const notes = store.readCheckpoints();
+  /**
+   * Checkpoints whose signed root equals the root of the LOCAL leaves at that
+   * size, as `${tree_size}:${root}`. Used to skip a consistency proof that
+   * cannot tell anybody anything — see the loop below.
+   * @type {Set<string>}
+   */
+  const confirmedLocally = new Set();
   /** @type {Verdict[]} */
   const treeVs = [];
   /** @type {Verdict[]} */
@@ -400,6 +407,11 @@ export async function verifyStore(root, opts = {}) {
       });
     } else {
       treeVs.push('ok');
+      // This checkpoint's signed root IS the root of the local leaves at that
+      // size. Recorded by size AND root, never by size alone: two checkpoints
+      // can share a tree_size with different roots, which is a fork, and a
+      // set keyed by size would credit the bad one with the good one's match.
+      confirmedLocally.add(`${cp.tree_size}:${cp.root.toString('base64')}`);
       if (cp.tree_size > anchored) anchored = cp.tree_size;
     }
 
@@ -498,6 +510,39 @@ export async function verifyStore(root, opts = {}) {
       continue;
     }
     if (cur.cp.tree_size > leaves.length) continue;   // already reported as SIZE_REGRESSED
+
+    // THE PROOF IS SKIPPED WHEN IT CANNOT FAIL, and that is an identity rather
+    // than an optimism.
+    //
+    // `consistencyProof` here is generated from the LOCAL leaves. If the check
+    // above has already established that both signed roots equal the local
+    // prefix roots at their sizes, then both checkpoints are prefixes of one
+    // leaf array — and a shorter prefix of an array is a prefix of a longer
+    // prefix of the same array, for every pair, always. Generating a proof
+    // about that and verifying it establishes nothing the equality did not.
+    //
+    // Where it DOES tell you something is when a root does not match locally,
+    // and that case still computes the proof and can still report
+    // CONSISTENCY_BROKEN. So no finding is lost: the skip applies exactly to
+    // the pairs where the proof's answer is already determined.
+    //
+    // This mattered because the proof is O(n) per pair over a fresh
+    // `leaves.slice`, so the loop was O(checkpoints · n) — quadratic in the
+    // length of the log. On a development host the loop's cost quadrupled with
+    // each doubling of the records and accounted for most of a 100,000-record
+    // run; those are regression metrics from a machine that does not qualify
+    // under bench/reference-env.json, not acceptance measurements, and the
+    // claims audit will not let them be written as though they were.
+    //
+    // `prefixRoots` above was added in M5 to kill exactly this shape for ROOTS
+    // and the same file kept doing it for proofs one loop further down. A
+    // healthy log now computes none of them.
+    const prevConfirmed = confirmedLocally.has(
+      `${prev.cp.tree_size}:${prev.cp.root.toString('base64')}`);
+    const curConfirmed = confirmedLocally.has(
+      `${cur.cp.tree_size}:${cur.cp.root.toString('base64')}`);
+    if (prevConfirmed && curConfirmed) continue;
+
     const proof = consistencyProof(leaves.slice(0, cur.cp.tree_size), prev.cp.tree_size);
     if (!verifyConsistency(prev.cp.tree_size, prev.cp.root, cur.cp.tree_size, cur.cp.root, proof)) {
       treeVs.push('fail');
