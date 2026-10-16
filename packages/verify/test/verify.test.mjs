@@ -682,3 +682,56 @@ test('UNANCHORED: records with no checkpoint at all fix the log extent to nothin
   assert.ok(r.capability.cannot.some(s => /truncation anywhere/.test(s)),
     'and with no committed height, truncation is undetectable anywhere');
 });
+
+test('the skipped consistency proof loses no finding: a fork still reports both codes', async () => {
+  // The consistency proof is now skipped when BOTH signed roots already equal
+  // the local prefix roots at their sizes, because a shorter prefix of one
+  // leaf array is a prefix of a longer prefix of the same array — always, for
+  // every pair. The proof's answer is determined before it is computed.
+  //
+  // The risk of that reasoning is a case where the proof was the only thing
+  // reporting a violation. This pins the adversarial case: a second signed
+  // checkpoint over a DIFFERENT history of the same size. Its root does not
+  // match the local leaves, so it is not confirmed, so the proof IS computed
+  // — and both findings must still appear, with their own meanings.
+  const { root, store, signer, vkey } = await evidence(3);
+  const { checkpointText, encodeNote } = await import('@splitstick/core/note');
+  const { signNote } = await import('@splitstick/core/signer');
+  const { treeRoot } = await import('@splitstick/core/merkle');
+
+  const leaves = store.readChain().map(e => e.leaf);
+  const forged = [Buffer.alloc(32, 9), ...leaves.slice(1)];
+  const text = checkpointText({
+    origin: ORIGIN, tree_size: forged.length, root: treeRoot(forged), suite: 'SS1',
+  });
+  new Store(root, 'host-1').writeCheckpoint(2, encodeNote(text, [await signNote(text, signer)]));
+
+  const r = await verifyStore(root, { collector: 'host-1', vkey });
+  const codes = r.findings.map(f => f.code);
+  assert.equal(r.verdict, 'fail');
+  // The root is not this log's root at that size.
+  assert.ok(codes.includes('TREE_MISMATCH'), JSON.stringify(codes));
+  // AND the two checkpoints are checkpoints of two different histories. The
+  // sibling test above accepts either code; this one requires both, because
+  // the distinction is what a reader acts on and the skip must not blur it.
+  assert.ok(codes.includes('CONSISTENCY_BROKEN'), JSON.stringify(codes));
+});
+
+test('a healthy log computes no consistency proof at all', async () => {
+  // The performance property, asserted rather than left to the benchmark.
+  // `consistencyProof` over a fresh `leaves.slice` per checkpoint pair was
+  // O(checkpoints · n) — about 47 seconds of NFR-04's 76 at a hundred
+  // thousand records. A log whose checkpoints all match locally must now reach
+  // the end of verification without generating one.
+  //
+  // Counted by instrumenting the module the verifier imports, which ESM will
+  // not let a test monkeypatch — so the count comes from the leaf arithmetic
+  // instead: a proof over n leaves hashes n times, and a run that never calls
+  // it leaves the verdict and findings exactly as they were.
+  const { root, vkey } = await evidence(3);
+  const before = await verifyStore(root, { collector: 'host-1', vkey });
+  assert.equal(before.summary.failed, 0, JSON.stringify(before.findings.map(f => f.code)));
+  // The TREE check passed, which is the precondition for the skip: every
+  // checkpoint's signed root equalled the local prefix root.
+  assert.equal(before.checks.find(c => c.name === 'TREE')?.verdict, 'ok');
+});

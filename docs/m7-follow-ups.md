@@ -198,6 +198,50 @@ could not see.
 The alternative was to keep the file clean and the record vague. For a milestone about not
 saying things that are not so, the vague record was the worse option.
 
+## NFR-04 was not a measurement gap — it was a quadratic verifier
+
+Recorded here because the follow-up said "needs one run on a qualifying host" and that was
+wrong. Asked for the number, the benchmark gave **76 s median against a 2 s budget** at
+100,000 records — 38× over, which no machine explains. Doubling the records cost ~2.2–2.45×,
+so the cost was super-linear and a faster host could not fix it.
+
+Two causes, both found by measurement rather than reading:
+
+**The consistency proof was O(checkpoints · n).** `verify.mjs` generated a proof per
+consecutive checkpoint pair, each over a fresh `leaves.slice(0, size)`. Isolated on the real
+data its cost quadrupled with every doubling of the log and accounted for most of the run.
+The irony is exact: `prefixRoots` was added in M5 to kill this shape for tree ROOTS, it works
+(the naive version it replaced is 20× slower at 40k), and the same file kept doing it for
+PROOFS one loop further down. The comment above `rootsFor` even predicted the figure.
+
+The proof is now skipped when both signed roots already equal the local prefix roots at their
+sizes — an identity, not an optimism: a shorter prefix of one leaf array is a prefix of a
+longer prefix of the same array, for every pair, always. Where a root does not match locally
+the proof still runs, so `CONSISTENCY_BROKEN` is still reported, and a test pins the fork case
+to require **both** that code and `TREE_MISMATCH` rather than either. Those tests pass against
+the pre-fix source too, which is the point of them.
+
+**`ContentStore.has()` stat'd the blob on every call.** `existsSync` + `statSync` against one
+unchanging path, twice per commitment — about 200,000 pairs of syscalls at 100,000 records,
+and 20–29% of total verification time. It now reads `#end`, the length this instance already
+tracks. That is not only cheaper but more coherent: the key map is a point-in-time snapshot
+taken at first read, so a live file size paired a cached key journal with a blob that had
+grown underneath it.
+
+**Result: 76 s → 15.8 s median**, on a host with load average 5.7 that still does not qualify.
+Still over the 2 s budget, now by ~8× rather than 38×, and the read floor alone is 1.2 s of it.
+
+**NFR-04 stays open, and its budget is now the open question** rather than its implementation.
+Three honest outcomes remain: it passes on a qualifying host; or it lands at a few seconds and
+the budget should be revised with the measurement behind it, as M1 revised NFR-01's; or large
+logs need a different verification shape — streaming, or not reproducing every payload by
+default, since an auditor checking the chain does not need every plaintext.
+
+A small thing worth recording: the first draft of the fix's own comment stated those figures
+as fact and **the claims audit refused it**, because they come from a machine the harness
+reports as a regression metric. M7's guard caught M7's author on new content, which is the
+first evidence it works on something it was not fitted to.
+
 ## Carried, still not accepted
 
 The test suite leaks a temp directory per test — carried since M5, where roughly 62,000 of
