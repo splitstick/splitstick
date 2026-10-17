@@ -192,6 +192,7 @@ function across(runs) {
     runs: runs.length,
     p50_ms: mid('p50_ms'), p95_ms: mid('p95_ms'), p99_ms: mid('p99_ms'),
     p999_ms: mid('p999_ms'), max_ms: worst('max_ms'),
+    worst_p95_ms: worst('p95_ms'),
     worst_p99_ms: worst('p99_ms'),
     events_per_second: mid('events_per_second'),
     ...(has('rss_mb') ? {
@@ -299,14 +300,36 @@ const report = {
   clock,
   gc_recorder: recorder.verified ? 'verified' : 'UNVERIFIED',
   kind: qualifies ? 'acceptance measurement' : 'regression metric',
+  // The label above is what lint-figures matches on; this says whether it was
+  // unconditional. A run on a busy host is still an acceptance measurement
+  // under NFR-01's revised standard -- host quality is disclosed, not blocking
+  // -- but "acceptance measurement" on its own reads as unconditional and
+  // would overstate it.
+  unconditional: qualifies && disclosures.length === 0,
   reference_environment_shortfalls: shortfalls,
   // Host-quality conditions this run fell short of. An acceptance measurement
   // may carry these; it may not carry them silently.
   host_disclosures: disclosures,
+  // THE WORST REPEAT, not the median of them.
+  //
+  // This used to read full.p95_ms and full.p99_ms, which across() builds with
+  // mid() -- the median across repeats. A run whose worst repeat missed the
+  // budget could therefore report 'within', and one did: p99 2.8203 ms median
+  // against a worst repeat of 3.1723 ms, over a 3 ms budget, reported as
+  // within.
+  //
+  // NFR-04 settled this question explicitly for the same kind of claim -- an
+  // auditor runs it once, and 'usually within budget' is not what either
+  // requirement says. Reporting the median here while NFR-04 reports the worst
+  // would be two disciplines for one kind of claim, and the weaker one would
+  // always be the one attached to the headline figure. The percentiles above
+  // are still reported as medians across repeats, because that is the stable
+  // description of the distribution; what the VERDICT is taken on is the worst.
   verdict: {
-    p95: full.p95_ms <= BUDGET_P95_MS ? 'within' : 'over',
-    p99: full.p99_ms <= BUDGET_P99_MS ? 'within' : 'over',
-    p99_stretch: full.p99_ms <= STRETCH_P99_MS ? 'met' : 'not met',
+    measured_on: 'the worst repeat, not the median across repeats',
+    p95: full.worst_p95_ms <= BUDGET_P95_MS ? 'within' : 'over',
+    p99: full.worst_p99_ms <= BUDGET_P99_MS ? 'within' : 'over',
+    p99_stretch: full.worst_p99_ms <= STRETCH_P99_MS ? 'met' : 'not met',
   },
   attribution: [
     'Cryptography is not the cost. SHA-256 and AES-GCM over a record are 0.03 ms'
@@ -349,10 +372,13 @@ NFR-01  append overhead · ${EVENTS.toLocaleString('en-US')} events per arm · $
         budget: p95 <= ${BUDGET_P95_MS} ms, p99 <= ${BUDGET_P99_MS} ms (stretch p99 <= ${STRETCH_P99_MS} ms)
         ${env.cpu} · ${env.cpus} cpu · ${env.platform} · node ${env.node} · load ${env.load_average_1m}
         clock tick ${clock.tick_ms.toFixed(6)} ms (${clock.adequate ? 'adequate' : 'TOO COARSE'}) · gc recorder ${recorder.verified ? 'verified' : 'UNVERIFIED'}
-        this run is a ${qualifies ? 'QUALIFYING ACCEPTANCE MEASUREMENT' : 'REGRESSION METRIC'}${qualifies ? '' : ` — ${shortfalls.join('; ')}`}${disclosures.length ? `
+        this run is a ${qualifies ? (disclosures.length
+          ? 'QUALIFYING ACCEPTANCE MEASUREMENT, WITH DISCLOSURES — not an unconditional one'
+          : 'QUALIFYING ACCEPTANCE MEASUREMENT on a host that was short of nothing')
+          : 'REGRESSION METRIC'}${qualifies ? '' : ` — ${shortfalls.join('; ')}`}${disclosures.length ? `
         taken under these conditions, which this figure must be published with:
 ${disclosures.map(x => `          - ${x}`).join('\n')}` : ''}
-        percentiles are the median across repeats; worst p99 and max are the worst seen
+        percentiles are the median across repeats; the VERDICT is taken on the worst repeat
 
                    p50       p95       p99  worst p99       max   rate
 ${row('chain', chain)}
@@ -362,7 +388,8 @@ ${row('full', full)}
 ${row('open fd', baseline.write_to_open_fd)}
 ${row('new file', baseline.create_new_file)}
 
-  p95 ${report.verdict.p95} budget · p99 ${report.verdict.p99} budget · stretch p99 ${report.verdict.p99_stretch}
+  worst repeat: p95 ${full.worst_p95_ms.toFixed(4)} ms, p99 ${full.worst_p99_ms.toFixed(4)} ms
+  p95 ${report.verdict.p95} budget · p99 ${report.verdict.p99} budget · stretch p99 ${report.verdict.p99_stretch}   (on the worst repeat)
   rss ${full.rss_mb ?? '?'} MB · gc ${full.gc_pauses ?? 0} pause(s), ${full.gc_total_ms ?? 0} ms, overlapping ${Math.round((full.gc_share_of_slowest ?? 0) * 100)}% of the slowest 1%
 
 ${report.attribution.map((a) => `  ${a}`).join('\n\n')}

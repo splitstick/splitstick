@@ -424,3 +424,51 @@ test('each shortfall is named, so a near miss is actionable', () => {
     assert.ok(r.disclosures.some(s => s.includes(needle)), `${needle} must be disclosed`);
   }
 });
+
+/**
+ * The verdict is taken on the WORST repeat, not the median across them.
+ *
+ * It read the median until a real run exposed it: the full arm measured p99
+ * 2.8203 ms as the median across three repeats, with a worst repeat of
+ * 3.1723 ms against a 3 ms budget, and reported "p99 within budget". NFR-04
+ * already took its verdict on the worst run for the same kind of claim, so the
+ * median reading here was the weaker of two disciplines applied to one kind of
+ * claim — and it was the one attached to the headline figure.
+ */
+import { execFileSync } from 'node:child_process';
+
+test('NFR-01 takes its verdict on the worst repeat, not the median', () => {
+  const out = execFileSync(process.execPath, [
+    new URL('../append.mjs', import.meta.url).pathname,
+    '--events', '400', '--repeat', '3', '--json',
+    '--machine', 'test', '--storage', 'test',
+  ], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+  const r = JSON.parse(out);
+
+  assert.equal(r.verdict.measured_on, 'the worst repeat, not the median across repeats');
+  assert.ok(typeof r.arms.full.worst_p95_ms === 'number', 'the worst p95 across repeats is reported');
+  assert.ok(typeof r.arms.full.worst_p99_ms === 'number');
+  assert.ok(r.arms.full.worst_p95_ms >= r.arms.full.p95_ms,
+    'the worst repeat cannot be better than the median of repeats');
+  assert.ok(r.arms.full.worst_p99_ms >= r.arms.full.p99_ms);
+
+  // The verdict must follow the worst figure, whichever way it lands on this host.
+  assert.equal(r.verdict.p95, r.arms.full.worst_p95_ms <= r.budget.p95_ms ? 'within' : 'over');
+  assert.equal(r.verdict.p99, r.arms.full.worst_p99_ms <= r.budget.p99_ms ? 'within' : 'over');
+
+  // And the label says whether the acceptance was unconditional.
+  assert.equal(typeof r.unconditional, 'boolean');
+  assert.equal(r.unconditional, r.kind === 'acceptance measurement' && r.host_disclosures.length === 0);
+});
+
+test('the shape that was reported as within budget is now reported as over', () => {
+  // The real figures from the contaminated 1e6 run, as a table rather than a
+  // rerun: median p99 2.8203 under a 3 ms budget, worst repeat 3.1723 over it.
+  const budget = 3;
+  const medianAcrossRepeats = 2.8203;
+  const worstRepeat = 3.1723;
+  assert.equal(medianAcrossRepeats <= budget ? 'within' : 'over', 'within',
+    'the old reading');
+  assert.equal(worstRepeat <= budget ? 'within' : 'over', 'over',
+    'the reading NFR-01 now takes, and the one NFR-04 already took');
+});
