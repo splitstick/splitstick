@@ -346,6 +346,13 @@ const clock = clockResolution(1);
 const env = await environment();
 
 await measureInterleaved(5);                       // warm both arms together
+// The warm-up's direct measurements are discarded. Leaving them in made n
+// larger than --runs, and a sample that is not the thing it says it is cannot
+// back a published figure -- even though cold starts are SLOWER, so including
+// them only ever made the number look worse.
+directAddedMs.length = 0;
+modelCallMs.length = 0;
+callsPerRun.length = 0;
 const { base, instrumented } = await measureInterleaved(RUNS);
 
 const baseMedian = median(base);
@@ -417,6 +424,15 @@ const report = {
   budget_ms: Number(budgetMs.toFixed(3)),
   provider: PROVIDER,
   model_sleep_ms: MODEL_SLEEP_MS,
+  // Attribution, on the same terms NFR-01 and NFR-04 publish on: a figure
+  // names the machine it came from. `kind` is an acceptance measurement only
+  // against a real provider -- a scripted model cannot establish a percentage
+  // whose denominator is a real run.
+  kind: REAL ? 'acceptance' : 'regression metric',
+  machine: str('machine') ?? null,
+  storage: str('storage') ?? null,
+  events: RUNS,
+  repeats: 1,
   model: REAL ? MODEL : 'scripted-1',
   // Assumed OR measured, never both, and the null says which.
   model_latency_assumed_ms: measuredDenominator ? null : MODEL_MS,
@@ -437,6 +453,10 @@ const report = {
   verdict_direct: directVerdict,
   added_direct_percent: direct
     ? Number((100 * direct.mean_ms / denominatorMs).toFixed(4)) : null,
+  // The upper bound of the percentage interval, flat so a claims guard can
+  // address it by name. This is the number the 2% budget is checked against:
+  // the requirement is met only if the WHOLE interval is below it.
+  added_direct_percent_ci_high: null,
   added_direct_ci95_percent: direct ? [
     Number((100 * direct.ci95_ms[0] / denominatorMs).toFixed(4)),
     Number((100 * direct.ci95_ms[1] / denominatorMs).toFixed(4)),
@@ -468,6 +488,8 @@ const report = {
   pairs_needed_for_1pc: pairsNeededFor(stats.sd_diff, 0.01 * (baseMedian + 2 * MODEL_MS)),
   verdict: verdict === 'within' ? 'WITHIN BUDGET' : verdict === 'over' ? 'OVER BUDGET' : 'UNRESOLVED',
 };
+report.added_direct_percent_ci_high = report.added_direct_ci95_percent
+  ? report.added_direct_ci95_percent[1] : null;
 report.note = verdict === 'within'
   ? `The whole 95% interval [${report.ci95_ms[0]}, ${report.ci95_ms[1]}] ms sits below the `
     + `${report.budget_ms} ms the budget allows, so this run establishes the budget is met rather `

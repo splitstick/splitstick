@@ -1,0 +1,78 @@
+{
+  "requirement": "NFR-02",
+  "budget_percent": 2,
+  "budget_ms": 52.16,
+  "provider": "anthropic",
+  "model_sleep_ms": 0,
+  "kind": "acceptance",
+  "machine": "MacBook Air, Intel i5-5350U @ 1.80GHz, 4 logical cpus, 8 GB, macOS 21.6.0",
+  "storage": null,
+  "events": 24,
+  "repeats": 1,
+  "model": "claude-haiku-4-5-20251001",
+  "model_latency_assumed_ms": null,
+  "model_latency_measured_ms": {
+    "calls": 96,
+    "median": 1299.318,
+    "min": 1051.343,
+    "max": 1579.32
+  },
+  "model_calls_per_run": [
+    2
+  ],
+  "denominator_ms": 2608.019,
+  "denominator_is_measured": true,
+  "pairs_needed_for_budget": 40,
+  "added_direct": {
+    "n": 24,
+    "mean_ms": 2.4269,
+    "sd_ms": 1.8881,
+    "ci95_ms": [
+      1.6715,
+      3.1823
+    ],
+    "median_ms": 1.6881,
+    "max_ms": 8.889
+  },
+  "verdict_direct": "WITHIN BUDGET",
+  "added_direct_percent": 0.0931,
+  "added_direct_percent_ci_high": 0.122,
+  "added_direct_ci95_percent": [
+    0.0641,
+    0.122
+  ],
+  "paired_minus_direct_ms": 20.467,
+  "direct_within_paired_interval": true,
+  "runs": 24,
+  "interleaved": true,
+  "environment": {
+    "node": "v22.23.2",
+    "platform": "darwin 21.6.0",
+    "arch": "x64",
+    "cpu": "Intel(R) Core(TM) i5-5350U CPU @ 1.80GHz",
+    "cpus": 4,
+    "total_memory_gb": 8,
+    "load_average_1m": 4.41,
+    "free_disk_gb": 3.03
+  },
+  "clock": {
+    "tick_ms": 0.000183,
+    "adequate": true
+  },
+  "baseline_median_ms": 2608.019,
+  "splitstick_median_ms": 2681.994,
+  "added_ms": 22.894,
+  "ci95_ms": [
+    -44.065,
+    89.852
+  ],
+  "resolution_ms": 66.959,
+  "added_percent_at_model_latency": 0.672,
+  "ci95_percent": [
+    -1.293,
+    2.636
+  ],
+  "pairs_needed_for_1pc": 93,
+  "verdict": "UNRESOLVED",
+  "note": "The budget falls inside the 95% interval [-44.065, 89.852] ms, so this run is consistent with passing AND with failing. It resolves no verdict, and must not be reported as one; about 93 pairs would resolve a 1% effect."
+}

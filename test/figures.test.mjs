@@ -63,6 +63,18 @@ const GOOD_NFR04 = {
   within_budget: true,
 };
 
+/** A good NFR-02 acceptance result, as bench/run-latency.mjs --json emits one. */
+const GOOD_NFR02 = {
+  requirement: 'NFR-02', kind: 'acceptance', events: 24, repeats: 1,
+  machine: 'bench-01, bare metal', storage: null,
+  budget_percent: 2,
+  added_direct_percent_ci_high: 0.122,
+  verdict_direct: 'WITHIN BUDGET',
+};
+
+const NFR02_ROW = '| **0.088%** | added run latency (NFR-02) | **MEASURED** | '
+  + '`bench/run-latency.mjs`, `bench/results/nfr-02.json` |';
+
 const NFR01_ROW = '| **p99 2.61 ms** | append overhead (NFR-01) | **MEASURED** | '
   + '`bench/append.mjs`, `bench/results/nfr-01.json` |';
 const NFR04_ROW = '| **14.2 s** | offline verification (NFR-04) | **MEASURED** | '
@@ -504,4 +516,114 @@ test('the real committed evidence establishes both published figures', async () 
     assert.ok(Array.isArray(d.host_disclosures), `${rel} carries its disclosures`);
     assert.ok(typeof d.machine === 'string' && d.machine.trim() !== '', `${rel} names its machine`);
   }
+});
+
+/**
+ * NFR-02's budget is a PERCENTAGE, so the limit is checked in percent and the
+ * measured figure is the UPPER BOUND of the interval — the requirement is met
+ * only if the whole interval clears 2%, not if the point estimate does.
+ */
+test('NFR-02 is checked on the whole interval, in percent', async () => {
+  const ok = world({
+    rows: [NFR02_ROW], reqs: [req('NFR-02', 'done')],
+    files: ['bench/run-latency.mjs'],
+    results: { 'bench/results/nfr-02.json': GOOD_NFR02 },
+  });
+  try {
+    assert.equal((await run(ok.args)).code, 0, 'a passing interval must pass');
+  } finally { ok.cleanup(); }
+
+  // A point estimate under budget with the interval over it must NOT pass.
+  const over = world({
+    rows: [NFR02_ROW], reqs: [req('NFR-02', 'done')],
+    files: ['bench/run-latency.mjs'],
+    results: { 'bench/results/nfr-02.json': { ...GOOD_NFR02, added_direct_percent_ci_high: 3.4 } },
+  });
+  try {
+    const r = await run(over.args);
+    assert.equal(r.code, 1);
+    assert.match(r.all, /whole interval of 3\.4 % against a budget of 2 %/);
+  } finally { over.cleanup(); }
+});
+
+/**
+ * Its verdict field is the DIRECT one. The paired wall-clock difference on the
+ * same runs reports UNRESOLVED, so checking that field would refuse a
+ * requirement its own evidence establishes.
+ */
+test('NFR-02 is judged on the direct verdict, not the paired one', async () => {
+  const w = world({
+    rows: [NFR02_ROW], reqs: [req('NFR-02', 'done')],
+    files: ['bench/run-latency.mjs'],
+    results: {
+      'bench/results/nfr-02.json': {
+        ...GOOD_NFR02, verdict: 'UNRESOLVED', verdict_direct: 'WITHIN BUDGET',
+      },
+    },
+  });
+  try {
+    assert.equal((await run(w.args)).code, 0,
+      'an unresolved PAIRED verdict must not block a figure the direct measure establishes');
+  } finally { w.cleanup(); }
+
+  const bad = world({
+    rows: [NFR02_ROW], reqs: [req('NFR-02', 'done')],
+    files: ['bench/run-latency.mjs'],
+    results: { 'bench/results/nfr-02.json': { ...GOOD_NFR02, verdict_direct: 'UNRESOLVED' } },
+  });
+  try {
+    const r = await run(bad.args);
+    assert.equal(r.code, 1);
+    assert.match(r.all, /verdict_direct = "UNRESOLVED"/);
+  } finally { bad.cleanup(); }
+});
+
+test('NFR-02 still has to name its machine, and cannot set its own budget', async () => {
+  for (const [patch, re] of [
+    [{ machine: '   ' }, /does not name its machine/],
+    [{ budget_percent: 99 }, /declares budget_percent = 99/],
+  ]) {
+    const w = world({
+      rows: [NFR02_ROW], reqs: [req('NFR-02', 'done')],
+      files: ['bench/run-latency.mjs'],
+      results: { 'bench/results/nfr-02.json': { ...GOOD_NFR02, .../** @type {any} */ (patch) } },
+    });
+    try {
+      const r = await run(w.args);
+      assert.equal(r.code, 1, JSON.stringify(patch));
+      assert.match(r.all, /** @type {RegExp} */ (re));
+    } finally { w.cleanup(); }
+  }
+});
+
+/**
+ * bench/run-latency.mjs has no reference-environment gate, so it has nothing to
+ * disclose. Requiring the array would require it to publish an empty one, and
+ * an empty list claims "nothing was short" about a check never run.
+ */
+test('NFR-02 is exempt from host_disclosures, and the exemption is declared', async () => {
+  const { host_disclosures, ...withoutDisclosures } = { ...GOOD_NFR02, host_disclosures: [] };
+  const w = world({
+    rows: [NFR02_ROW], reqs: [req('NFR-02', 'done')],
+    files: ['bench/run-latency.mjs'],
+    results: { 'bench/results/nfr-02.json': withoutDisclosures },
+  });
+  try {
+    assert.equal((await run(w.args)).code, 0, r => r);
+  } finally { w.cleanup(); }
+
+  // But NFR-01 is NOT exempt, so the exemption is per-requirement and not a
+  // weakening of the check itself.
+  const nfr01 = world({
+    rows: [NFR01_ROW], reqs: [req('NFR-01', 'done')],
+    files: ['bench/append.mjs'],
+    results: { 'bench/results/nfr-01.json': (() => {
+      const { host_disclosures, ...rest } = GOOD_NFR01; return rest;
+    })() },
+  });
+  try {
+    const r = await run(nfr01.args);
+    assert.equal(r.code, 1);
+    assert.match(r.all, /carries no host_disclosures array/);
+  } finally { nfr01.cleanup(); }
 });
