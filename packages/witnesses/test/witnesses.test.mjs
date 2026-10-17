@@ -92,9 +92,16 @@ test('SEC-25: every witness type declares where its time comes from', () => {
       + 'where its authority about time comes from');
   }
   assert.match(d.time_discipline.tsa, /TSA's own clock/);
-  // A tlog cosignature has nowhere to carry a time, and the declaration says
-  // so rather than being quietly absent.
-  assert.match(d.time_discipline.tlg, /^NOTHING\./);
+  // This asserted /^NOTHING\./ on the stated grounds that "a tlog cosignature
+  // has nowhere to carry a time". FR-15 ran the real transparency-dev/witness
+  // and established otherwise: a cosignature/v1 signature covers
+  // `cosignature/v1`, a `time <unix>` line and the note text, so the witness's
+  // observation time is inside the proof. The assertion was holding the prose
+  // to a claim the protocol disproves. What it must carry instead is where the
+  // time comes from and, just as importantly, what it is not.
+  assert.match(d.time_discipline.tlg, /cosignature\/v1/);
+  assert.match(d.time_discipline.tlg, /inside the signed message/);
+  assert.match(d.time_discipline.tlg, /NOT a qualified timestamp/);
 
   // `splitstick` is not buildable from config by design, so its declaration is
   // the one that can only be checked in the table. Named here so the gap is
@@ -179,4 +186,60 @@ test('OPS-05, FR-48: the shipped default discloses its egress, not only its capa
   // The capability gap is still there: the new disclosure must be additive.
   assert.ok(w.some(x => /classes 4 \(truncation\) and 5 \(erasure\) are NOT closed/.test(x)),
     'the capability warning was replaced rather than added to');
+});
+
+// ── PR #17 review, P2: the same witness said two contradictory things ────────
+
+/**
+ * `witnessesFromConfig` gave the tlog adapter `establishes: ['sequence','time']`
+ * while `TIME_DISCIPLINE` told operators the same configured witness had
+ * NOTHING — one adapter, two statements, both reaching consumers, through
+ * `witnessesFromConfig` and `describeWitnessSet` respectively. FR-15 taught the
+ * adapter that a cosignature/v1 signature carries a signed timestamp and did
+ * not teach the prose beside it.
+ *
+ * The declaration is now data, and this is what holds the two to each other.
+ */
+test('every constructible witness type agrees with its declared time capability', async () => {
+  const { witnessesFromConfig, CREDITED_WITH_TIME, TIME_DISCIPLINE, WITNESS_TYPES } =
+    await import('../src/index.mjs');
+
+  for (const [type, declared] of Object.entries(CREDITED_WITH_TIME)) {
+    assert.ok(WITNESS_TYPES.includes(type), `${type} is declared but is not a witness type`);
+    const url = (type === 'rfc3161' || type === 'rekor') ? 'https://w.example/' : 'http://w.example/';
+    const [a] = witnessesFromConfig({ witnesses: [{ id: 'w.example', type, url }] });
+    assert.equal(a?.establishes.includes('time'), declared,
+      `${type}: the adapter and CREDITED_WITH_TIME disagree about time`);
+
+    // And the PROSE a consumer reads has to agree with both.
+    const prose = TIME_DISCIPLINE[type];
+    assert.ok(typeof prose === 'string' && prose.length > 0, `${type} has no time discipline`);
+    if (declared) {
+      assert.ok(!/^NOTHING|carries no time|not a clock at all/i.test(prose),
+        `${type} is credited with time and its discipline denies having one: ${prose.slice(0, 80)}`);
+    } else {
+      assert.ok(/NOT credited as time|not a clock at all|NOTHING/i.test(prose),
+        `${type} is not credited with time and its discipline does not say so: ${prose.slice(0, 80)}`);
+    }
+  }
+});
+
+test('a type with no adapter to check against is left out rather than asserted', async () => {
+  const { CREDITED_WITH_TIME, TIME_DISCIPLINE } = await import('../src/index.mjs');
+  // `splitstick` cannot be built from config (FR-17), so there is nothing here
+  // to verify a capability claim against. Absent, not false.
+  assert.ok(!('splitstick' in CREDITED_WITH_TIME));
+  assert.ok(typeof TIME_DISCIPLINE.splitstick === 'string',
+    'it still owes operators a time-discipline statement');
+});
+
+test("the tlog discipline describes the signed timestamp and refuses the qualified reading", async () => {
+  const { TIME_DISCIPLINE } = await import('../src/index.mjs');
+  const prose = TIME_DISCIPLINE['tlog-witness'];
+  assert.match(prose, /cosignature\/v1/, 'it must name the format that carries the time');
+  assert.match(prose, /inside the signed message/, 'the time is signed, not metadata beside it');
+  assert.match(prose, /NOT a qualified timestamp/, 'a signed time is not a qualified one');
+  assert.match(prose, /no eIDAS presumption attaches/);
+  assert.match(prose, /never written down as the witness/,
+    'our submission clock must never stand in for the witness clock');
 });

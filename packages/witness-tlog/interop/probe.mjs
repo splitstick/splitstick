@@ -144,6 +144,24 @@ for (const e of envs) {
     console.log(JSON.stringify({ issuer: cs.issuer, type: cs.type, covers: cs.covers, received_at: cs.received_at ?? null, line: (cs.line||'').slice(0,28)+'...' }));
   }
 }
+// A fixture from the REAL implementation, so tests that must not depend on a
+// Go toolchain can still be written against bytes a Go witness actually
+// produced. A hand-built blob proves the parser agrees with itself.
+const firstEnv = envs[0];
+const firstCs = (firstEnv?.countersignatures ?? [])[0];
+if (firstCs?.line) {
+  writeFileSync(join(OUT, 'results/cosignature-fixture.json'), JSON.stringify({
+    note: 'Captured from transparency-dev/witness. `note` is the operator-signed '
+      + 'checkpoint as submitted; `cosignature_line` is the witness\'s own reply line, '
+      + 'algorithm 0x04, 76 bytes of keyId+timestamp+signature.',
+    witness_vkey: wVkey,
+    log_vkey: ourVkey,
+    checkpoint_note: firstEnv.note,
+    cosignature_line: firstCs.line,
+    received_at: firstCs.received_at ?? null,
+  }, null, 2) + '\n');
+}
+
 const evidence = {
   requirement: 'FR-15',
   kind: 'interop measurement',

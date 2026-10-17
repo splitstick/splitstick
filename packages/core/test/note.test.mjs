@@ -176,3 +176,77 @@ test('an unknown extension line is preserved, not dropped', () => {
   assert.equal(back.suite, 'SS1');
   assert.deepEqual(back.extra, ['suite SS1', 'something-later yes']);
 });
+
+// ── PR #17 review, P2: encodeNote discarded cosignature/v1 timestamps ───────
+
+/**
+ * parseNote was taught both signature lengths by FR-15 and encodeNote was
+ * taught neither, so a 76-byte cosignature parsed and re-encoded came back as a
+ * 68-byte line: the signature survived and the bytes it covered did not. The
+ * line could never verify again.
+ *
+ * The fixture is a REAL cosignature from transparency-dev/witness, captured by
+ * packages/witness-tlog/interop/probe.mjs. A hand-built blob would only prove
+ * the parser agrees with itself, which is the failure mode FR-15 exists to
+ * catch — and this test has to keep working on a machine with no Go toolchain.
+ */
+test('a real cosignature/v1 line survives parse → encode → parse unchanged', async () => {
+  const { readFileSync } = await import('node:fs');
+  const fixture = JSON.parse(readFileSync(
+    new URL('../../witness-tlog/interop/results/cosignature-fixture.json', import.meta.url), 'utf8'));
+
+  const cosigned = `${fixture.checkpoint_note.trimEnd()}\n${fixture.cosignature_line}\n`;
+  const parsed = parseNote(cosigned);
+
+  const witness = parsed.signatures.find(s => s.name === 'fr15.witness.local');
+  assert.ok(witness, 'the fixture must carry the witness line');
+  assert.equal(typeof witness.timestamp, 'bigint', 'a real cosignature carries a timestamp');
+  assert.equal(witness.signature.length, 64);
+
+  const encoded = encodeNote(parsed.text, parsed.signatures);
+  const again = parseNote(encoded);
+
+  assert.equal(encoded, cosigned, 'the re-encoded note is not byte-identical');
+  assert.equal(again.signatures.length, parsed.signatures.length);
+  for (const [i, s] of again.signatures.entries()) {
+    const was = /** @type {any} */ (parsed.signatures[i]);
+    assert.equal(s.name, was.name);
+    assert.equal(s.timestamp, was.timestamp, `signature ${i} lost its timestamp`);
+    assert.ok(s.keyId.equals(was.keyId));
+    assert.ok(s.signature.equals(was.signature));
+  }
+});
+
+test('a re-encoded cosignature still VERIFIES, which is the point', async () => {
+  const { readFileSync } = await import('node:fs');
+  const { verifyNoteSignature } = await import('../src/signer.mjs');
+  const { parseVkey, ALG_ED25519_COSIG_V1 } = await import('../src/note.mjs');
+  const fixture = JSON.parse(readFileSync(
+    new URL('../../witness-tlog/interop/results/cosignature-fixture.json', import.meta.url), 'utf8'));
+
+  const { name, publicKey, algorithm } = parseVkey(fixture.witness_vkey);
+  assert.equal(algorithm, ALG_ED25519_COSIG_V1, 'the fixture key is a cosignature/v1 key');
+
+  const cosigned = `${fixture.checkpoint_note.trimEnd()}\n${fixture.cosignature_line}\n`;
+  const first = parseNote(cosigned);
+  const roundTripped = parseNote(encodeNote(first.text, first.signatures));
+
+  /** @type {[string, { text: string, signatures: import('../src/note.mjs').NoteSignature[] }][]} */
+  const stages = [['as captured', first], ['after a round trip', roundTripped]];
+  for (const [label, note] of stages) {
+    const sig = note.signatures.find(s => s.name === name);
+    assert.ok(sig, `${label}: the witness line is missing`);
+    const ok = await verifyNoteSignature(note.text, sig, {
+      name, publicKey, algorithm, keyId: sig.keyId,
+    });
+    assert.equal(ok, true, `${label}: a real witness cosignature did not verify`);
+  }
+});
+
+test('an out-of-range cosignature timestamp is refused, not truncated', () => {
+  const sig = {
+    name: 'w', keyId: Buffer.alloc(4), signature: Buffer.alloc(64),
+    timestamp: 2n ** 64n,
+  };
+  assert.throws(() => encodeNote('o\n1\nr\n', [sig]), /must fit in 8 bytes/);
+});

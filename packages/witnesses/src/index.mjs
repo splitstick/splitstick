@@ -57,11 +57,51 @@ export const TIME_DISCIPLINE = Object.freeze({
     + 'timestamp and harder to forge',
   splitstick: 'the witness host\'s clock, recorded as received_at. Trustworthy exactly as far as '
     + 'the party running it, which is the point of it being a different party',
-  rekor: 'the log\'s own signed entry timestamp, disciplined as its operator says',
-  'tlog-witness': 'NOTHING. A tlog cosignature carries no time inside the note, and this '
-    + 'adapter records none beside it rather than writing our own submission clock down as the '
-    + 'witness\'s observation. It establishes sequence; for time, configure a witness that '
-    + 'actually has a clock',
+  rekor: 'the log\'s own signed entry timestamp, disciplined as its operator says. NOT credited '
+    + 'as time here: the adapter establishes existence only, because the timestamp is the log '
+    + 'operator\'s assertion about their own clock and nothing in the proof constrains it. The '
+    + 'timestamp is real; crediting it would be a trust decision this project does not make for '
+    + 'you',
+  'tlog-witness': 'the witness host\'s own clock, signed. A cosignature/v1 signature covers '
+    + '`cosignature/v1`, a `time <unix seconds>` line and the note text, so the timestamp is '
+    + 'inside the signed message rather than metadata beside it, and it is recorded as '
+    + 'received_at. Trustworthy exactly as far as the party running the witness and the clock on '
+    + 'that host: it is NOT a qualified timestamp, nothing here disciplines the witness\'s clock '
+    + 'to UTC(k), and no eIDAS presumption attaches to it. A line carrying no timestamp yields no '
+    + 'received_at, because our submission clock is never written down as the witness\'s '
+    + 'observation',
+});
+
+/**
+ * Whether each type's proof is CREDITED with establishing time, as data rather
+ * than as prose.
+ *
+ * This exists because the prose above and the adapter's `establishes` array
+ * drifted apart: FR-15 taught the tlog adapter that a cosignature/v1 signature
+ * carries a signed timestamp and set `establishes: ['sequence','time']`, while
+ * TIME_DISCIPLINE went on telling operators the same witness had NOTHING. One
+ * configured adapter, two contradictory statements, both reaching consumers —
+ * through `witnessesFromConfig` and `describeWitnessSet` respectively.
+ *
+ * A test asserts every constructible type's adapter agrees with this table, and
+ * that the prose agrees with it too, so the next capability change has to touch
+ * the declaration rather than quietly contradict it.
+ *
+ * Note that "credited with time" is not "has a timestamp". Rekor's entries carry
+ * a signed timestamp and this project credits it with existence only; the
+ * distinction is the operator's trust decision, not an oversight, and the prose
+ * now says so rather than leaving a reader to infer it from an array.
+ */
+export const CREDITED_WITH_TIME = Object.freeze({
+  rfc3161: true,            // establishes: ['time']
+  opentimestamps: false,    // establishes: ['existence'] — a block header is not a clock
+  rekor: false,             // establishes: ['existence'] — it HAS a timestamp; we do not credit it
+  'tlog-witness': true,     // establishes: ['sequence', 'time'] — cosignature/v1 signs one
+  // `splitstick` is deliberately absent, not false. witnessesFromConfig refuses
+  // to build it (FR-17: it needs a transport the operator chooses and a key
+  // they hold), so there is no adapter here to check a declaration against, and
+  // asserting a capability with nothing to verify it against is the thing this
+  // table exists to stop.
 });
 
 /** The types this builder knows. An unknown type is refused, never ignored. */

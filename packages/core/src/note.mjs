@@ -198,7 +198,24 @@ export function encodeNote(text, signatures) {
   if (signatures.length === 0) throw new NoteError('a note carries at least one signature');
   const lines = signatures.map(s => {
     if (/[\n\r ]/.test(s.name)) throw new NoteError('a signature name must not contain whitespace');
-    const blob = Buffer.concat([s.keyId, s.signature]).toString('base64');
+    // A cosignature/v1 line carries its timestamp INSIDE the blob, between the
+    // key id and the signature, and the timestamp is part of what was signed.
+    // This used to concatenate keyId and signature unconditionally, so parsing
+    // a 76-byte cosignature and re-encoding it produced a 68-byte line that
+    // could never verify again — the signature survived and the bytes it
+    // covered did not. parseNote was taught both lengths without encodeNote
+    // being taught either.
+    const parts = s.timestamp === undefined
+      ? [s.keyId, s.signature]
+      : [s.keyId, (() => {
+        if (s.timestamp < 0n || s.timestamp > 0xffffffffffffffffn) {
+          throw new NoteError(`a cosignature timestamp must fit in 8 bytes, got ${s.timestamp}`);
+        }
+        const t = Buffer.alloc(8);
+        t.writeBigUInt64BE(BigInt(s.timestamp));
+        return t;
+      })(), s.signature];
+    const blob = Buffer.concat(parts).toString('base64');
     return `${MARKER}${s.name} ${blob}\n`;
   });
   return `${text}\n${lines.join('')}`;
