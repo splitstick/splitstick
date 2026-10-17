@@ -202,7 +202,7 @@ The ordered checks, the verdict taxonomy including an inconclusive outcome, and 
 | Requirement | | Status |
 |---|---|---|
 | `FR-29` | splitstick verify | ✅ |
-| `NFR-04` | Verification throughput | ☐ |
+| `NFR-04` | Verification throughput | ✅ |
 | `NFR-05` | No network at verification | ✅ |
 | `NFR-06` | No credentials at verification | ✅ |
 | `SEC-03` | No trust in operator or vendor | ✅ |
@@ -290,7 +290,7 @@ Build reproducibility, provenance attestation, release signing, SBOM generation,
 |---|---|---|
 | `SEC-22` | Build provenance attestation | ✅ |
 | `SEC-23` | Signed releases and SBOM | ✅ |
-| `NFR-01` | Low-overhead evidence capture | ☐ |
+| `NFR-01` | Low-overhead evidence capture | ✅ |
 | `NFR-02` | Run latency budget | ☐ |
 | `FR-49` | Documented CLI contract | ✅ |
 

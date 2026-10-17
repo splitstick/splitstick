@@ -18,9 +18,21 @@ metric** on three counts (load average, event count, repeats):
 | chain only | 0.08 ms | 0.19 ms | 1.40 ms |
 | full append path | 0.22 ms | 0.47 ms | 1.75 ms |
 
+**A correction to step 1, found while trying to take the measurement.** The
+qualification check could not be passed on any machine. `max_load_average_1m`
+was evaluated against a load average sampled *after* the measured loop, and a
+saturated single-threaded benchmark drives its own one-minute average to roughly
+1.0 against a limit of 1.0 — so "idle" was impossible to demonstrate, because
+the constraint was measuring this benchmark rather than the machine. Two of the
+three exclusions the reference file listed in prose, a shared CI runner and a
+filesystem near capacity, had no evaluator at all. All three are fixed, and the
+harness now prints its verdict as a **preflight**, before the twenty minutes
+rather than after. See [m7-follow-ups.md](m7-follow-ups.md#the-gate-that-could-not-be-passed).
+
 To close it:
 
-1. A machine meeting every constraint the reference file declares, idle.
+1. A machine meeting every constraint the reference file declares, idle — which
+   the check can now actually recognise.
 2. `node bench/append.mjs --events 1000000 --repeat 3 --machine '<name>' --storage '<description>'`
    — the harness prints `QUALIFYING ACCEPTANCE MEASUREMENT` only when nothing is
    short, and names each shortfall when something is.

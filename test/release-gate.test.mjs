@@ -19,7 +19,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -36,7 +36,19 @@ const run = (/** @type {string[]} */ args) => new Promise((resolve) => {
 
 /**
  * A fixture world: a requirements directory and a packages directory.
- * @param {{ reqs?: any[], versions?: Record<string, string> }} o
+ *
+ * `file` says which requirement file the fixture writes, because WHICH file is
+ * exactly what the gate got wrong. These fixtures all wrote part1.json, which
+ * the repository does not have — so the suite passed while the gate was blind
+ * to requirements/backlog.json and the 47 requirements in it.
+ *
+ * By default the resolved merge mirrors `reqs`, because that is what a real
+ * repository looks like after `npm run requirements`. Pass `resolved` to make
+ * the two disagree, or `noResolved` to model a fresh clone where the generated
+ * file does not exist yet — which the gate refuses.
+ *
+ * @param {{ reqs?: any[], versions?: Record<string, string>, file?: string,
+ *           resolved?: any[], noResolved?: boolean }} o
  */
 function world(o) {
   const dir = mkdtempSync(join(tmpdir(), 'ss-rel-'));
@@ -45,7 +57,12 @@ function world(o) {
   mkdirSync(reqs);
   mkdirSync(pkgs);
   if (o.reqs !== undefined) {
-    writeFileSync(join(reqs, 'part1.json'), JSON.stringify({ requirements: o.reqs }));
+    writeFileSync(join(reqs, o.file ?? 'part1.json'), JSON.stringify({ requirements: o.reqs }));
+  }
+  const resolved = o.resolved ?? o.reqs ?? [];
+  if (!o.noResolved) {
+    writeFileSync(join(reqs, 'backlog.resolved.json'),
+      JSON.stringify({ count: resolved.length, requirements: resolved }));
   }
   for (const [name, version] of Object.entries(o.versions ?? { a: '1.0.0' })) {
     mkdirSync(join(pkgs, name));
@@ -248,4 +265,111 @@ test('TRC-05: the release workflow runs the claims audit and gates the publish',
   const gates = [...ci.matchAll(/run: (npm run [a-z:]+)/g)].map(m => String(m[1]));
   const missing = [...new Set(gates)].filter(g => !wf.includes(g) && !/bench|generate/.test(g));
   assert.deepEqual(missing, [], `gates CI runs that a release does not: ${missing.join(', ')}`);
+});
+
+/**
+ * The gate read `part\\d+\\.json` and nothing else, and the repository has no
+ * part1.json — so requirements/backlog.json, 47 requirements including FR-15,
+ * were invisible to it. It reported "1.0: 142/147 done" and five open while the
+ * truth was 193 and six. A gate that reads a subset and reports a total is
+ * worse than no gate, because the total looks authoritative.
+ *
+ * Every fixture above writes part1.json, which is why the suite never saw this.
+ * These three read the layout the repository actually has.
+ */
+test('requirements in backlog.json are read, not only partN.json', async () => {
+  const w = world({ file: 'backlog.json', reqs: [req('FR-01', '1.0', 'open')] });
+  try {
+    const r = await run([...w.args, ...publish('v1.0.0')]);
+    assert.equal(r.code, 1, 'an open requirement in backlog.json must block the release');
+    assert.match(r.out + r.err, /FR-01/);
+  } finally { w.cleanup(); }
+});
+
+test('a backlog the gate cannot fully see is refused, not totalled', async () => {
+  // The resolved merge names a requirement this gate did not read. Neither
+  // number may stand as the total.
+  const w = world({
+    file: 'backlog.json',
+    reqs: [req('FR-01', '1.0', 'done')],
+    resolved: [req('FR-01', '1.0', 'done'), req('FR-15', '1.0', 'open')],
+  });
+  try {
+    const r = await run([...w.args, ...publish('v1.0.0')]);
+    assert.equal(r.code, 2, 'a partial read must refuse rather than report a total');
+    assert.match(r.out + r.err, /not read by this gate: FR-15/);
+  } finally { w.cleanup(); }
+});
+
+test('the real repository backlog is read in full, FR-15 included', async () => {
+  // Against the repository itself, not a fixture. The defect was a mismatch
+  // between the fixture layout and the real one, so a fixture cannot catch it.
+  //
+  // The expected set comes from the TRACKED inputs, not from
+  // requirements/backlog.resolved.json. That file is generated and gitignored,
+  // so it does not exist in the CI job that runs this suite -- depending on it
+  // here would make the check pass locally and crash in CI, which is the wrong
+  // way round for a test about reading everything.
+  const r = await run(['--report']);
+  assert.equal(r.code, 0);
+  const reqDir = new URL('../requirements/', import.meta.url);
+  const inputs = readdirSync(reqDir).filter(f => /^(backlog|part\d+)\.json$/.test(f));
+  assert.ok(inputs.includes('backlog.json'),
+    'backlog.json is the file the gate used to miss; this check needs it to exist');
+  /** @type {any[]} */
+  const all = [];
+  for (const f of inputs) {
+    const parsed = JSON.parse(readFileSync(new URL(f, reqDir), 'utf8'));
+    for (const x of (Array.isArray(parsed) ? parsed : parsed.requirements ?? [])) {
+      if (x?.id) all.push(x);
+    }
+  }
+  const open10 = all
+    .filter(x => String(x.release) === '1.0' && x.status !== 'done')
+    .map(x => x.id);
+  assert.ok(open10.length > 0, 'this check needs at least one open 1.0 requirement to be meaningful');
+  for (const id of open10) {
+    assert.match(r.out, new RegExp(`OPEN\\s+${id}\\b`),
+      `${id} is open in the resolved backlog and the gate did not report it`);
+  }
+  assert.match(r.out, /1\.0: \d+\/\d+ done/);
+});
+
+/**
+ * PR #16 review, P2. The completeness cross-check ran only when
+ * requirements/backlog.resolved.json happened to exist, and otherwise printed
+ * a note and continued. For a report that is defensible; for a gate whose
+ * stated purpose is establishing that no required item was missed it is not,
+ * and this gate exists precisely because 47 requirements were once invisible
+ * to it.
+ *
+ * The release workflow already runs `npm run backlog` before the gate step, so
+ * refusing here makes that ordering self-enforcing rather than implicit.
+ */
+test('P2: the gate refuses when it cannot establish that it read everything', async () => {
+  const w = world({ reqs: [req('FR-01', '1.0', 'done')], noResolved: true });
+  try {
+    const r = await run([...w.args, ...publish('v1.0.0')]);
+    assert.equal(r.code, 2, 'a completeness check that did not run is not a passed one');
+    assert.match(r.out + r.err, /cannot establish that it read every requirement file/);
+    assert.match(r.out + r.err, /Run `npm run requirements` before the gate/);
+  } finally { w.cleanup(); }
+});
+
+test('P2: a dry run is also held to it, because it is still gate mode', async () => {
+  const w = world({ reqs: [req('FR-01', '1.0', 'done')], noResolved: true });
+  try {
+    const r = await run([...w.args, '--gate', 'v1.0.0', '--ref-type', 'tag', '--dry-run', 'true']);
+    assert.equal(r.code, 2);
+  } finally { w.cleanup(); }
+});
+
+test('P2: --report still reads on a fresh clone, saying what it could not check', async () => {
+  const w = world({ reqs: [req('FR-01', '1.0', 'open')], noResolved: true });
+  try {
+    const r = await run([...w.args, '--report']);
+    assert.equal(r.code, 0, 'a report decides nothing and must stay readable');
+    assert.match(r.out + r.err, /could not cross-check/);
+    assert.match(r.out, /OPEN\s+FR-01/);
+  } finally { w.cleanup(); }
 });

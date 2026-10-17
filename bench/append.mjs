@@ -192,6 +192,7 @@ function across(runs) {
     runs: runs.length,
     p50_ms: mid('p50_ms'), p95_ms: mid('p95_ms'), p99_ms: mid('p99_ms'),
     p999_ms: mid('p999_ms'), max_ms: worst('max_ms'),
+    worst_p95_ms: worst('p95_ms'),
     worst_p99_ms: worst('p99_ms'),
     events_per_second: mid('events_per_second'),
     ...(has('rss_mb') ? {
@@ -201,6 +202,49 @@ function across(runs) {
       gc_share_of_slowest: mid('gc_share_of_slowest'),
     } : {}),
   };
+}
+
+/**
+ * The host as it was BEFORE any measured work, which is what the reference
+ * environment's "was this machine quiet and did it have room" constraints are
+ * evaluated against. Sampling this after the loop below would score this
+ * benchmark's own load: a saturated single-threaded process drives its own
+ * one-minute load average to roughly 1.0, and the limit is 1.0.
+ */
+const hostBefore = await environment();
+
+const REF = JSON.parse(fs.readFileSync(new URL('./reference-env.json', import.meta.url), 'utf8'));
+const clock = clockResolution(0.05);      // p50 is ~0.2 ms; the tick must be far below it
+
+/**
+ * Preflight, before twenty minutes of work rather than after it.
+ *
+ * The reference environment used to be parsed and evaluated only once the
+ * measurement was already spent, so a host that could never qualify — and a
+ * malformed reference file — both cost a full run to discover. Everything
+ * knowable in advance is checked here and printed; only the load climb has to
+ * wait for the run, and it is reported as deferred rather than as satisfied.
+ */
+const pre = qualifyRun(REF, {
+  requirement: 'NFR-01',
+  before: hostBefore,
+  events: EVENTS,
+  repeats: REPEAT,
+  clockAdequate: clock.adequate,
+  ...(MACHINE ? { machine: MACHINE } : {}),
+  ...(STORAGE ? { storage: STORAGE } : {}),
+}, { phase: 'preflight' });
+
+if (!JSON_OUT) {
+  process.stderr.write(pre.shortfalls.length === 0
+    ? `\nPREFLIGHT  nothing short yet; ${pre.deferred.length} constraint(s) await the run\n\n`
+    : `\nPREFLIGHT  this run will be a REGRESSION METRIC, not an acceptance measurement:\n`
+      + pre.shortfalls.map(x => `  - ${x}\n`).join('')
+      + '  Continuing anyway, because a regression metric is still worth having.\n\n');
+  if (pre.disclosures.length > 0) {
+    process.stderr.write('PREFLIGHT  host conditions this figure must be published with:\n'
+      + pre.disclosures.map(x => `  - ${x}\n`).join('') + '\n');
+  }
 }
 
 /** @type {ReturnType<typeof percentiles>[]} */
@@ -219,9 +263,7 @@ for (let i = 0; i < REPEAT; i++) {
   fileRuns.push(fs_.create_new_file);
 }
 const recorder = await selfCheck();
-const clock = clockResolution(0.05);          // p50 is ~0.2 ms; the tick must be far below it
-const env = await environment();
-const REF = JSON.parse(fs.readFileSync(new URL('./reference-env.json', import.meta.url), 'utf8'));
+const env = await environment();          // after the run, for attribution
 
 /**
  * Acceptance measurement, or regression metric? The same harness produces both,
@@ -230,7 +272,9 @@ const REF = JSON.parse(fs.readFileSync(new URL('./reference-env.json', import.me
  * constraint the reference file declares and refuses to run if one has no
  * evaluator.
  */
-const { qualifies, shortfalls } = qualifyRun(REF, {
+const { qualifies, shortfalls, disclosures } = qualifyRun(REF, {
+  requirement: 'NFR-01',
+  before: hostBefore,
   env,
   events: EVENTS,
   repeats: REPEAT,
@@ -250,16 +294,42 @@ const report = {
   arms: { chain, full },
   filesystem_baseline: baseline,
   environment: env,
+  environment_before_run: hostBefore,
   ...(MACHINE ? { machine: MACHINE } : {}),
   ...(STORAGE ? { storage: STORAGE } : {}),
   clock,
   gc_recorder: recorder.verified ? 'verified' : 'UNVERIFIED',
   kind: qualifies ? 'acceptance measurement' : 'regression metric',
+  // The label above is what lint-figures matches on; this says whether it was
+  // unconditional. A run on a busy host is still an acceptance measurement
+  // under NFR-01's revised standard -- host quality is disclosed, not blocking
+  // -- but "acceptance measurement" on its own reads as unconditional and
+  // would overstate it.
+  unconditional: qualifies && disclosures.length === 0,
   reference_environment_shortfalls: shortfalls,
+  // Host-quality conditions this run fell short of. An acceptance measurement
+  // may carry these; it may not carry them silently.
+  host_disclosures: disclosures,
+  // THE WORST REPEAT, not the median of them.
+  //
+  // This used to read full.p95_ms and full.p99_ms, which across() builds with
+  // mid() -- the median across repeats. A run whose worst repeat missed the
+  // budget could therefore report 'within', and one did: p99 2.8203 ms median
+  // against a worst repeat of 3.1723 ms, over a 3 ms budget, reported as
+  // within.
+  //
+  // NFR-04 settled this question explicitly for the same kind of claim -- an
+  // auditor runs it once, and 'usually within budget' is not what either
+  // requirement says. Reporting the median here while NFR-04 reports the worst
+  // would be two disciplines for one kind of claim, and the weaker one would
+  // always be the one attached to the headline figure. The percentiles above
+  // are still reported as medians across repeats, because that is the stable
+  // description of the distribution; what the VERDICT is taken on is the worst.
   verdict: {
-    p95: full.p95_ms <= BUDGET_P95_MS ? 'within' : 'over',
-    p99: full.p99_ms <= BUDGET_P99_MS ? 'within' : 'over',
-    p99_stretch: full.p99_ms <= STRETCH_P99_MS ? 'met' : 'not met',
+    measured_on: 'the worst repeat, not the median across repeats',
+    p95: full.worst_p95_ms <= BUDGET_P95_MS ? 'within' : 'over',
+    p99: full.worst_p99_ms <= BUDGET_P99_MS ? 'within' : 'over',
+    p99_stretch: full.worst_p99_ms <= STRETCH_P99_MS ? 'met' : 'not met',
   },
   attribution: [
     'Cryptography is not the cost. SHA-256 and AES-GCM over a record are 0.03 ms'
@@ -302,8 +372,13 @@ NFR-01  append overhead · ${EVENTS.toLocaleString('en-US')} events per arm · $
         budget: p95 <= ${BUDGET_P95_MS} ms, p99 <= ${BUDGET_P99_MS} ms (stretch p99 <= ${STRETCH_P99_MS} ms)
         ${env.cpu} · ${env.cpus} cpu · ${env.platform} · node ${env.node} · load ${env.load_average_1m}
         clock tick ${clock.tick_ms.toFixed(6)} ms (${clock.adequate ? 'adequate' : 'TOO COARSE'}) · gc recorder ${recorder.verified ? 'verified' : 'UNVERIFIED'}
-        this run is a ${qualifies ? 'QUALIFYING ACCEPTANCE MEASUREMENT' : 'REGRESSION METRIC'}${qualifies ? '' : ` — ${shortfalls.join('; ')}`}
-        percentiles are the median across repeats; worst p99 and max are the worst seen
+        this run is a ${qualifies ? (disclosures.length
+          ? 'QUALIFYING ACCEPTANCE MEASUREMENT, WITH DISCLOSURES — not an unconditional one'
+          : 'QUALIFYING ACCEPTANCE MEASUREMENT on a host that was short of nothing')
+          : 'REGRESSION METRIC'}${qualifies ? '' : ` — ${shortfalls.join('; ')}`}${disclosures.length ? `
+        taken under these conditions, which this figure must be published with:
+${disclosures.map(x => `          - ${x}`).join('\n')}` : ''}
+        percentiles are the median across repeats; the VERDICT is taken on the worst repeat
 
                    p50       p95       p99  worst p99       max   rate
 ${row('chain', chain)}
@@ -313,7 +388,8 @@ ${row('full', full)}
 ${row('open fd', baseline.write_to_open_fd)}
 ${row('new file', baseline.create_new_file)}
 
-  p95 ${report.verdict.p95} budget · p99 ${report.verdict.p99} budget · stretch p99 ${report.verdict.p99_stretch}
+  worst repeat: p95 ${full.worst_p95_ms.toFixed(4)} ms, p99 ${full.worst_p99_ms.toFixed(4)} ms
+  p95 ${report.verdict.p95} budget · p99 ${report.verdict.p99} budget · stretch p99 ${report.verdict.p99_stretch}   (on the worst repeat)
   rss ${full.rss_mb ?? '?'} MB · gc ${full.gc_pauses ?? 0} pause(s), ${full.gc_total_ms ?? 0} ms, overlapping ${Math.round((full.gc_share_of_slowest ?? 0) * 100)}% of the slowest 1%
 
 ${report.attribution.map((a) => `  ${a}`).join('\n\n')}

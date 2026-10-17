@@ -79,8 +79,23 @@ for (const a of argv.filter(x => x.startsWith('--'))) {
   }
 }
 
-/** Requirements, from the repository or from a fixture directory. */
-function requirements(dir = join(ROOT, 'requirements')) {
+/**
+ * Requirements, from the repository or from a fixture directory.
+ *
+ * `backlog.json` AND every `partN.json`, which is what requirements/build.mjs
+ * merges to produce the matrix. This gate used to read only the partN files,
+ * and there is no part1.json — so 47 requirements, FR-15 among them, were
+ * invisible to it. It reported "1.0: 142/147 done" and five open while the real
+ * figure was 193 and six, and FR-15 was listed as open in the follow-ups and in
+ * MATRIX.md the whole time. A release gate that reads a subset and reports a
+ * total is worse than no gate, because the total looks authoritative.
+ *
+ * So the read is cross-checked against backlog.resolved.json, the generated
+ * merge of the same inputs, and any disagreement in either direction refuses.
+ * That catches both an input file this function forgot and a stale generated
+ * file, without either one being able to pass quietly.
+ */
+function requirements(dir = join(ROOT, 'requirements'), { strict = false } = {}) {
   if (!existsSync(dir) || !statSync(dir).isDirectory()) {
     console.error(`\n  ${dir} is not a directory of requirement files.\n`);
     process.exit(2);
@@ -88,26 +103,77 @@ function requirements(dir = join(ROOT, 'requirements')) {
   /** @type {{ id: string, title: string, release: string, status?: string, verify?: string }[]} */
   const all = [];
   let files = 0;
+  /** @param {any} parsed */
+  const itemsOf = (parsed) => Array.isArray(parsed) ? parsed
+    : (parsed.requirements ?? parsed.items
+      ?? Object.values(parsed).flat().filter(x => x && typeof x === 'object'));
   for (const f of readdirSync(dir)) {
-    if (!/^part\d+\.json$/.test(f)) continue;
+    if (!/^(backlog|part\d+)\.json$/.test(f)) continue;
     files += 1;
-    const parsed = JSON.parse(readFileSync(join(dir, f), 'utf8'));
-    const items = Array.isArray(parsed) ? parsed
-      : (parsed.requirements ?? parsed.items
-        ?? Object.values(parsed).flat().filter(x => x && typeof x === 'object'));
-    for (const r of /** @type {any[]} */ (items)) if (r?.id) all.push(r);
+    for (const r of /** @type {any[]} */ (itemsOf(JSON.parse(readFileSync(join(dir, f), 'utf8'))))) {
+      if (r?.id) all.push(r);
+    }
   }
   if (files === 0) {
     // A gate that found no requirements must not conclude that none are open.
-    console.error(`\n  ${dir} holds no partN.json requirement files, so this gate read nothing. `
-      + 'That is refused rather than reported as clean: an empty read is not an empty backlog.\n');
+    console.error(`\n  ${dir} holds no backlog.json or partN.json requirement files, so this gate `
+      + 'read nothing. That is refused rather than reported as clean: an empty read is not an '
+      + 'empty backlog.\n');
     process.exit(2);
+  }
+
+  // Cross-check against the generated merge, when the fixture or repo has one.
+  // backlog.resolved.json is generated and gitignored, so it is absent on a
+  // fresh clone until `npm run requirements` runs.
+  //
+  // In GATE mode that is a refusal, not a note. The gate's whole purpose is to
+  // establish that no required item was missed, and the cross-check is the only
+  // thing standing between it and a repeat of the defect that produced it: this
+  // loader read `part\d+.json` only, there is no part1.json, and 47
+  // requirements went unseen while it reported a total. A completeness check
+  // that silently does not run leaves the gate in exactly the state that
+  // allowed that. The release workflow already generates it before the gate
+  // runs -- `npm run backlog` precedes the gate step -- so refusing here makes
+  // that ordering self-enforcing instead of implicit, and a reordering fails
+  // loudly rather than quietly weakening the gate.
+  //
+  // In report mode it stays a note: --report prints state and decides nothing,
+  // and a developer on a fresh clone should still be able to read it.
+  const resolved = join(dir, 'backlog.resolved.json');
+  if (!existsSync(resolved)) {
+    if (strict) {
+      console.error(`\n  ${resolved} does not exist, so this gate cannot establish that it read `
+        + 'every requirement file. Refused rather than reported: a completeness check that did '
+        + 'not run is not a passed one, and this gate exists because 47 requirements were once '
+        + 'invisible to it.\n  Run `npm run requirements` before the gate.\n');
+      process.exit(2);
+    }
+    console.error(`  note: ${resolved} is absent, so this report could not cross-check that it `
+      + 'read every requirement file. Run `npm run requirements` first for that check.');
+  }
+  if (existsSync(resolved)) {
+    const expected = new Set(itemsOf(JSON.parse(readFileSync(resolved, 'utf8')))
+      .map((/** @type {any} */ r) => r?.id).filter(Boolean));
+    const seen = new Set(all.map(r => r.id));
+    const missed = [...expected].filter(id => !seen.has(id));
+    const extra = [...seen].filter(id => !expected.has(id));
+    if (missed.length > 0 || extra.length > 0) {
+      console.error('\n  this gate\'s view of the backlog disagrees with '
+        + 'requirements/backlog.resolved.json, so one of them is wrong and neither may be '
+        + 'treated as the total.'
+        + (missed.length ? `\n  not read by this gate: ${missed.join(', ')}` : '')
+        + (extra.length ? `\n  read by this gate but not in the resolved merge: ${extra.join(', ')}`
+          : '')
+        + '\n  run `npm run requirements` to regenerate the merge, or add the file this '
+        + 'function is not reading.\n');
+      process.exit(2);
+    }
   }
   return all;
 }
 
 const reqDir = flag('requirements');
-const all = requirements(reqDir === undefined ? undefined : reqDir);
+const all = requirements(reqDir === undefined ? undefined : reqDir, { strict: wants('gate') });
 const releases = [...new Set(all.map(r => String(r.release)))].sort();
 /** @param {string} rel */
 const openIn = (rel) => all.filter(r => String(r.release) === rel && r.status !== 'done');

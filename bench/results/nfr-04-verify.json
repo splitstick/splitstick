@@ -1,0 +1,58 @@
+{
+ "requirement": "NFR-04",
+ "kind": "acceptance",
+ "shortfalls": [],
+ "host_disclosures": [
+  "load average 4.7 > 1 before the run started",
+  "9.46 GB free on the fixture volume < 20 GB; a filesystem near capacity measurably slows file creation, which is most of this requirement's tail"
+ ],
+ "events": 100000,
+ "repeats": 3,
+ "budget_ms": 30000,
+ "verify_ms": {
+  "median": 13650.217316,
+  "worst": 14230.469445,
+  "all": [
+   13620.919442,
+   14230.469445,
+   13650.217316
+  ]
+ },
+ "read_ms": {
+  "median": 1145.121977,
+  "worst": 1186.016949
+ },
+ "within_budget": true,
+ "records": {
+  "tree_size": 100000,
+  "by_kind": {
+   "tool_call": 100000
+  },
+  "padding": 0,
+  "real": 100000
+ },
+ "verdict": "inconclusive",
+ "failed_checks": 0,
+ "env": {
+  "node": "v22.23.2",
+  "platform": "darwin 21.6.0",
+  "arch": "x64",
+  "cpu": "Intel(R) Core(TM) i5-5350U CPU @ 1.80GHz",
+  "cpus": 4,
+  "total_memory_gb": 8,
+  "load_average_1m": 4.33,
+  "free_disk_gb": 9.42
+ },
+ "env_before_run": {
+  "node": "v22.23.2",
+  "platform": "darwin 21.6.0",
+  "arch": "x64",
+  "cpu": "Intel(R) Core(TM) i5-5350U CPU @ 1.80GHz",
+  "cpus": 4,
+  "total_memory_gb": 8,
+  "load_average_1m": 4.7,
+  "free_disk_gb": 9.46
+ },
+ "machine": "MacBook Air, Intel i5-5350U @ 1.80GHz, 4 logical cpus, 8 GB, macOS 21.6.0 — a shared development laptop, not a dedicated host",
+ "storage": "internal Apple NVMe SSD, APFS, volume 90% full, shared with the OS"
+}

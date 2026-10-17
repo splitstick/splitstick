@@ -12,9 +12,9 @@ to prevent.
 
 | | Why it is open | What closes it |
 |---|---|---|
-| **NFR-01** | the harness has good numbers and **none of them qualifies**. The development machine is short on load average, event count and repeats, and the harness says so in every run | one `bench/append.mjs` run over ≥1e6 events, ≥3 repeats, on a host meeting every constraint in `bench/reference-env.json`, with `--machine` and `--storage` named. It prints QUALIFYING ACCEPTANCE MEASUREMENT only when nothing is short, and that JSON is the evidence |
+| **NFR-01** | the harness has good numbers and **none of them qualifies**. The development machine is short on load average, event count and repeats, and the harness says so in every run. **And until the qualification gate was repaired, no machine could have qualified** — see below | one `bench/append.mjs` run over ≥1e6 events, ≥3 repeats, on a host meeting every constraint in `bench/reference-env.json`, with `--machine` and `--storage` named. It prints QUALIFYING ACCEPTANCE MEASUREMENT only when nothing is short, and that JSON is the evidence |
 | **NFR-02** | **reverted from done in M7.** It was marked met against a scripted model at an assumed 400 ms per call. Both assumptions are recorded in the result and neither has met a real provider | re-run the interleaved paired A/B against a real provider and confirm the whole 95% interval still clears 2% at that model latency |
-| **NFR-04** | carried since M5; the dev host disqualifies itself on load average alone | one `bench/verify.mjs` run on a qualifying host |
+| **NFR-04** | carried since M5; the dev host disqualifies itself on load average alone. **A qualifying host is no longer the whole problem**: with the O(checkpoints·n) consistency-proof regeneration fixed, verification of 100,000 records measures **15,849 ms median against a 2,000 ms budget** — about 8× over — of which 1,235 ms is the read floor the filesystem and `JSON.parse` impose. Hardware will not close a gap of that shape | either substantial further work on the verify path, or a deliberately revised budget with a measurement behind it (the M1 precedent for NFR-01). Not a faster machine |
 | **LEG-09** | the Witness Practice Statement is versioned and recorded; the **external-anchoring half** needs an operator's own witness set, which this project does not have | `npm run anchor-wps -- --config … --policy …` against a real witness set, which the tool already supports and says so when run with no arguments |
 | **LEG-13** | configurable, plumbed and reported — and the verify is a **live** anchor against a qualified trust service, which is procurement rather than engineering | one live anchor; the adapter, the config path and the report are tested, including against a real RFC 3161 token |
 
@@ -26,6 +26,35 @@ reading is right.
 Every one of these is now *also* enforced by a check rather than a memory:
 `tools/lint-figures.mjs` fails the build if a published figure cites an open requirement as
 MEASURED.
+
+### The gate that could not be passed
+
+Attempting to close NFR-01 found that the qualification check itself was unsatisfiable, in
+three separate ways. None of them was a missing check — each was a check that looked present
+and decided nothing useful, which is the shape this project keeps finding.
+
+1. **`max_load_average_1m` was fed a reading taken after the measured loop.** A saturated
+   single-threaded benchmark raises its own one-minute load average to roughly 1.0, and the
+   limit is 1.0. The constraint whose stated purpose is to exclude *"a machine under other
+   load"* was scoring this benchmark's load — on every host, however dedicated. The pre-run
+   sample is now what it reads; `max_load_increase_1m` covers work that joins midway; and
+   `qualifyRun` throws rather than falling back to the post-run reading, because the fallback
+   was the bug.
+
+2. **Two of the three `excluded` entries had no evaluator at all** — a shared CI runner and a
+   filesystem at or near capacity — while the file's own note claimed *"Every constraint here
+   is evaluated by qualifyRun()"*. They are now `forbid_ci` and `min_free_disk_gb`, and the
+   `excluded` prose states, per entry, what its check cannot establish.
+
+3. **NFR-04 was held to NFR-01's `min_events`**, so every NFR-04 run reported
+   `100000 events < 1000000` — a shortfall against a figure its own requirement does not ask
+   for. The two requirements now have separate constraint blocks, and an unselected block
+   throws.
+
+Why the unit tests missed all three: they handed `qualifyRun` a hand-built observation with a
+quiet load value in it. The guard was tested; the **call site** was not. There is now a test
+that reads both benchmark sources and asserts the host is sampled before the measured work —
+and fails loudly, naming the anchor it could not find, rather than silently checking nothing.
 
 ## Found in M7, fixed in M7
 
