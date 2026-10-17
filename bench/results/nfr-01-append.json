@@ -10,30 +10,32 @@
   "arms": {
     "chain": {
       "runs": 3,
-      "p50_ms": 0.0742,
-      "p95_ms": 0.1407,
-      "p99_ms": 0.4169,
-      "p999_ms": 6.916,
-      "max_ms": 1049.1492,
-      "worst_p99_ms": 0.9195,
-      "events_per_second": 8886,
-      "rss_mb": 363,
-      "gc_pauses": 872,
-      "gc_total_ms": 6619.3,
+      "p50_ms": 0.0764,
+      "p95_ms": 0.1734,
+      "p99_ms": 0.6602,
+      "p999_ms": 6.5493,
+      "max_ms": 261.4318,
+      "worst_p95_ms": 0.2,
+      "worst_p99_ms": 0.7108,
+      "events_per_second": 8873,
+      "rss_mb": 295,
+      "gc_pauses": 871,
+      "gc_total_ms": 6677.4,
       "gc_share_of_slowest": 0.09
     },
     "full": {
       "runs": 3,
-      "p50_ms": 0.2375,
-      "p95_ms": 0.6744,
-      "p99_ms": 2.8203,
-      "p999_ms": 15.0213,
-      "max_ms": 1012.3756,
-      "worst_p99_ms": 3.1723,
-      "events_per_second": 2507,
-      "rss_mb": 210,
-      "gc_pauses": 2020,
-      "gc_total_ms": 26263.6,
+      "p50_ms": 0.2463,
+      "p95_ms": 0.7296,
+      "p99_ms": 2.493,
+      "p999_ms": 14.2107,
+      "max_ms": 1438.7409,
+      "worst_p95_ms": 0.7587,
+      "worst_p99_ms": 2.6065,
+      "events_per_second": 2621,
+      "rss_mb": 296,
+      "gc_pauses": 2021,
+      "gc_total_ms": 26362.5,
       "gc_share_of_slowest": 0.2
     }
   },
@@ -41,22 +43,24 @@
     "write_to_open_fd": {
       "runs": 3,
       "p50_ms": 0.0083,
-      "p95_ms": 0.0124,
-      "p99_ms": 0.0613,
-      "p999_ms": 0.9066,
-      "max_ms": 30.673,
-      "worst_p99_ms": 0.0644,
-      "events_per_second": 70666
+      "p95_ms": 0.0098,
+      "p99_ms": 0.0382,
+      "p999_ms": 0.2277,
+      "max_ms": 2.811,
+      "worst_p95_ms": 0.012,
+      "worst_p99_ms": 0.049,
+      "events_per_second": 100543
     },
     "create_new_file": {
       "runs": 3,
-      "p50_ms": 0.2024,
-      "p95_ms": 0.6821,
-      "p99_ms": 2.7222,
-      "p999_ms": 23.65,
-      "max_ms": 412.9645,
-      "worst_p99_ms": 3.0184,
-      "events_per_second": 2301
+      "p50_ms": 0.2162,
+      "p95_ms": 0.8,
+      "p99_ms": 2.2977,
+      "p999_ms": 9.6575,
+      "max_ms": 1078.1439,
+      "worst_p95_ms": 0.8127,
+      "worst_p99_ms": 2.7734,
+      "events_per_second": 2800
     }
   },
   "environment": {
@@ -66,8 +70,8 @@
     "cpu": "Intel(R) Core(TM) i5-5350U CPU @ 1.80GHz",
     "cpus": 4,
     "total_memory_gb": 8,
-    "load_average_1m": 19.88,
-    "free_disk_gb": 8.53
+    "load_average_1m": 5.67,
+    "free_disk_gb": 9.46
   },
   "environment_before_run": {
     "node": "v22.23.2",
@@ -76,33 +80,35 @@
     "cpu": "Intel(R) Core(TM) i5-5350U CPU @ 1.80GHz",
     "cpus": 4,
     "total_memory_gb": 8,
-    "load_average_1m": 6.51,
-    "free_disk_gb": 8.5
+    "load_average_1m": 2.25,
+    "free_disk_gb": 9.48
   },
   "machine": "MacBook Air, Intel i5-5350U @ 1.80GHz, 4 logical cpus, 8 GB, macOS 21.6.0 — a shared development laptop, not a dedicated host",
   "storage": "internal Apple NVMe SSD, APFS, volume 90% full, shared with the OS",
   "clock": {
-    "tick_ms": 0.000193,
+    "tick_ms": 0.000183,
     "adequate": true
   },
   "gc_recorder": "verified",
   "kind": "acceptance measurement",
+  "unconditional": false,
   "reference_environment_shortfalls": [],
   "host_disclosures": [
-    "load average 6.51 > 1 before the run started",
-    "load average climbed 13.37 during the run (6.51 to 19.88), more than the 1.5 this benchmark can account for, so other work joined it",
-    "8.5 GB free on the fixture volume < 20 GB; a filesystem near capacity measurably slows file creation, which is most of this requirement's tail"
+    "load average 2.25 > 1 before the run started",
+    "load average climbed 3.42 during the run (2.25 to 5.67), more than the 1.5 this benchmark can account for, so other work joined it",
+    "9.48 GB free on the fixture volume < 20 GB; a filesystem near capacity measurably slows file creation, which is most of this requirement's tail"
   ],
   "verdict": {
+    "measured_on": "the worst repeat, not the median across repeats",
     "p95": "within",
     "p99": "within",
     "p99_stretch": "not met"
   },
   "attribution": [
-    "Cryptography is not the cost. SHA-256 and AES-GCM over a record are 0.03 ms together, while creating one file measured p50 0.2024 ms against 0.0083 ms for a write to an already-open descriptor. So the append path creates no file at all: both journals are held open and every payload goes into one append-only encrypted blob.",
-    "A single file creation has a p99 of 2.7222 ms on this machine, which is why no design that creates a file per record can meet a 1 ms p99 here, however fast its hashing.",
-    "The remaining tail is not per-record work: an open-descriptor write has a p99 of 0.0613 ms against the chain arm's 0.4169 ms. What it is instead is reported above and not guessed at — if the GC share of the slowest samples is low, the outliers are the operating system, and the maxima here routinely exceed anything the per-record work could account for.",
-    "Across 3 repeats the full arm's p99 ranged up to 3.1723 ms and the filesystem baseline moved with it, so this machine is not the reference environment NFR-01 now requires. The p50 and p95 are the stable figures.",
-    "Garbage collection is measured, not inferred: 2020 pause(s) totalling 26263.6 ms during the full arm, overlapping 20% of its slowest one per cent of samples. The recorder was verified against a deliberate allocation storm in this same run (10 pauses seen), so a low number here is a measurement rather than a lost one — an earlier version reported zero because it disconnected the observer before the asynchronous entries could be delivered."
+    "Cryptography is not the cost. SHA-256 and AES-GCM over a record are 0.03 ms together, while creating one file measured p50 0.2162 ms against 0.0083 ms for a write to an already-open descriptor. So the append path creates no file at all: both journals are held open and every payload goes into one append-only encrypted blob.",
+    "A single file creation has a p99 of 2.2977 ms on this machine, which is why no design that creates a file per record can meet a 1 ms p99 here, however fast its hashing.",
+    "The remaining tail is not per-record work: an open-descriptor write has a p99 of 0.0382 ms against the chain arm's 0.6602 ms. What it is instead is reported above and not guessed at — if the GC share of the slowest samples is low, the outliers are the operating system, and the maxima here routinely exceed anything the per-record work could account for.",
+    "Across 3 repeats the full arm's p99 ranged up to 2.6065 ms and the filesystem baseline moved with it, so this machine is not the reference environment NFR-01 now requires. The p50 and p95 are the stable figures.",
+    "Garbage collection is measured, not inferred: 2021 pause(s) totalling 26362.5 ms during the full arm, overlapping 20% of its slowest one per cent of samples. The recorder was verified against a deliberate allocation storm in this same run (8 pauses seen), so a low number here is a measurement rather than a lost one — an earlier version reported zero because it disconnected the observer before the asynchronous entries could be delivered."
   ]
 }
