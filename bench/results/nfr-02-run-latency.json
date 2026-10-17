@@ -1,7 +1,7 @@
 {
   "requirement": "NFR-02",
   "budget_percent": 2,
-  "budget_ms": 52.16,
+  "budget_ms": 54.508,
   "provider": "anthropic",
   "model_sleep_ms": 0,
   "kind": "acceptance",
@@ -13,35 +13,48 @@
   "model_latency_assumed_ms": null,
   "model_latency_measured_ms": {
     "calls": 96,
-    "median": 1299.318,
-    "min": 1051.343,
-    "max": 1579.32
+    "median": 1303.709,
+    "min": 985.002,
+    "max": 1943.57
   },
   "model_calls_per_run": [
     2
   ],
-  "denominator_ms": 2608.019,
+  "denominator_ms": 2725.388,
   "denominator_is_measured": true,
-  "pairs_needed_for_budget": 40,
+  "pairs_needed_for_budget": 100,
+  "added_end_to_end_ex_model": {
+    "n": 24,
+    "mean_ms": -0.1741,
+    "sd_ms": 19.9934,
+    "ci95_ms": [
+      -8.1731,
+      7.8249
+    ],
+    "baseline_median_ms": 45.452
+  },
+  "added_end_to_end_percent": -0.0064,
+  "added_end_to_end_percent_ci_high": 0.2871,
+  "verdict_end_to_end": "WITHIN BUDGET",
   "added_direct": {
     "n": 24,
-    "mean_ms": 2.4269,
-    "sd_ms": 1.8881,
+    "mean_ms": 3.0255,
+    "sd_ms": 3.0074,
     "ci95_ms": [
-      1.6715,
-      3.1823
+      1.8223,
+      4.2287
     ],
-    "median_ms": 1.6881,
-    "max_ms": 8.889
+    "median_ms": 1.5566,
+    "max_ms": 12.6032
   },
   "verdict_direct": "WITHIN BUDGET",
-  "added_direct_percent": 0.0931,
-  "added_direct_percent_ci_high": 0.122,
+  "added_direct_percent": 0.111,
+  "added_direct_percent_ci_high": 0.1552,
   "added_direct_ci95_percent": [
-    0.0641,
-    0.122
+    0.0669,
+    0.1552
   ],
-  "paired_minus_direct_ms": 20.467,
+  "paired_minus_direct_ms": -26.41,
   "direct_within_paired_interval": true,
   "runs": 24,
   "interleaved": true,
@@ -52,27 +65,27 @@
     "cpu": "Intel(R) Core(TM) i5-5350U CPU @ 1.80GHz",
     "cpus": 4,
     "total_memory_gb": 8,
-    "load_average_1m": 4.41,
-    "free_disk_gb": 3.03
+    "load_average_1m": 8.49,
+    "free_disk_gb": 1.98
   },
   "clock": {
-    "tick_ms": 0.000183,
+    "tick_ms": 0.000194,
     "adequate": true
   },
-  "baseline_median_ms": 2608.019,
-  "splitstick_median_ms": 2681.994,
-  "added_ms": 22.894,
+  "baseline_median_ms": 2725.388,
+  "splitstick_median_ms": 2653.402,
+  "added_ms": -23.384,
   "ci95_ms": [
-    -44.065,
-    89.852
+    -134.583,
+    87.815
   ],
-  "resolution_ms": 66.959,
-  "added_percent_at_model_latency": 0.672,
+  "resolution_ms": 111.199,
+  "added_percent_at_model_latency": -0.663,
   "ci95_percent": [
-    -1.293,
-    2.636
+    -3.818,
+    2.491
   ],
-  "pairs_needed_for_1pc": 93,
+  "pairs_needed_for_1pc": 239,
   "verdict": "UNRESOLVED",
-  "note": "The budget falls inside the 95% interval [-44.065, 89.852] ms, so this run is consistent with passing AND with failing. It resolves no verdict, and must not be reported as one; about 93 pairs would resolve a 1% effect."
+  "note": "The budget falls inside the 95% interval [-134.583, 87.815] ms, so this run is consistent with passing AND with failing. It resolves no verdict, and must not be reported as one; about 239 pairs would resolve a 1% effect."
 }

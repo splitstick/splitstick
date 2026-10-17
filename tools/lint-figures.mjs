@@ -197,6 +197,14 @@ if (start === -1) {
       // Storage is not a variable this benchmark's result depends on: it
       // measures time inside a journal wrapper, not file creation.
       attests: ['machine'],
+      // The numbers the release notes publish, each naming the field it quotes.
+      // Checked at the precision they are quoted at.
+      quotes: [
+        [0.29, 'added_end_to_end_percent_ci_high'],
+        [0.16, 'added_direct_percent_ci_high'],
+        [2725, 'denominator_ms'],
+        [3.03, 'added_direct.mean_ms'],
+      ],
       // bench/run-latency.mjs has no reference-environment gate, so it has no
       // shortfalls to disclose. Requiring the array would be requiring it to
       // publish an empty one, and an empty list claims "nothing was short" --
@@ -204,7 +212,15 @@ if (start === -1) {
       // required, because that is what attribution means.
       disclosures_required: false,
       budgets: [
-        { label: 'added run latency, whole interval', limit: 2, unit: '%',
+        // END-TO-END, which is what the requirement's statement says: "added
+        // end-to-end agent run latency below 2%". The direct journal-operation
+        // measure is checked too, but it cannot be the one that closes this
+        // requirement -- it excludes work outside an append or close call, so
+        // on its own it would establish a narrower property than the claim.
+        { label: 'added end-to-end run latency, whole interval', limit: 2, unit: '%',
+          declaredAt: 'budget_percent', measuredAt: 'added_end_to_end_percent_ci_high',
+          verdictAt: 'verdict_end_to_end', passes: 'WITHIN BUDGET' },
+        { label: 'added journal-operation latency, whole interval', limit: 2, unit: '%',
           declaredAt: 'budget_percent', measuredAt: 'added_direct_percent_ci_high',
           verdictAt: 'verdict_direct', passes: 'WITHIN BUDGET' },
       ],
@@ -336,6 +352,36 @@ if (start === -1) {
             findings.push(`${id}'s evidence ${rel} reports ${r.repeats} repeat(s), fewer than `
               + `${want.repeats}`);
           }
+          // THE PUBLISHED NUMBERS MUST BE THE MEASURED ONES.
+          //
+          // A review found the release notes, the requirement's evidence and
+          // this PR's description each quoting a DIFFERENT run: 0.088% beside
+          // 0.0931%, 2.33 ms beside 2.4269 ms, a 2,624 ms denominator beside
+          // 2,608 ms. Every number was from a real measurement; none was from
+          // the measurement that shipped as the evidence, because the file was
+          // regenerated after the prose was written. The budget outcome was
+          // checked and the NUMERALS were not, so the check passed.
+          //
+          // So each figure declares which field it is quoting, and the quoted
+          // value must match the evidence to the precision it is quoted at.
+          for (const [claimed, field] of want.quotes ?? []) {
+            const actual = at(r, field);
+            if (typeof actual !== 'number') {
+              findings.push(`${id}'s evidence ${rel} has no numeric ${field}, which this figure `
+                + 'quotes');
+              continue;
+            }
+            // Compared at the precision of the published figure: a figure
+            // quoting 0.09% must not be refused for a measurement of 0.0931%,
+            // and one quoting 0.088% must be.
+            const dp = (String(claimed).split('.')[1] ?? '').length;
+            if (Number(actual.toFixed(dp)) !== claimed) {
+              findings.push(`${id} publishes ${claimed} for ${field}, but its evidence ${rel} `
+                + `measured ${actual} (${actual.toFixed(dp)} at that precision). A published figure `
+                + 'must be the measured one; this is how a number outlives the run that produced it');
+            }
+          }
+
           if (want.disclosures_required !== false && !Array.isArray(r.host_disclosures)) {
             findings.push(`${id}'s evidence ${rel} carries no host_disclosures array. An empty `
               + 'array is a claim that nothing was short; a missing one is silence');

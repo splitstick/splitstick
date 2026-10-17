@@ -148,7 +148,12 @@ function scriptedAdapter() {
   return {
     name: 'scripted',
     async chat() {
+      // Timed like the real adapter, so the end-to-end-less-model measurement
+      // can be exercised without spending an API call. A sleeping scripted
+      // model is model latency as far as this subtraction is concerned.
+      const t = process.hrtime.bigint();
       if (MODEL_SLEEP_MS > 0) await new Promise(r => setTimeout(r, MODEL_SLEEP_MS));
+      modelCallMs.push(Number(process.hrtime.bigint() - t) / 1e6);
       call += 1;
       if (call % 2 === 1) {
         return {
@@ -168,6 +173,8 @@ function scriptedAdapter() {
   };
 }
 
+/** @type {{ label: string, ms: number }[]} */
+const nonModelMs = [];
 /** @type {number[]} */
 const directAddedMs = [];
 /** @type {number[]} */
@@ -302,7 +309,30 @@ async function oneRun(collector, label, i) {
   );
   const ms = Number(process.hrtime.bigint() - t0) / 1e6;
   await journal.close();
-  if (REAL) callsPerRun.push(modelCallMs.length - callsBefore);
+  callsPerRun.push(modelCallMs.length - callsBefore);
+  // END-TO-END, LESS THE TIME SPENT WAITING ON THE MODEL.
+  //
+  // This is the measurement that answers NFR-02 as it is actually stated --
+  // "added end-to-end agent run latency" -- with the one quantity Splitstick
+  // cannot influence removed. It captures everything attributable to
+  // Splitstick's presence during the run, including work the direct measure is
+  // blind to: background timers, deferred flushes, and GC caused by the
+  // wrapper's allocations all land inside it, because it is still a wall-clock
+  // measurement of the whole run.
+  //
+  // Removing the model wait is what makes it resolve. The model call is
+  // hundreds of milliseconds with hundreds of milliseconds of spread, it is
+  // identical work in both arms, and a paired difference only cancels what the
+  // arms share IN EXPECTATION -- not run by run. So it contributed nothing but
+  // variance, and with it gone the remaining quantity is tens of milliseconds
+  // and the difference is measurable.
+  //
+  // What this still cannot see: if Splitstick's presence slowed the model call
+  // ITSELF, that time is excluded here. The call is an HTTP wait on another
+  // machine, so CPU contention during it is not plausibly material, but it is
+  // an exclusion rather than a proof and is named as one.
+  const modelMsThisRun = modelCallMs.slice(callsBefore).reduce((a, b) => a + b, 0);
+  nonModelMs.push({ label, ms: ms - modelMsThisRun });
   // The wrapper's own cost: what it spent, less what it spent inside the
   // journal the baseline arm also pays for. Only meaningful in the
   // instrumented arm; the baseline has no wrapper.
@@ -353,6 +383,7 @@ await measureInterleaved(5);                       // warm both arms together
 directAddedMs.length = 0;
 modelCallMs.length = 0;
 callsPerRun.length = 0;
+nonModelMs.length = 0;
 const { base, instrumented } = await measureInterleaved(RUNS);
 
 const baseMedian = median(base);
@@ -404,6 +435,25 @@ function sampleInterval(xs) {
   };
 }
 const direct = sampleInterval(directAddedMs);
+
+/**
+ * The end-to-end difference with the model wait removed, paired run by run.
+ *
+ * This is the figure NFR-02's statement asks for. It is a wall-clock
+ * measurement of the whole run, so every Splitstick-attributable cost is in it
+ * -- including the background work and GC the direct measure cannot see -- and
+ * it is still a PAIRED difference, so machine drift cancels to the extent
+ * interleaving allows. What has been removed is the one component Splitstick
+ * cannot influence and which contributed nothing but variance.
+ */
+const baseNonModel = nonModelMs.filter(x => x.label === 'baseline').map(x => x.ms);
+const withNonModel = nonModelMs.filter(x => x.label === 'splitstick').map(x => x.ms);
+const endToEnd = baseNonModel.length >= 2 && withNonModel.length >= 2
+  ? pairedDifference(baseNonModel, withNonModel)
+  : null;
+const endToEndVerdict = endToEnd === null ? 'NO END-TO-END MEASUREMENT'
+  : endToEnd.ci95_high <= budgetMs ? 'WITHIN BUDGET'
+    : endToEnd.ci95_low > budgetMs ? 'OVER BUDGET' : 'UNRESOLVED';
 /**
  * The verdict that counts, taken on the direct measure.
  *
@@ -436,19 +486,35 @@ const report = {
   model: REAL ? MODEL : 'scripted-1',
   // Assumed OR measured, never both, and the null says which.
   model_latency_assumed_ms: measuredDenominator ? null : MODEL_MS,
-  model_latency_measured_ms: REAL ? {
+  model_latency_measured_ms: modelCallMs.length > 0 ? {
     calls: modelCallMs.length,
     median: Number((mid(modelCallMs) ?? 0).toFixed(3)),
     min: Number(Math.min(...modelCallMs).toFixed(3)),
     max: Number(Math.max(...modelCallMs).toFixed(3)),
   } : null,
-  model_calls_per_run: REAL ? [...new Set(callsPerRun)].sort((a, b) => a - b) : null,
+  model_calls_per_run: [...new Set(callsPerRun)].sort((a, b) => a - b),
   denominator_ms: Number(denominatorMs.toFixed(3)),
   denominator_is_measured: measuredDenominator,
   pairs_needed_for_budget: pairsForBudget,
 
   // The added work, measured inside the wrapper instead of as a difference of
   // two wall-clocks. This is the figure with resolution.
+  // THE FIGURE THAT ANSWERS THE REQUIREMENT AS STATED: end-to-end, paired,
+  // with only the model wait removed. Everything Splitstick can affect is in
+  // it, measured as wall clock rather than as intercepted calls.
+  added_end_to_end_ex_model: endToEnd === null ? null : {
+    n: endToEnd.n,
+    mean_ms: Number(endToEnd.mean_diff.toFixed(4)),
+    sd_ms: Number(endToEnd.sd_diff.toFixed(4)),
+    ci95_ms: [Number(endToEnd.ci95_low.toFixed(4)), Number(endToEnd.ci95_high.toFixed(4))],
+    baseline_median_ms: Number(median(baseNonModel).toFixed(3)),
+  },
+  added_end_to_end_percent: endToEnd === null ? null
+    : Number((100 * endToEnd.mean_diff / denominatorMs).toFixed(4)),
+  added_end_to_end_percent_ci_high: endToEnd === null ? null
+    : Number((100 * endToEnd.ci95_high / denominatorMs).toFixed(4)),
+  verdict_end_to_end: endToEndVerdict,
+
   added_direct: direct,
   verdict_direct: directVerdict,
   added_direct_percent: direct
