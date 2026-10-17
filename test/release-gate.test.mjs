@@ -36,7 +36,14 @@ const run = (/** @type {string[]} */ args) => new Promise((resolve) => {
 
 /**
  * A fixture world: a requirements directory and a packages directory.
- * @param {{ reqs?: any[], versions?: Record<string, string> }} o
+ *
+ * `file` says which requirement file the fixture writes, because WHICH file is
+ * exactly what the gate got wrong. These fixtures all wrote part1.json, which
+ * the repository does not have — so the suite passed while the gate was blind
+ * to requirements/backlog.json and the 47 requirements in it.
+ *
+ * @param {{ reqs?: any[], versions?: Record<string, string>, file?: string,
+ *           resolved?: any[] }} o
  */
 function world(o) {
   const dir = mkdtempSync(join(tmpdir(), 'ss-rel-'));
@@ -45,7 +52,11 @@ function world(o) {
   mkdirSync(reqs);
   mkdirSync(pkgs);
   if (o.reqs !== undefined) {
-    writeFileSync(join(reqs, 'part1.json'), JSON.stringify({ requirements: o.reqs }));
+    writeFileSync(join(reqs, o.file ?? 'part1.json'), JSON.stringify({ requirements: o.reqs }));
+  }
+  if (o.resolved !== undefined) {
+    writeFileSync(join(reqs, 'backlog.resolved.json'),
+      JSON.stringify({ count: o.resolved.length, requirements: o.resolved }));
   }
   for (const [name, version] of Object.entries(o.versions ?? { a: '1.0.0' })) {
     mkdirSync(join(pkgs, name));
@@ -248,4 +259,56 @@ test('TRC-05: the release workflow runs the claims audit and gates the publish',
   const gates = [...ci.matchAll(/run: (npm run [a-z:]+)/g)].map(m => String(m[1]));
   const missing = [...new Set(gates)].filter(g => !wf.includes(g) && !/bench|generate/.test(g));
   assert.deepEqual(missing, [], `gates CI runs that a release does not: ${missing.join(', ')}`);
+});
+
+/**
+ * The gate read `part\\d+\\.json` and nothing else, and the repository has no
+ * part1.json — so requirements/backlog.json, 47 requirements including FR-15,
+ * were invisible to it. It reported "1.0: 142/147 done" and five open while the
+ * truth was 193 and six. A gate that reads a subset and reports a total is
+ * worse than no gate, because the total looks authoritative.
+ *
+ * Every fixture above writes part1.json, which is why the suite never saw this.
+ * These three read the layout the repository actually has.
+ */
+test('requirements in backlog.json are read, not only partN.json', async () => {
+  const w = world({ file: 'backlog.json', reqs: [req('FR-01', '1.0', 'open')] });
+  try {
+    const r = await run([...w.args, ...publish('v1.0.0')]);
+    assert.equal(r.code, 1, 'an open requirement in backlog.json must block the release');
+    assert.match(r.out + r.err, /FR-01/);
+  } finally { w.cleanup(); }
+});
+
+test('a backlog the gate cannot fully see is refused, not totalled', async () => {
+  // The resolved merge names a requirement this gate did not read. Neither
+  // number may stand as the total.
+  const w = world({
+    file: 'backlog.json',
+    reqs: [req('FR-01', '1.0', 'done')],
+    resolved: [req('FR-01', '1.0', 'done'), req('FR-15', '1.0', 'open')],
+  });
+  try {
+    const r = await run([...w.args, ...publish('v1.0.0')]);
+    assert.equal(r.code, 2, 'a partial read must refuse rather than report a total');
+    assert.match(r.out + r.err, /not read by this gate: FR-15/);
+  } finally { w.cleanup(); }
+});
+
+test('the real repository backlog is read in full, FR-15 included', async () => {
+  // Against the repository itself, not a fixture. The defect was a mismatch
+  // between the fixture layout and the real one, so a fixture cannot catch it.
+  const r = await run(['--report']);
+  assert.equal(r.code, 0);
+  const resolved = JSON.parse(
+    readFileSync(new URL('../requirements/backlog.resolved.json', import.meta.url), 'utf8'));
+  const open10 = resolved.requirements
+    .filter((/** @type {any} */ x) => String(x.release) === '1.0' && x.status !== 'done')
+    .map((/** @type {any} */ x) => x.id);
+  assert.ok(open10.length > 0, 'this check needs at least one open 1.0 requirement to be meaningful');
+  for (const id of open10) {
+    assert.match(r.out, new RegExp(`OPEN\\s+${id}\\b`),
+      `${id} is open in the resolved backlog and the gate did not report it`);
+  }
+  assert.match(r.out, /1\.0: \d+\/\d+ done/);
 });
