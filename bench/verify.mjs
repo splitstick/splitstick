@@ -97,6 +97,25 @@ async function build(n) {
 const hostBefore = await environment();
 const clock = clockResolution(BUDGET_MS);
 
+/**
+ * Preflight, before the fixtures are built rather than after they are verified.
+ * A hundred thousand records take minutes to construct, and a host that cannot
+ * qualify should say so first. Only the load climb waits for the run.
+ */
+const pre = qualifyRun(REF, {
+  requirement: 'NFR-04',
+  before: hostBefore,
+  events: EVENTS, repeats: REPEAT, clockAdequate: clock.adequate,
+  machine: str('machine'), storage: str('storage'),
+}, { phase: 'preflight' });
+
+if (!JSON_OUT) {
+  process.stderr.write(pre.shortfalls.length === 0
+    ? `\nPREFLIGHT  nothing short yet; ${pre.deferred.length} constraint(s) await the run\n\n`
+    : '\nPREFLIGHT  this run will be a REGRESSION metric, not an acceptance result:\n'
+      + pre.shortfalls.map(x => `  - ${x}\n`).join('') + '\n');
+}
+
 const fixtures = [];
 for (let r = 0; r < REPEAT; r += 1) fixtures.push(await build(EVENTS));
 

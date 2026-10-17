@@ -232,6 +232,60 @@ test('a requirement the reference file does not declare throws', () => {
 });
 
 /**
+ * A preflight runs before the measurement, so that a host which cannot qualify
+ * is not discovered twenty minutes later. It must never report a pass: the
+ * constraints it cannot evaluate yet are deferred, not satisfied.
+ */
+test('a preflight defers what it cannot evaluate and never qualifies a run', () => {
+  const { env, ...beforeTheRun } = ample;
+  const r = offCi(() => qualifyRun(REF, /** @type {any} */ (beforeTheRun), { phase: 'preflight' }));
+  assert.deepEqual(r.shortfalls, [], 'everything knowable in advance is satisfied here');
+  assert.deepEqual(r.deferred, ['max_load_increase_1m cannot be evaluated until the run has finished']);
+  assert.equal(r.qualifies, false, 'a preflight cannot qualify anything; only the final phase can');
+});
+
+test('a preflight still names what is already short, before the time is spent', () => {
+  const { env, ...beforeTheRun } = ample;
+  const r = qualifyRun(REF, /** @type {any} */ ({
+    ...beforeTheRun, before: { ...quiet(), load_average_1m: 3.1, free_disk_gb: 9 },
+  }), { phase: 'preflight' });
+  assert.ok(r.shortfalls.some(x => /load average 3\.1 > 1 before the run started/.test(x)));
+  assert.ok(r.shortfalls.some(x => /9 GB free/.test(x)), JSON.stringify(r.shortfalls));
+});
+
+test('the final verdict refuses to be reached without the post-run sample', () => {
+  const { env, ...beforeTheRun } = ample;
+  assert.throws(() => qualifyRun(REF, /** @type {any} */ (beforeTheRun)),
+    /needs a host sample taken AFTER the measured work/);
+});
+
+/**
+ * The reference file and the clock check must be read before the measurement,
+ * not after it. They used to be read after, so a malformed reference file or a
+ * host that could never qualify cost a full twenty-minute run to discover.
+ */
+test('both benchmarks preflight the reference environment before measuring', () => {
+  for (const [file, loopAnchor] of [
+    ['../append.mjs', 'chainRuns.push(await arm(false))'],
+    ['../verify.mjs', 'fixtures.push(await build(EVENTS))'],
+  ]) {
+    const src = readFileSync(new URL(file, import.meta.url), 'utf8');
+    const loop = src.indexOf(loopAnchor);
+    assert.ok(loop !== -1, `${file}: measured-work anchor ${JSON.stringify(loopAnchor)} not found — `
+      + 'this check can no longer locate its subject and must be repaired, not skipped');
+    for (const [what, needle] of [
+      ['the reference file', 'reference-env.json'],
+      ['the clock check', 'clockResolution('],
+      ['the preflight', "phase: 'preflight'"],
+    ]) {
+      const at = src.indexOf(needle);
+      assert.ok(at !== -1, `${file}: ${what} (${needle}) not found`);
+      assert.ok(at < loop, `${file}: ${what} is read after the measurement starts`);
+    }
+  }
+});
+
+/**
  * The unit tests above hand qualifyRun its observation, which is exactly why
  * the original defect was invisible: the guard was tested, the CALL SITE was
  * not. So assert the order in the benchmark sources themselves, and fail loudly

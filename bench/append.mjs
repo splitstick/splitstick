@@ -212,6 +212,36 @@ function across(runs) {
  */
 const hostBefore = await environment();
 
+const REF = JSON.parse(fs.readFileSync(new URL('./reference-env.json', import.meta.url), 'utf8'));
+const clock = clockResolution(0.05);      // p50 is ~0.2 ms; the tick must be far below it
+
+/**
+ * Preflight, before twenty minutes of work rather than after it.
+ *
+ * The reference environment used to be parsed and evaluated only once the
+ * measurement was already spent, so a host that could never qualify — and a
+ * malformed reference file — both cost a full run to discover. Everything
+ * knowable in advance is checked here and printed; only the load climb has to
+ * wait for the run, and it is reported as deferred rather than as satisfied.
+ */
+const pre = qualifyRun(REF, {
+  requirement: 'NFR-01',
+  before: hostBefore,
+  events: EVENTS,
+  repeats: REPEAT,
+  clockAdequate: clock.adequate,
+  ...(MACHINE ? { machine: MACHINE } : {}),
+  ...(STORAGE ? { storage: STORAGE } : {}),
+}, { phase: 'preflight' });
+
+if (!JSON_OUT) {
+  process.stderr.write(pre.shortfalls.length === 0
+    ? `\nPREFLIGHT  nothing short yet; ${pre.deferred.length} constraint(s) await the run\n\n`
+    : `\nPREFLIGHT  this run will be a REGRESSION METRIC, not an acceptance measurement:\n`
+      + pre.shortfalls.map(x => `  - ${x}\n`).join('')
+      + '  Continuing anyway, because a regression metric is still worth having.\n\n');
+}
+
 /** @type {ReturnType<typeof percentiles>[]} */
 const chainRuns = [];
 /** @type {ReturnType<typeof percentiles>[]} */
@@ -228,9 +258,7 @@ for (let i = 0; i < REPEAT; i++) {
   fileRuns.push(fs_.create_new_file);
 }
 const recorder = await selfCheck();
-const clock = clockResolution(0.05);          // p50 is ~0.2 ms; the tick must be far below it
 const env = await environment();          // after the run, for attribution
-const REF = JSON.parse(fs.readFileSync(new URL('./reference-env.json', import.meta.url), 'utf8'));
 
 /**
  * Acceptance measurement, or regression metric? The same harness produces both,

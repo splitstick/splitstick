@@ -170,13 +170,24 @@ export async function environment() {
  * shared `min_events` meant every NFR-04 run reported a shortfall against a
  * figure its own requirement never asks for.
  *
+ * Two phases. `final` is the real verdict and needs both host samples.
+ * `preflight` runs BEFORE the measurement, against what is already knowable —
+ * the machine, the event count, the attestation — and defers the constraints
+ * that cannot be evaluated yet instead of passing them. Its purpose is cost: a
+ * million-event run takes twenty minutes, and the reference environment used to
+ * be parsed and evaluated only once that was already spent, so a host that
+ * could never qualify found out afterwards. A deferred constraint is reported as
+ * deferred and never counted as satisfied.
+ *
  * @param {Record<string, any>} ref the parsed reference-env.json
- * @param {{ requirement: string, before: any, env: any, events: number,
+ * @param {{ requirement: string, before: any, env?: any, events: number,
  *           repeats: number, clockAdequate: boolean,
  *           machine?: string, storage?: string }} observed
- * @returns {{ qualifies: boolean, shortfalls: string[] }}
+ * @param {{ phase?: 'preflight'|'final' }} [opts]
+ * @returns {{ qualifies: boolean, shortfalls: string[], deferred: string[] }}
  */
-export function qualifyRun(ref, observed) {
+export function qualifyRun(ref, observed, opts = {}) {
+  const phase = opts.phase ?? 'final';
   if (!observed.before || typeof observed.before !== 'object') {
     throw new Error(
       'qualifyRun needs a host sample taken BEFORE the measured work (observed.before). '
@@ -184,7 +195,12 @@ export function qualifyRun(ref, observed) {
       + 'the benchmark instead of the machine, which is how max_load_average_1m became '
       + 'unsatisfiable on every host.');
   }
-  if (observed.before === observed.env) {
+  if (phase === 'final' && (!observed.env || typeof observed.env !== 'object')) {
+    throw new Error(
+      'the final verdict needs a host sample taken AFTER the measured work (observed.env). '
+      + 'Pass { phase: "preflight" } if the run has not happened yet.');
+  }
+  if (observed.env !== undefined && observed.before === observed.env) {
     throw new Error(
       'qualifyRun was given the same object as both the before and after host sample. '
       + 'Call environment() twice — once before the measured work and once after — or the '
@@ -273,9 +289,18 @@ export function qualifyRun(ref, observed) {
   for (const k of descriptive) delete effective[k];
   Object.assign(effective, perRequirement[observed.requirement] ?? {});
 
+  // Evaluated only in the final phase, because they read the post-run sample.
+  const needsTheRun = new Set(['max_load_increase_1m']);
+
   /** @type {string[]} */
   const shortfalls = [];
+  /** @type {string[]} */
+  const deferred = [];
   for (const [key, want] of Object.entries(effective)) {
+    if (phase === 'preflight' && needsTheRun.has(key)) {
+      deferred.push(`${key} cannot be evaluated until the run has finished`);
+      continue;
+    }
     const evaluate = evaluators[key];
     if (!evaluate) {
       throw new Error(
@@ -287,5 +312,11 @@ export function qualifyRun(ref, observed) {
     if (shortfall) shortfalls.push(shortfall);
   }
   if (!observed.clockAdequate) shortfalls.push('clock resolution too coarse for what is reported');
-  return { qualifies: shortfalls.length === 0, shortfalls };
+  // A preflight with nothing short does not qualify anything: the deferred
+  // constraints are unevaluated, not met. Only the final phase can say yes.
+  return {
+    qualifies: phase === 'final' && shortfalls.length === 0,
+    shortfalls,
+    deferred,
+  };
 }
