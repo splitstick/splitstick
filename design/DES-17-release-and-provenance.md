@@ -85,13 +85,31 @@ payload sizes. It is not an industry standard and this document does not pretend
 otherwise.
 
 The reference environment is `bench/reference-env.json`: at least four CPUs,
-8 GB, a one-minute load average under 1.0, a million events and three repeats.
-The thresholds are deliberately loose, because their job is to exclude a busy
-laptop and a shared CI runner rather than to require particular hardware. The
-harness compares each run against it and prints whether it produced an
-**acceptance measurement** or a **regression metric**, naming every shortfall —
-so an acceptance claim cannot be made by accident from the wrong machine, which
-is how two of this project's performance claims had to be withdrawn.
+8 GB, 20 GB free on the fixture volume, a one-minute load average under 1.0
+*before the run starts*, no CI runner, and three repeats — over a million events
+for NFR-01's tail, a hundred thousand for NFR-04's wall clock. The thresholds
+are deliberately loose, because their job is to exclude a busy laptop and a
+shared CI runner rather than to require particular hardware. The harness
+compares each run against it and prints whether it produced an **acceptance
+measurement** or a **regression metric**, naming every shortfall — so an
+acceptance claim cannot be made by accident from the wrong machine, which is how
+two of this project's performance claims had to be withdrawn.
+
+Three of those constraints were added after a review found the gate could not be
+passed rather than merely being strict. `max_load_average_1m` was evaluated
+against a load average sampled *after* the measured loop, and a saturated
+single-threaded benchmark raises its own one-minute average to roughly 1.0
+against a limit of 1.0 — the constraint whose stated purpose is to exclude "a
+machine under other load" was scoring this benchmark's load, on every host. The
+pre-run sample is now what the constraint reads, `max_load_increase_1m` covers
+work that joins midway, and `qualifyRun` throws rather than falling back to the
+post-run reading, because the fallback was the bug. In the same place, two
+exclusions the file listed in prose — a shared CI runner and a filesystem near
+capacity — had no evaluator at all while the file's own note claimed every
+constraint in it was evaluated; they are now `forbid_ci` and
+`min_free_disk_gb`. And NFR-04 was being held to NFR-01's million-event
+threshold, so every NFR-04 run reported a shortfall against a figure its own
+requirement does not ask for; the two now have separate constraint blocks.
 
 **The attribution has to be earned, and it took three attempts.** The first
 draft asserted the p99 tail was garbage collection — inference from the

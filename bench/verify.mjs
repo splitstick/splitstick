@@ -89,7 +89,12 @@ async function build(n) {
   return { root, vkey: formatVkey('splitstick.dev/bench', signer.publicKey) };
 }
 
-const env = await environment();
+/**
+ * The host BEFORE any work, including fixture construction. This is what the
+ * "was the machine quiet and did it have room" constraints are evaluated
+ * against; a reading taken afterwards would score this benchmark.
+ */
+const hostBefore = await environment();
 const clock = clockResolution(BUDGET_MS);
 
 const fixtures = [];
@@ -115,6 +120,8 @@ for (const f of fixtures) {
 }
 for (const f of fixtures) rmSync(f.root, { recursive: true, force: true });
 
+const env = await environment();          // after the run, for attribution
+
 const median = (/** @type {number[]} */ xs) => {
   const s = [...xs].sort((a, b) => a - b);
   return s.length % 2 ? Number(s[(s.length - 1) / 2])
@@ -122,7 +129,9 @@ const median = (/** @type {number[]} */ xs) => {
 };
 const worst = Math.max(...verifyMs);
 const { qualifies, shortfalls } = qualifyRun(REF, {
-  env, events: EVENTS, repeats: REPEAT, clockAdequate: clock.adequate,
+  requirement: 'NFR-04',
+  before: hostBefore, env,
+  events: EVENTS, repeats: REPEAT, clockAdequate: clock.adequate,
   machine: str('machine'), storage: str('storage'),
 });
 
@@ -144,6 +153,7 @@ const result = {
   verdict: lastReport?.verdict ?? null,
   failed_checks: lastReport?.summary?.failed ?? null,
   env,
+  env_before_run: hostBefore,
   machine: str('machine') ?? null,
   storage: str('storage') ?? null,
 };

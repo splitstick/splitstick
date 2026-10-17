@@ -56,11 +56,19 @@ test('the clock is checked against what the benchmark reports', () => {
 
 test('the environment is recorded so a number is attributable', async () => {
   const env = await environment();
-  for (const k of ['node', 'platform', 'arch', 'cpu', 'cpus', 'total_memory_gb']) {
+  for (const k of ['node', 'platform', 'arch', 'cpu', 'cpus', 'total_memory_gb',
+    'load_average_1m', 'free_disk_gb']) {
     assert.ok(k in env, `missing ${k}`);
   }
   assert.match(env.node, /^v\d+/);
   assert.ok(env.cpus >= 1);
+  // Real readings, not placeholders: a constraint evaluated against a sentinel
+  // is not evaluated. free_disk_gb is NaN only when statfs itself failed, and
+  // qualifyRun treats that as a shortfall rather than a pass.
+  assert.equal(typeof env.free_disk_gb, 'number');
+  assert.ok(Number.isFinite(env.free_disk_gb) && env.free_disk_gb > 0,
+    `free_disk_gb should be a real reading on this host, got ${env.free_disk_gb}`);
+  assert.ok(Number.isFinite(env.load_average_1m));
 });
 
 import { qualifyRun } from '../precision.mjs';
@@ -68,16 +76,183 @@ import { readFileSync } from 'node:fs';
 
 const REF = JSON.parse(readFileSync(new URL('../reference-env.json', import.meta.url), 'utf8'));
 
+const CI_MARKERS = ['CI', 'GITHUB_ACTIONS', 'GITLAB_CI', 'BUILDKITE', 'JENKINS_URL'];
+
+/**
+ * Run `fn` with the CI markers cleared. These tests assert what a QUALIFYING
+ * host looks like, and the suite itself runs on a CI runner — which forbid_ci
+ * correctly disqualifies. Without this the assertions would pass locally and
+ * fail in CI, which is the wrong way round for a guard about environments.
+ * @template T @param {() => T} fn
+ */
+const offCi = (fn) => {
+  const saved = CI_MARKERS.map(k => /** @type {const} */ ([k, process.env[k]]));
+  for (const k of CI_MARKERS) delete process.env[k];
+  try { return fn(); } finally {
+    for (const [k, v] of saved) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+  }
+};
+
+/** A quiet, roomy host sampled before the run. */
+const quiet = () => ({ cpus: 8, total_memory_gb: 32, load_average_1m: 0.2, free_disk_gb: 400 });
+
 const ample = {
-  env: { cpus: 8, total_memory_gb: 32, load_average_1m: 0.2 },
+  requirement: 'NFR-01',
+  before: quiet(),
+  env: { ...quiet(), load_average_1m: 1.0 },   // the benchmark's own load, after the run
   events: 1_000_000, repeats: 3, clockAdequate: true,
   machine: 'bench-01, bare metal', storage: 'NVMe SSD, ext4, 40% full',
 };
 
 test('a fully specified run qualifies', () => {
-  const r = qualifyRun(REF, ample);
+  const r = offCi(() => qualifyRun(REF, ample));
   assert.deepEqual(r.shortfalls, []);
   assert.equal(r.qualifies, true);
+});
+
+/**
+ * THE defect this file exists to prevent recurring. max_load_average_1m was
+ * evaluated against a reading taken after the measured loop. A saturated
+ * single-threaded benchmark drives its own one-minute load average to roughly
+ * 1.0 and the limit is 1.0, so the constraint could not be satisfied on any
+ * machine however dedicated — a gate that cannot pass, not a gate that is
+ * strict. Its stated purpose is to exclude "a machine under other load"; it was
+ * measuring this benchmark's load.
+ *
+ * A quiet machine whose load rises only because of the run must qualify.
+ */
+test('a quiet host whose load rises only because of the run still qualifies', () => {
+  const r = offCi(() => qualifyRun(REF, {
+    ...ample,
+    before: { ...quiet(), load_average_1m: 0.04 },
+    env: { ...quiet(), load_average_1m: 1.12 },   // the run itself, nothing else
+  }));
+  assert.deepEqual(r.shortfalls, [], 'the benchmark\'s own load must not disqualify it');
+  assert.equal(r.qualifies, true);
+});
+
+test('pre-run load over the limit disqualifies, and says it was before the run', () => {
+  const r = qualifyRun(REF, { ...ample, before: { ...quiet(), load_average_1m: 2.9 } });
+  assert.equal(r.qualifies, false);
+  assert.ok(r.shortfalls.some(x => /load average 2\.9 > 1 before the run started/.test(x)),
+    JSON.stringify(r.shortfalls));
+});
+
+/**
+ * The companion the pre-run sample needs: it cannot see work that joins
+ * midway. A climb larger than this single-threaded benchmark can account for
+ * is other work, and must be named.
+ */
+test('load that climbs further than the run can account for is named', () => {
+  const r = qualifyRun(REF, {
+    ...ample,
+    before: { ...quiet(), load_average_1m: 0.1 },
+    env: { ...quiet(), load_average_1m: 6.4 },
+  });
+  assert.equal(r.qualifies, false);
+  assert.ok(r.shortfalls.some(x => /climbed 6\.3 during the run/.test(x)), JSON.stringify(r.shortfalls));
+});
+
+test('a missing post-run sample is a shortfall, not a pass', () => {
+  const r = qualifyRun(REF, { ...ample, env: { ...quiet(), load_average_1m: Number.NaN } });
+  assert.equal(r.qualifies, false);
+  assert.ok(r.shortfalls.some(x => /no post-run load average/.test(x)), JSON.stringify(r.shortfalls));
+});
+
+/**
+ * An observation with no pre-run sample THROWS. Falling back to the post-run
+ * reading is the original bug, so there is no fallback to fall into.
+ */
+test('qualifyRun refuses an observation with no pre-run host sample', () => {
+  const { before, ...withoutBefore } = ample;
+  assert.throws(() => qualifyRun(REF, /** @type {any} */ (withoutBefore)),
+    /BEFORE the measured work/);
+  const same = { ...quiet() };
+  assert.throws(() => qualifyRun(REF, { ...ample, before: same, env: same }),
+    /same object as both the before and after/,
+    'one sample cannot serve as both');
+});
+
+/**
+ * "a filesystem at or near capacity, which measurably slows file creation" was
+ * declared in the excluded list and checked by nothing, while the file's own
+ * note claimed every constraint here is evaluated.
+ */
+test('a filesystem near capacity disqualifies the run', () => {
+  const r = qualifyRun(REF, { ...ample, before: { ...quiet(), free_disk_gb: 9 } });
+  assert.equal(r.qualifies, false);
+  assert.ok(r.shortfalls.some(x => /9 GB free on the fixture volume < 20 GB/.test(x)),
+    JSON.stringify(r.shortfalls));
+});
+
+test('an unreadable free-space reading is a shortfall, not a pass', () => {
+  for (const bad of [Number.NaN, Number.POSITIVE_INFINITY, undefined]) {
+    const r = qualifyRun(REF, { ...ample, before: { ...quiet(), free_disk_gb: bad } });
+    assert.equal(r.qualifies, false, String(bad));
+    assert.ok(r.shortfalls.some(x => /could not be read/.test(x)), JSON.stringify(r.shortfalls));
+  }
+});
+
+/** "a shared CI runner, where neighbours move the tail by a factor of two". */
+test('a CI runner disqualifies the run', () => {
+  const r = offCi(() => {
+    process.env.GITHUB_ACTIONS = 'true';
+    return qualifyRun(REF, ample);
+  });
+  assert.equal(r.qualifies, false);
+  assert.ok(r.shortfalls.some(x => /GITHUB_ACTIONS is set/.test(x)), JSON.stringify(r.shortfalls));
+});
+
+/**
+ * NFR-04 was evaluated against NFR-01's min_events, so every NFR-04 run
+ * reported "100000 events < 1000000" — a shortfall against a figure its own
+ * requirement does not ask for.
+ */
+test('each requirement is held to its own event count', () => {
+  const nfr04 = {
+    ...ample, requirement: 'NFR-04', events: 100_000, repeats: 3,
+  };
+  const r = offCi(() => qualifyRun(REF, nfr04));
+  assert.deepEqual(r.shortfalls, [], '100,000 events is what NFR-04 asks for');
+
+  const short = qualifyRun(REF, { ...nfr04, events: 99_999 });
+  assert.ok(short.shortfalls.some(x => /99999 events < 100000/.test(x)), JSON.stringify(short.shortfalls));
+
+  const asNfr01 = qualifyRun(REF, { ...ample, events: 100_000 });
+  assert.ok(asNfr01.shortfalls.some(x => /100000 events < 1000000/.test(x)),
+    'NFR-01 still needs a million samples to have a tail');
+});
+
+test('a requirement the reference file does not declare throws', () => {
+  assert.throws(() => qualifyRun(REF, { ...ample, requirement: 'NFR-99' }),
+    /no constraint block for "NFR-99"/);
+  const { requirement, ...unnamed } = ample;
+  assert.throws(() => qualifyRun(REF, /** @type {any} */ (unnamed)),
+    /was not told which requirement/);
+});
+
+/**
+ * The unit tests above hand qualifyRun its observation, which is exactly why
+ * the original defect was invisible: the guard was tested, the CALL SITE was
+ * not. So assert the order in the benchmark sources themselves, and fail loudly
+ * if the anchors cannot be found rather than silently checking nothing.
+ */
+test('both benchmarks sample the host before their measured work', () => {
+  for (const [file, loopAnchor] of [
+    ['../append.mjs', 'chainRuns.push(await arm(false))'],
+    ['../verify.mjs', 'fixtures.push(await build(EVENTS))'],
+  ]) {
+    const src = readFileSync(new URL(file, import.meta.url), 'utf8');
+    const before = src.indexOf('const hostBefore = await environment()');
+    const loop = src.indexOf(loopAnchor);
+    const after = src.indexOf('const env = await environment()');
+    assert.ok(before !== -1, `${file}: no pre-run environment() sample found`);
+    assert.ok(loop !== -1, `${file}: measured-work anchor ${JSON.stringify(loopAnchor)} not found — `
+      + 'this check can no longer locate its subject and must be repaired, not skipped');
+    assert.ok(after !== -1, `${file}: no post-run environment() sample found`);
+    assert.ok(before < loop, `${file}: the host is sampled after the measured work begins`);
+    assert.ok(after > loop, `${file}: the attribution sample is taken before the work it attributes`);
+  }
 });
 
 /**
@@ -116,12 +291,14 @@ test('an acceptance run must name its machine and storage', () => {
 
 test('each shortfall is named, so a near miss is actionable', () => {
   const r = qualifyRun(REF, {
-    env: { cpus: 2, total_memory_gb: 4, load_average_1m: 9 },
+    requirement: 'NFR-01',
+    before: { cpus: 2, total_memory_gb: 4, load_average_1m: 9, free_disk_gb: 3 },
+    env: { cpus: 2, total_memory_gb: 4, load_average_1m: 9.4, free_disk_gb: 3 },
     events: 100, repeats: 1, clockAdequate: false,
   });
   assert.equal(r.qualifies, false);
-  assert.ok(r.shortfalls.length >= 6, JSON.stringify(r.shortfalls));
-  for (const needle of ['cpus', 'memory', 'load average', 'events', 'repeats', 'clock']) {
+  assert.ok(r.shortfalls.length >= 7, JSON.stringify(r.shortfalls));
+  for (const needle of ['cpus', 'memory', 'load average', 'events', 'repeats', 'clock', 'GB free']) {
     assert.ok(r.shortfalls.some(s => s.includes(needle)), `${needle} not named`);
   }
 });

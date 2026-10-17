@@ -6,8 +6,8 @@
     "title": "Low-overhead evidence capture",
     "statement": "Splitstick must add no more than 1 ms per event at p95 and 3 ms per event at p99 on a defined reference environment, measured over at least one million representative events across multiple benchmark runs. Measurements must include content commitment, encryption and local persistence, exclude deferred checkpoint and witness operations, and report sustained throughput and memory behaviour. The engineering stretch target remains p99 below 1 ms. Durability and integrity are never traded for latency: no deferring a critical write without guaranteed recovery, no weakening source-sequence or failure reporting, no removing encryption or commitment checks, and no uncontrolled buffering to improve a benchmark.",
     "source": "Numbers we are signing up to",
-    "verify": "Benchmark harness on the reference environment defined in bench/reference-env.json: p95 and p99 over at least 1e6 events, at least three repeats, reporting p50/p95/p99/p99.9, throughput, memory and GC activity. The harness declares each run an acceptance measurement or a regression metric and names every shortfall, and it verifies its own instruments \u2014 clock resolution and the GC recorder \u2014 in the same run. A run that meets p95 but not the p99 stretch target is a pass against the budget and is reported as such.",
-    "note": "M1 status: open pending a qualifying run. Measured on the development machine (a regression metric, not acceptance): p50 0.23 ms, p95 0.49 ms, p99 1.77 ms against p95<=1 ms and p99<=3 ms. GC measured at 71 pauses coinciding with 56% of the slowest 1% of samples; filesystem latency accounts for much of the rest. Two earlier attributions here were withdrawn \u2014 one asserted without measurement, one on a measurement whose instrument was never validated. Closing it is tracked in docs/m1-follow-ups.md, including the limits of the qualification check: cpus, memory and load cannot establish that a machine is dedicated or that its storage is comparable, so an acceptance run must also name its machine and storage."
+    "verify": "Benchmark harness on the reference environment defined in bench/reference-env.json: p95 and p99 over at least 1e6 events, at least three repeats, reporting p50/p95/p99/p99.9, throughput, memory and GC activity. The harness declares each run an acceptance measurement or a regression metric and names every shortfall, and it verifies its own instruments — clock resolution and the GC recorder — in the same run. A run that meets p95 but not the p99 stretch target is a pass against the budget and is reported as such.",
+    "note": "M1 status: open pending a qualifying run. Measured on the development machine (a regression metric, not acceptance): p50 0.23 ms, p95 0.49 ms, p99 1.77 ms against p95<=1 ms and p99<=3 ms. GC measured at 71 pauses coinciding with 56% of the slowest 1% of samples; filesystem latency accounts for much of the rest. Two earlier attributions here were withdrawn — one asserted without measurement, one on a measurement whose instrument was never validated. Closing it is tracked in docs/m1-follow-ups.md, including the limits of the qualification check: cpus, memory and load cannot establish that a machine is dedicated or that its storage is comparable, so an acceptance run must also name its machine and storage. M7 follow-up: an attempt to take a qualifying measurement found the qualification check could not be satisfied on any host. max_load_average_1m was evaluated against a load average sampled AFTER the measured loop, and one saturated single-threaded process raises its own one-minute average to roughly 1.0 against a limit of 1.0 — the constraint whose stated purpose is to exclude a machine under other load was scoring this benchmark's load. Two of the three exclusions the reference file lists in prose (a shared CI runner, a filesystem near capacity) had no evaluator at all, while the file asserted every constraint in it was evaluated. Both are fixed: pre-run constraints read a host sample taken before any measured work, qualifyRun throws rather than falling back to the post-run reading, and forbid_ci and min_free_disk_gb now exist. The unit tests missed this because they handed qualifyRun a hand-built observation — the guard was tested and the call site was not — so a test now asserts the sampling order in both benchmark sources and fails loudly when it cannot find its anchor. This does not close NFR-01; it makes closing it possible."
   },
   {
     "id": "NFR-02",
@@ -18,7 +18,7 @@
     "source": "Numbers we are signing up to",
     "verify": "Interleaved A/B through the real OMA orchestrator, analysed as a paired difference because the arms alternate run by run. The verdict requires the whole 95% interval to sit below the budget; a budget falling inside the interval is reported as UNRESOLVED rather than as a pass. The harness records its environment and checks its clock resolution.",
     "status": "open",
-    "evidence": "bench/run-latency.mjs \u2014 40 paired runs: added 0.864 ms, 95% interval [-1.612, 3.340] ms, entirely below the 16.975 ms the 2% budget allows, so the budget is established rather than merely not contradicted. Instruments self-checked in the same run."
+    "evidence": "bench/run-latency.mjs — 40 paired runs: added 0.864 ms, 95% interval [-1.612, 3.340] ms, entirely below the 16.975 ms the 2% budget allows, so the budget is established rather than merely not contradicted. Instruments self-checked in the same run."
   },
   {
     "id": "NFR-03",
@@ -39,7 +39,7 @@
     "statement": "Verify a 100,000-event run in under 2 seconds, offline.",
     "source": "Numbers we are signing up to",
     "verify": "Benchmark on a documented reference machine",
-    "evidence": "bench/verify.mjs measures total elapsed against the 2 s budget on the WORST run, not a percentile and not the median: an auditor runs it once and 'usually under two seconds' is not the claim. STATUS: NOT YET ESTABLISHED. It needs a run on bench/reference-env.json's machine, and the development host sat at load average 13 \u2014 the project's own discipline puts the ceiling at 1.0 and calls anything else a regression metric. What IS established is that the verifier recomputed treeRoot once per checkpoint, O(checkpoints x n), which was the single largest cost: 585 ms of a 2.3 s run over 8,000 records, extrapolating to roughly 59 s at the size this requirement names. merkle.prefixRoots computes every prefix in one pass instead, proven equal to treeRoot for every prefix size rather than for a sample, and 5x faster in an isolated loop at 8 checkpoints. The remaining floor is JCS canonicalisation at ~19 microseconds a record, which puts 100,000 records near the budget on its own and is the next thing to measure on the reference host"
+    "evidence": "bench/verify.mjs measures total elapsed against the 2 s budget on the WORST run, not a percentile and not the median: an auditor runs it once and 'usually under two seconds' is not the claim. STATUS: NOT MET, and not for want of a reference host. With the O(checkpoints x n) consistency- proof regeneration fixed (prefixRoots plus a locally-confirmed-root set, which took the same measurement from 76,005 ms to 15,849 ms), verifying 100,000 records measures 15,849 ms median and 24,145 ms worst against a 2,000 ms budget — about 8x over. 1,235 ms of that is the floor the filesystem and JSON.parse impose on reading the journals at all, so 62% of the budget is spent before any verification happens, and JCS canonicalisation at ~19 microseconds a record is a further ~1.9 s on its own. A gap of that shape does not close on faster hardware: it closes either through substantial further work on the verify path (a JCS fast path; making content reproduction opt-in, since chain and inclusion verification do not need every plaintext) or through a deliberately revised budget with a measurement behind it, which is the precedent M1 set for NFR-01's own budget. Separately, every NFR-04 run used to report '100000 events < 1000000' because it was evaluated against NFR-01's reference block; the two now have their own constraints, so an NFR-04 run can state a real shortfall instead of a borrowed one."
   },
   {
     "id": "NFR-05",
@@ -47,10 +47,10 @@
     "release": "1.0",
     "title": "No network at verification",
     "statement": "Verification completes with networking disabled.",
-    "source": "Proof \u2014 no network",
+    "source": "Proof — no network",
     "verify": "Test executed in a network-isolated sandbox",
     "status": "done",
-    "evidence": "Two halves: `fetch` replaced with something that throws and the environment emptied, plus a comment-stripped source scan of the modules verification reaches. Neither alone is enough \u2014 a node: module namespace is read-only so the behavioural half cannot cover http.request, and the scan is stripped because it once failed on the word `fetch` inside a comment saying this verifier does not fetch"
+    "evidence": "Two halves: `fetch` replaced with something that throws and the environment emptied, plus a comment-stripped source scan of the modules verification reaches. Neither alone is enough — a node: module namespace is read-only so the behavioural half cannot cover http.request, and the scan is stripped because it once failed on the word `fetch` inside a comment saying this verifier does not fetch"
   },
   {
     "id": "NFR-06",
@@ -58,7 +58,7 @@
     "release": "1.0",
     "title": "No credentials at verification",
     "statement": "Verification requires no account, token or credential.",
-    "source": "Proof \u2014 no credentials, no account",
+    "source": "Proof — no credentials, no account",
     "verify": "Test with an empty environment",
     "status": "done",
     "evidence": "Verification runs with every environment variable deleted: no account, no token, no credential"
@@ -69,7 +69,7 @@
     "release": "1.0",
     "title": "Long-term verifiability",
     "statement": "Evidence remains verifiable years later; algorithms and formats are versioned to allow it.",
-    "source": "Proof \u2014 will still work in 2031",
+    "source": "Proof — will still work in 2031",
     "verify": "Format version negotiation test; documented algorithm migration path",
     "status": "done",
     "evidence": "v: 1 only, failing closed in record.mjs; FORMAT_UNSUPPORTED in verify.mjs; suite constant in record.mjs"
@@ -80,7 +80,7 @@
     "release": "1.0",
     "title": "Node.js 20+",
     "statement": "Run on Node.js 20 and later.",
-    "source": "Getting started \u2014 requires Node.js 20+",
+    "source": "Getting started — requires Node.js 20+",
     "verify": "CI matrix across supported majors",
     "status": "done",
     "evidence": "Every gate runs on Node 20.20.2, 22.23.2 and 24.21.0 for every milestone, and the mcp-proxy package declares engines node >= 20 like the others"
@@ -91,9 +91,9 @@
     "release": "1.0",
     "title": "HSM/KMS support",
     "statement": "Operate with a KMS or HSM offering non-exportable keys.",
-    "source": "Getting started \u2014 a KMS or HSM",
+    "source": "Getting started — a KMS or HSM",
     "verify": "Integration test against at least one KMS and one HSM. The KMS half runs via npm run test:kms against a real ECC_NIST_EDWARDS25519 key and asserts the signature verifies under an independent Ed25519 implementation, not only under ours; it reports NOT VERIFIED and skips when no key is configured, so a green suite never reads as having verified it.",
-    "note": "M2 status: open. The KMS adapter is built and its failure paths are covered against a fake, but the interoperability test needs a real AWS key and has not run. The HSM half is blocked: of the products that sign Ed25519, AWS KMS issues no per-key attestation and GCP offers Ed25519 at software protection level only, so independently-supported custody needs hardware \u2014 and the YubiHSM 2 purchase is on hold until its attestation capability is confirmed. See docs/kms-capability-matrix.md.",
+    "note": "M2 status: open. The KMS adapter is built and its failure paths are covered against a fake, but the interoperability test needs a real AWS key and has not run. The HSM half is blocked: of the products that sign Ed25519, AWS KMS issues no per-key attestation and GCP offers Ed25519 at software protection level only, so independently-supported custody needs hardware — and the YubiHSM 2 purchase is on hold until its attestation capability is confirmed. See docs/kms-capability-matrix.md.",
     "status": "done"
   },
   {
@@ -102,7 +102,7 @@
     "release": "1.0",
     "title": "OMA version compatibility",
     "statement": "Support @open-multi-agent/core 1.21.x.",
-    "source": "Getting started \u2014 tested against 1.21.x",
+    "source": "Getting started — tested against 1.21.x",
     "verify": "CI pinned against the supported range",
     "status": "done"
   },
@@ -112,10 +112,10 @@
     "release": "1.0",
     "title": "MCP transport coverage",
     "statement": "Support MCP over stdio and HTTP.",
-    "source": "Getting started \u2014 stdio and HTTP",
+    "source": "Getting started — stdio and HTTP",
     "verify": "E2E per transport",
     "status": "done",
-    "evidence": "Both transports, and a test asserts they produce the SAME record field for field \u2014 not down to the commitments, because a content cid is salted per store and comparing cids across stores compares two random salts. The equivalence that matters is the shape and the plaintext, and both are asserted. DES-14 makes the format adapter-independent so a verifier never needs to know which transport wrote a pack"
+    "evidence": "Both transports, and a test asserts they produce the SAME record field for field — not down to the commitments, because a content cid is salted per store and comparing cids across stores compares two random salts. The equivalence that matters is the shape and the plaintext, and both are asserted. DES-14 makes the format adapter-independent so a verifier never needs to know which transport wrote a pack"
   },
   {
     "id": "NFR-12",
@@ -123,7 +123,7 @@
     "release": "1.0",
     "title": "Never degrade availability",
     "statement": "The collector must never be able to stop or block an agent run.",
-    "source": "Operations \u2014 no audit layer that can take down production",
+    "source": "Operations — no audit layer that can take down production",
     "verify": "Absolute: a whole run completes with every witness unreachable, and no configuration can make the collector block",
     "status": "done",
     "evidence": "packages/core/test/queue.test.mjs; SCOPE-16's on_unavailable admits one value and there is no fail-closed setting to choose"
@@ -134,7 +134,7 @@
     "release": "1.0",
     "title": "Durable local queue",
     "statement": "Unwitnessed batches survive process restart and are re-submitted.",
-    "source": "Operations \u2014 marked unwitnessed, and queued",
+    "source": "Operations — marked unwitnessed, and queued",
     "verify": "The queue is a journal, read from disk on open; a drain is durable across restart; a torn tail is dropped AND repaired before the next append; damage in the middle is refused rather than skipped",
     "status": "done",
     "evidence": "Store.appendQueue/writeQueue/readQueue; an in-memory queue lost exactly the evidence an outage created, and an outage is when a restart is most likely. The append fast path then persisted the WRONG entry: the queue is kept ordered by checkpoint_seq, so an out-of-order enqueue landed mid-array while the append wrote the new entry at the end, leaving a disk order that no restart could reconcile with memory. A damaged entry is refused on read rather than coerced, because a queue that silently drops the unreadable loses the submission it was holding"
@@ -156,7 +156,7 @@
     "release": "1.0",
     "title": "Detection, not prevention",
     "statement": "The stated security goal is detection and attribution, not prevention.",
-    "source": "Threat model \u2014 goal",
+    "source": "Threat model — goal",
     "verify": "Claims review against documentation and marketing",
     "status": "done",
     "evidence": "stated as the design goal in the threat model"
@@ -167,7 +167,7 @@
     "release": "1.0",
     "title": "No trust in operator or vendor",
     "statement": "Verification must not require trusting the operator, host, collector binary, or Splitstick.",
-    "source": "Threat model \u2014 trust",
+    "source": "Threat model — trust",
     "verify": "The report enumerates what the reader is trusting; the operator appears only for completeness, identity and custody. The verifier source is asserted to import no config loader at all, and the trust path refuses any certificate the operator could have obtained for themselves",
     "status": "done",
     "evidence": "packages/verify/test/assumptions.test.mjs and packages/core/test/trust-path.test.mjs; an operator's configuration is not evidence, and neither is a certificate they already hold"
@@ -178,8 +178,8 @@
     "release": "1.0",
     "title": "One honest witness assumption",
     "statement": "Security holds if at least one witness in the configured set is honest; the assumption is documented.",
-    "source": "Threat model \u2014 trust",
-    "verify": "The assumption is stated in DES-08 alongside its uncomfortable half \u2014 a set sharing an interest is one witness wearing several hats \u2014 and a single-witness set is flagged by describeWitnessSet",
+    "source": "Threat model — trust",
+    "verify": "The assumption is stated in DES-08 alongside its uncomfortable half — a set sharing an interest is one witness wearing several hats — and a single-witness set is flagged by describeWitnessSet",
     "status": "done",
     "evidence": "design/DES-08 + packages/witnesses"
   },
@@ -189,7 +189,7 @@
     "release": "1.0",
     "title": "Documented exclusions",
     "statement": "Publish what is out of scope: actions never attempted, a compromised model, a lying tool, full quorum collusion, a key exfiltrated before first use.",
-    "source": "Threat model \u2014 out of scope",
+    "source": "Threat model — out of scope",
     "verify": "Document review",
     "status": "done",
     "evidence": "out-of-scope list, binding in both directions"
@@ -223,7 +223,7 @@
     "title": "Resist re-signing history",
     "statement": "Re-signing rewritten history with the current key must be detectable under non-exportable custody.",
     "source": "Attack class table, row 3",
-    "verify": "Epoch-ordering test: a checkpoint re-signed by a later epoch than a later checkpoint emits OPSIG_EPOCH_REGRESSED. A WHOLESALE re-sign is NOT caught locally and the report says so \u2014 that half is AC-3, carried to M3a",
+    "verify": "Epoch-ordering test: a checkpoint re-signed by a later epoch than a later checkpoint emits OPSIG_EPOCH_REGRESSED. A WHOLESALE re-sign is NOT caught locally and the report says so — that half is AC-3, carried to M3a",
     "status": "done",
     "evidence": "OPSIG_EPOCH_REGRESSED in packages/verify/src/verify.mjs; red-team attack C3 (partial re-sign after two rotations) DETECTED, while C2 (wholesale re-sign) stays UNDETECTED and names M3a; spec/failure-codes.json states the limit; packages/verify/test/succession.test.mjs asserts both the detection and the non-detection"
   },
@@ -258,7 +258,7 @@
     "source": "Attack class table, row 6",
     "verify": "Kill the collector mid-window; the coverage report shows an undeclared gap. A separate test asserts a collector reporting a forged digest is NOT flagged, so the limit is pinned by a test rather than by prose",
     "status": "done",
-    "evidence": "Heartbeat discontinuity as COVERAGE_GAP (red-team G, detected) and the patched collector as a declared limit (red-team G2, undetected by construction \u2014 a patched collector never allocates the number, so there is nothing to remove). G2 first removed the action from an honest store and was DETECTED via the source_seq hole, which would have credited AC-6 for catching something it does not catch The coverage report refuses a completeness claim when no heartbeat falls in the window, because the mechanism being absent is not the mechanism reporting continuity."
+    "evidence": "Heartbeat discontinuity as COVERAGE_GAP (red-team G, detected) and the patched collector as a declared limit (red-team G2, undetected by construction — a patched collector never allocates the number, so there is nothing to remove). G2 first removed the action from an honest store and was DETECTED via the source_seq hole, which would have credited AC-6 for catching something it does not catch The coverage report refuses a completeness claim when no heartbeat falls in the window, because the mechanism being absent is not the mechanism reporting continuity."
   },
   {
     "id": "SEC-12",
@@ -277,7 +277,7 @@
     "release": "1.0",
     "title": "Digest pre-image resistance in practice",
     "statement": "Salting must prevent brute-force recovery of low-entropy action records from their digests.",
-    "source": "Integrity \u2014 otherwise simply brute-forced",
+    "source": "Integrity — otherwise simply brute-forced",
     "verify": "Dictionary attack against salted digests fails",
     "status": "done",
     "evidence": "packages/core/test/leaf.test.mjs runs the dictionary attack both ways and states the limit"
@@ -288,7 +288,7 @@
     "release": "1.0",
     "title": "Operator key never leaves operator",
     "statement": "Splitstick must never hold, receive, request or log the operator signing key.",
-    "source": "Integrity \u2014 Splitstick never holds it, sees it, or asks for it",
+    "source": "Integrity — Splitstick never holds it, sees it, or asks for it",
     "verify": "Automated egress capture during a representative run asserts no private key material leaves the host; plus a code check that no verifier or collector module imports a key-export API",
     "status": "done",
     "evidence": "the signer seam in signer.mjs; code scan asserts one module touches private key material; automated egress trap over a representative run in packages/collect-oma/test/integration.test.mjs (the trap self-checks before it is trusted)"
@@ -299,7 +299,7 @@
     "release": "1.0",
     "title": "Witness sees roots only",
     "statement": "Witnesses receive salted roots and nothing else.",
-    "source": "Independence \u2014 salted roots only",
+    "source": "Independence — salted roots only",
     "verify": "Asserted on the bytes that actually left the host, with a positive control so a check that sees nothing cannot pass",
     "status": "done",
     "evidence": "witness-self receivedForTesting, witness-tsa and witness-ots request assertions"
@@ -310,7 +310,7 @@
     "release": "1.0",
     "title": "Bounded integrity claim",
     "statement": "Never claim tamper-proof; claim tamper-evident with attribution.",
-    "source": "Scope \u2014 not tamper-proof",
+    "source": "Scope — not tamper-proof",
     "verify": "Claims review",
     "status": "done"
   },
@@ -320,7 +320,7 @@
     "release": "1.0",
     "title": "State the forward-secrecy precondition",
     "statement": "Any forward-secrecy claim must state its non-exportable key custody precondition in the same place.",
-    "source": "Integrity \u2014 this holds only under non-exportable key custody",
+    "source": "Integrity — this holds only under non-exportable key custody",
     "verify": "Executable, not a documentation review: tools/lint-claims.mjs fails the build on any paragraph claiming forward secrecy without its precondition in the same paragraph, and the verifier report attaches both declarations to the claim",
     "status": "done",
     "evidence": "tools/lint-claims.mjs, wired into npm run lint, with refusals and citations excluded by rule rather than by allowlist; verifyStore's capability statement refuses the claim outright for any software-keyed epoch, says 'not-yet' for the live epoch, and when it does claim it names non-exportable custody AND destruction as operator declarations in the same sentence; asserted in packages/verify/test/succession.test.mjs"
@@ -331,7 +331,7 @@
     "release": "2.0",
     "title": "Remote build attestation (experimental)",
     "statement": "Remote attestation of the collector build may ship as experimental; it must not be presented as preventing suppression.",
-    "source": "Considered and rejected \u2014 stays experimental",
+    "source": "Considered and rejected — stays experimental",
     "verify": "Feature flagged experimental; claims review"
   },
   {
@@ -350,7 +350,7 @@
     "release": "1.0",
     "title": "Coordinated disclosure window",
     "statement": "Disclose within 90 days or on fix, whichever is sooner.",
-    "source": "Bounty terms \u2014 first reporter, 90 days",
+    "source": "Bounty terms — first reporter, 90 days",
     "verify": "Policy published; tracked per report",
     "status": "done"
   },
@@ -360,7 +360,7 @@
     "release": "1.0",
     "title": "Publish unmitigated findings",
     "statement": "Publish findings even when no mitigation exists.",
-    "source": "Bounty terms \u2014 including when we have no mitigation",
+    "source": "Bounty terms — including when we have no mitigation",
     "verify": "Policy published; audited at each disclosure",
     "status": "done"
   },
@@ -370,7 +370,7 @@
     "release": "1.0",
     "title": "Zero content egress",
     "statement": "No content bytes leave the operator's host under any configuration.",
-    "source": "Numbers \u2014 0 bytes of content leaving your host",
+    "source": "Numbers — 0 bytes of content leaving your host",
     "verify": "Zero content egress asserted against the fixture strings on the captured traffic of every adapter, not by inspection",
     "status": "done",
     "evidence": "witness-self, witness-tsa (request is under 128 bytes), witness-ots (exactly 32 bytes), witness-rekor"
@@ -380,8 +380,8 @@
     "type": "privacy",
     "release": "1.0",
     "title": "No content in the chain",
-    "statement": "The chain contains no payload bytes at all \u2014 not merely no oversized ones. Records in the chain carry metadata and salted content digests; every argument and result lives in the deletable store, so there is nothing in the chain that erasure cannot reach.",
-    "source": "Erasure \u2014 no content is ever in the chain",
+    "statement": "The chain contains no payload bytes at all — not merely no oversized ones. Records in the chain carry metadata and salted content digests; every argument and result lives in the deletable store, so there is nothing in the chain that erasure cannot reach.",
+    "source": "Erasure — no content is ever in the chain",
     "verify": "Automated scan of chain files for any payload string from the fixture finds nothing, including short inline-sized arguments",
     "status": "done",
     "evidence": "automated scan of chain/ for every fixture payload string, including a two-byte argument"
@@ -392,10 +392,10 @@
     "release": "1.0",
     "title": "Erasure via crypto-shredding",
     "statement": "Support a documented erasure procedure satisfying a data-subject deletion request, over payloads, content salts, leaf salts, the reference index, the agent label and any approval reviewer. The claim is scoped to that enumerated set, not to all personal information everywhere.",
-    "source": "Erasure \u2014 GDPR-compatible",
+    "source": "Erasure — GDPR-compatible",
     "verify": "Procedure executed; the enumerated set is unrecoverable; an independent privacy assessment of the residue is deferred to a funded release and recorded as such",
     "status": "done",
-    "evidence": "residue.mjs scanResidue over the five erasable payloads \u2014 the agent label, both payloads, the approval reviewer and the reviewed request \u2014 each asserted unretrievable afterwards, with an unrelated record's payloads untouched. The independent privacy assessment of the residue remains deferred to a funded release, as the requirement says"
+    "evidence": "residue.mjs scanResidue over the five erasable payloads — the agent label, both payloads, the approval reviewer and the reviewed request — each asserted unretrievable afterwards, with an unrelated record's payloads untouched. The independent privacy assessment of the residue remains deferred to a funded release, as the requirement says"
   },
   {
     "id": "PRIV-04",
@@ -403,10 +403,10 @@
     "release": "1.0",
     "title": "Chain survives erasure",
     "statement": "The chain still verifies after content deletion.",
-    "source": "Erasure \u2014 the chain still verifies",
+    "source": "Erasure — the chain still verifies",
     "verify": "Verify passes post-deletion",
     "status": "done",
-    "evidence": "verifyStore after shredRecord: failed is 0, and every finding is inconclusive \u2014 CONTENT_ABSENT and LEAF_INCONCLUSIVE \u2014 never fail"
+    "evidence": "verifyStore after shredRecord: failed is 0, and every finding is inconclusive — CONTENT_ABSENT and LEAF_INCONCLUSIVE — never fail"
   },
   {
     "id": "PRIV-05",
@@ -414,10 +414,10 @@
     "release": "1.0",
     "title": "Minimal retained artefacts",
     "statement": "After erasure the chain retains only the version-1 permanent set: v, collector, run, record_seq, source_seq, ts, kind, consequential, tool, outcome, attempt, correlation, approval.decision, result.ok, args.bytes, result.bytes, a padding record pad nonce, gap spans, unknown-loss intervals, and salted digests, leaf digests and chain heads. Every other field is erasable: payloads, the agent label, the approval reviewer, the reviewed request, content salts, leaf salts and the reference index. The byte lengths and the correlation relationship are documented residual leaks with no mitigation in 1.0.",
-    "source": "Erasure \u2014 what survives is a salted hash and a timestamp",
+    "source": "Erasure — what survives is a salted hash and a timestamp",
     "verify": "Automated scan after crypto-shredding asserts the residue matches the enumerated permanent set exactly, field for field, across every record kind including padding; the list is derived from the version-1 schema so a schema change fails the test rather than silently passing",
     "status": "done",
-    "evidence": "residue.mjs CLASSIFIED + classifySchema + scanResidue, with four codes in the shared vocabulary. The classification is checked against ALLOWED so extending the record format fails the scan rather than letting a new field survive a deletion request by default; classifySchema takes the schema as a parameter so a test can prove it CAN fail, since ALLOWED is frozen and a check nothing can fail proves nothing. It found agent.bytes retained on its first run, which DES-13's inventory does not list \u2014 the collector no longer writes label lengths. A first version of the table listed approval.reviewer and approval.request as erasable SUB-KEYS and reported a correctly shredded record as retaining them: they are commitments whose VALUES are erasable, and the dead RESIDUE_ERASABLE_RETAINED code that mistake needed was removed The scan reports what it cannot read rather than skipping it: a chain line carrying a field inside unreadable JSON was invisible and the store was reported clean, while PRIV-05's claim is an exact residue."
+    "evidence": "residue.mjs CLASSIFIED + classifySchema + scanResidue, with four codes in the shared vocabulary. The classification is checked against ALLOWED so extending the record format fails the scan rather than letting a new field survive a deletion request by default; classifySchema takes the schema as a parameter so a test can prove it CAN fail, since ALLOWED is frozen and a check nothing can fail proves nothing. It found agent.bytes retained on its first run, which DES-13's inventory does not list — the collector no longer writes label lengths. A first version of the table listed approval.reviewer and approval.request as erasable SUB-KEYS and reported a correctly shredded record as retaining them: they are commitments whose VALUES are erasable, and the dead RESIDUE_ERASABLE_RETAINED code that mistake needed was removed The scan reports what it cannot read rather than skipping it: a chain line carrying a field inside unreadable JSON was invisible and the store was reported clean, while PRIV-05's claim is an exact residue."
   },
   {
     "id": "PRIV-06",
@@ -425,21 +425,21 @@
     "release": "1.0",
     "title": "Disclosure minimisation",
     "statement": "A disclosure reveals the named event and nothing else about other events' contents.",
-    "source": "Disclosure \u2014 without seeing anything else",
+    "source": "Disclosure — without seeing anything else",
     "verify": "Test asserts a disclosure pack contains exactly one salt and that no sibling leaf is reproducible from the pack",
     "status": "done",
-    "evidence": "Exactly one salt, keyed by the disclosed record_seq, checked at BUILD time because a check on the recipient's side would run after the damage and a disclosure cannot be undone. The test states honestly what a Merkle path does reveal \u2014 the HASH of a sibling leaf, which is how an inclusion proof works \u2014 and asserts what it does not: no sibling leaf digest, no sibling salt, no sibling payload, so a sibling's content can be neither reproduced nor confirmed Adding the content salt closed one hole and could have opened a worse one, so a test asserts no SIBLING content salt appears: that would let a recipient confirm a guess at a payload nobody disclosed."
+    "evidence": "Exactly one salt, keyed by the disclosed record_seq, checked at BUILD time because a check on the recipient's side would run after the damage and a disclosure cannot be undone. The test states honestly what a Merkle path does reveal — the HASH of a sibling leaf, which is how an inclusion proof works — and asserts what it does not: no sibling leaf digest, no sibling salt, no sibling payload, so a sibling's content can be neither reproduced nor confirmed Adding the content salt closed one hole and could have opened a worse one, so a test asserts no SIBLING content salt appears: that would let a recipient confirm a guess at a payload nobody disclosed."
   },
   {
     "id": "PRIV-07",
     "type": "privacy",
     "release": "1.0",
     "title": "Disclose the tree-size leak",
-    "statement": "Document that an inclusion proof reveals the log tree size, and that tree size is the count of ALL records \u2014 actions, heartbeats, policy events, gap declarations and padding \u2014 not a count of agent actions. The action count is therefore not directly disclosed, which is a weaker leak than an earlier draft claimed.",
-    "source": "Disclosure \u2014 the honest limit",
+    "statement": "Document that an inclusion proof reveals the log tree size, and that tree size is the count of ALL records — actions, heartbeats, policy events, gap declarations and padding — not a count of agent actions. The action count is therefore not directly disclosed, which is a weaker leak than an earlier draft claimed.",
+    "source": "Disclosure — the honest limit",
     "verify": "Documentation review; a test asserts tree size exceeds the action count in any run containing heartbeats",
     "status": "done",
-    "evidence": "The verifier reports records.by_kind beside tree_size, and a test asserts tree size exceeds the action count in a run holding heartbeats \u2014 with padding OFF, so it is not padding doing the work. `real` is named for not-padding rather than for actions, because heartbeats, gaps and policy events are real records and are not agent actions either, and conflating the two is the misreading PRIV-07 exists to prevent"
+    "evidence": "The verifier reports records.by_kind beside tree_size, and a test asserts tree size exceeds the action count in a run holding heartbeats — with padding OFF, so it is not padding doing the work. `real` is named for not-padding rather than for actions, because heartbeats, gaps and policy events are real records and are not agent actions either, and conflating the two is the misreading PRIV-07 exists to prevent"
   },
   {
     "id": "PRIV-08",
@@ -447,9 +447,9 @@
     "release": "1.0",
     "title": "Disclose the cadence leak",
     "statement": "Document that anchor cadence leaks activity volume.",
-    "source": "Disclosure \u2014 anchor cadence likewise leaks",
+    "source": "Disclosure — anchor cadence likewise leaks",
     "verify": "Documentation review",
-    "evidence": "docs/known-limits.md states the anchor-cadence leak: submitting checkpoints to a witness on a schedule tells that witness when the operator was busy. Published rather than reviewed \u2014 the DOC-05 test requires every uncovered attack and leak in that document to stay named",
+    "evidence": "docs/known-limits.md states the anchor-cadence leak: submitting checkpoints to a witness on a schedule tells that witness when the operator was busy. Published rather than reviewed — the DOC-05 test requires every uncovered attack and leak in that document to stay named",
     "status": "done"
   },
   {
@@ -458,7 +458,7 @@
     "release": "1.0",
     "title": "Operator-controlled retention",
     "statement": "Retention is a setting on operator-controlled storage, not a vendor policy.",
-    "source": "Erasure \u2014 policy settings on your storage",
+    "source": "Erasure — policy settings on your storage",
     "verify": "Configuration test",
     "status": "done",
     "evidence": "Retention is a setting on the operator's own config applied to the operator's own storage by Store.applyRetention; nothing about it is a vendor policy and nothing about it is recorded in the chain, because a retention sweep is not an agent action"

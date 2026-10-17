@@ -203,6 +203,15 @@ function across(runs) {
   };
 }
 
+/**
+ * The host as it was BEFORE any measured work, which is what the reference
+ * environment's "was this machine quiet and did it have room" constraints are
+ * evaluated against. Sampling this after the loop below would score this
+ * benchmark's own load: a saturated single-threaded process drives its own
+ * one-minute load average to roughly 1.0, and the limit is 1.0.
+ */
+const hostBefore = await environment();
+
 /** @type {ReturnType<typeof percentiles>[]} */
 const chainRuns = [];
 /** @type {ReturnType<typeof percentiles>[]} */
@@ -220,7 +229,7 @@ for (let i = 0; i < REPEAT; i++) {
 }
 const recorder = await selfCheck();
 const clock = clockResolution(0.05);          // p50 is ~0.2 ms; the tick must be far below it
-const env = await environment();
+const env = await environment();          // after the run, for attribution
 const REF = JSON.parse(fs.readFileSync(new URL('./reference-env.json', import.meta.url), 'utf8'));
 
 /**
@@ -231,6 +240,8 @@ const REF = JSON.parse(fs.readFileSync(new URL('./reference-env.json', import.me
  * evaluator.
  */
 const { qualifies, shortfalls } = qualifyRun(REF, {
+  requirement: 'NFR-01',
+  before: hostBefore,
   env,
   events: EVENTS,
   repeats: REPEAT,
@@ -250,6 +261,7 @@ const report = {
   arms: { chain, full },
   filesystem_baseline: baseline,
   environment: env,
+  environment_before_run: hostBefore,
   ...(MACHINE ? { machine: MACHINE } : {}),
   ...(STORAGE ? { storage: STORAGE } : {}),
   clock,

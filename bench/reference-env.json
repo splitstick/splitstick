@@ -1,20 +1,31 @@
 {
-  "note": "The reference environment NFR-01's acceptance measurement must run on. A number from anywhere else is a regression metric, not an acceptance result, and bench/append.mjs says which it produced. Every constraint here is evaluated by qualifyRun() in bench/precision.mjs, which REFUSES to run if a constraint declared here has no evaluator \u2014 a threshold the code ignores is worse than no threshold, and node_major_at_least was exactly that until a review found it.",
-  "requirement": "NFR-01",
+  "note": "The reference environment an acceptance measurement must run on, for NFR-01 and NFR-04 alike. A number from anywhere else is a regression metric, not an acceptance result, and bench/append.mjs says which it produced. Every constraint here is evaluated by qualifyRun() in bench/precision.mjs, which REFUSES to run if a constraint declared here has no evaluator — a threshold the code ignores is worse than no threshold, and node_major_at_least was exactly that until a review found it. The same review later found the sibling defect: max_load_average_1m HAD an evaluator and was fed a reading taken after the measured loop, so it scored this benchmark's own load rather than the machine's and could not be satisfied on any host. Pre-run constraints are now evaluated against a host sample taken before any measured work, and qualifyRun throws if a caller does not supply one. The host constraints here are shared; the per-requirement ones live under \"requirements\" because they are not the same number. NFR-01 is a per-event tail and needs at least a million events to have one; NFR-04 is a single wall-clock answer about a hundred thousand. Holding NFR-04 to min_events 1000000, as a single shared value did, made every NFR-04 run report \"100000 events < 1000000\" — a shortfall against a figure its own requirement does not ask for, which is a gate that cannot be passed rather than a gate that is strict.",
+  "requirements": {
+    "NFR-01": {
+      "min_events": 1000000,
+      "min_repeats": 3
+    },
+    "NFR-04": {
+      "min_events": 100000,
+      "min_repeats": 3
+    }
+  },
   "min_cpus": 4,
   "min_memory_gb": 8,
   "max_load_average_1m": 1.0,
-  "min_events": 1000000,
-  "min_repeats": 3,
+  "max_load_increase_1m": 1.5,
+  "min_free_disk_gb": 20,
+  "forbid_ci": true,
   "node_major_at_least": 20,
   "excluded": [
-    "a shared CI runner, where neighbours move the tail by a factor of two",
-    "a machine under other load, which is what max_load_average_1m is for",
-    "a filesystem at or near capacity, which measurably slows file creation"
+    "a shared CI runner, where neighbours move the tail by a factor of two — checked by forbid_ci, which reads the usual runner environment variables and therefore catches a declared CI runner, not a shared machine that does not advertise itself",
+    "a machine under other load, which is what max_load_average_1m is for — evaluated against the load average BEFORE the run, with max_load_increase_1m covering work that joins midway; neither can see a busy neighbour on another tenant of the same physical host",
+    "a filesystem at or near capacity, which measurably slows file creation — checked by min_free_disk_gb against free space on the temporary directory, the volume the fixtures are written to. A free-space floor is a proxy for percent-full, which is the property that actually slows allocation"
   ],
   "requires_attestation": [
     "machine",
     "storage"
   ],
-  "attestation_note": "CPU count, memory and load average cannot establish that a machine is dedicated or that its storage is comparable: a large enough shared runner would satisfy all three. So an acceptance run additionally requires the operator to name the machine and describe its storage (--machine, --storage), and those strings are recorded in the result. This does not make the claim verifiable by a third party; it makes it attributable, which is the honest limit of what a benchmark can assert about its own host."
+  "attestation_note": "CPU count, memory and load average cannot establish that a machine is dedicated or that its storage is comparable: a large enough shared runner would satisfy all three. So an acceptance run additionally requires the operator to name the machine and describe its storage (--machine, --storage), and those strings are recorded in the result. This does not make the claim verifiable by a third party; it makes it attributable, which is the honest limit of what a benchmark can assert about its own host. The same ceiling applies to every mechanised constraint above: each one names, in the excluded list, what it cannot establish. They are filters against the obvious disqualifications, not a proof that the host is the reference environment.",
+  "requirements_note": "qualifyRun() merges the block for the requirement it is given over the shared constraints, and throws if it is given a requirement this file does not declare — an unselected constraint block reads as enforced and is not."
 }
