@@ -131,11 +131,12 @@ test('a quiet host whose load rises only because of the run still qualifies', ()
   assert.equal(r.qualifies, true);
 });
 
-test('pre-run load over the limit disqualifies, and says it was before the run', () => {
-  const r = qualifyRun(REF, { ...ample, before: { ...quiet(), load_average_1m: 2.9 } });
-  assert.equal(r.qualifies, false);
-  assert.ok(r.shortfalls.some(x => /load average 2\.9 > 1 before the run started/.test(x)),
-    JSON.stringify(r.shortfalls));
+test('pre-run load over the limit is disclosed with the figure, not suppressed', () => {
+  const r = offCi(() => qualifyRun(REF, { ...ample, before: { ...quiet(), load_average_1m: 2.9 } }));
+  assert.ok(r.disclosures.some(x => /load average 2\.9 > 1 before the run started/.test(x)),
+    JSON.stringify(r.disclosures));
+  assert.deepEqual(r.shortfalls, [], 'host quality is disclosed, not blocking');
+  assert.equal(r.qualifies, true, 'the relaxation NFR-01 chose: attribution instead of a reference host');
 });
 
 /**
@@ -144,19 +145,20 @@ test('pre-run load over the limit disqualifies, and says it was before the run',
  * is other work, and must be named.
  */
 test('load that climbs further than the run can account for is named', () => {
-  const r = qualifyRun(REF, {
+  const r = offCi(() => qualifyRun(REF, {
     ...ample,
     before: { ...quiet(), load_average_1m: 0.1 },
     env: { ...quiet(), load_average_1m: 6.4 },
-  });
-  assert.equal(r.qualifies, false);
-  assert.ok(r.shortfalls.some(x => /climbed 6\.3 during the run/.test(x)), JSON.stringify(r.shortfalls));
+  }));
+  assert.ok(r.disclosures.some(x => /climbed 6\.3 during the run/.test(x)),
+    JSON.stringify(r.disclosures));
+  assert.deepEqual(r.shortfalls, []);
 });
 
 test('a missing post-run sample is a shortfall, not a pass', () => {
-  const r = qualifyRun(REF, { ...ample, env: { ...quiet(), load_average_1m: Number.NaN } });
-  assert.equal(r.qualifies, false);
-  assert.ok(r.shortfalls.some(x => /no post-run load average/.test(x)), JSON.stringify(r.shortfalls));
+  const r = offCi(() => qualifyRun(REF, { ...ample, env: { ...quiet(), load_average_1m: Number.NaN } }));
+  assert.ok(r.disclosures.some(x => /no post-run load average/.test(x)),
+    JSON.stringify(r.disclosures));
 });
 
 /**
@@ -178,29 +180,29 @@ test('qualifyRun refuses an observation with no pre-run host sample', () => {
  * declared in the excluded list and checked by nothing, while the file's own
  * note claimed every constraint here is evaluated.
  */
-test('a filesystem near capacity disqualifies the run', () => {
-  const r = qualifyRun(REF, { ...ample, before: { ...quiet(), free_disk_gb: 9 } });
-  assert.equal(r.qualifies, false);
-  assert.ok(r.shortfalls.some(x => /9 GB free on the fixture volume < 20 GB/.test(x)),
-    JSON.stringify(r.shortfalls));
+test('a filesystem near capacity is disclosed with the figure', () => {
+  const r = offCi(() => qualifyRun(REF, { ...ample, before: { ...quiet(), free_disk_gb: 9 } }));
+  assert.ok(r.disclosures.some(x => /9 GB free on the fixture volume < 20 GB/.test(x)),
+    JSON.stringify(r.disclosures));
+  assert.deepEqual(r.shortfalls, []);
 });
 
 test('an unreadable free-space reading is a shortfall, not a pass', () => {
   for (const bad of [Number.NaN, Number.POSITIVE_INFINITY, undefined]) {
-    const r = qualifyRun(REF, { ...ample, before: { ...quiet(), free_disk_gb: bad } });
-    assert.equal(r.qualifies, false, String(bad));
-    assert.ok(r.shortfalls.some(x => /could not be read/.test(x)), JSON.stringify(r.shortfalls));
+    const r = offCi(() => qualifyRun(REF, { ...ample, before: { ...quiet(), free_disk_gb: bad } }));
+    assert.ok(r.disclosures.some(x => /could not be read/.test(x)),
+      `${String(bad)}: ${JSON.stringify(r.disclosures)}`);
   }
 });
 
 /** "a shared CI runner, where neighbours move the tail by a factor of two". */
-test('a CI runner disqualifies the run', () => {
+test('a CI runner is disclosed with the figure', () => {
   const r = offCi(() => {
     process.env.GITHUB_ACTIONS = 'true';
     return qualifyRun(REF, ample);
   });
-  assert.equal(r.qualifies, false);
-  assert.ok(r.shortfalls.some(x => /GITHUB_ACTIONS is set/.test(x)), JSON.stringify(r.shortfalls));
+  assert.ok(r.disclosures.some(x => /GITHUB_ACTIONS is set/.test(x)), JSON.stringify(r.disclosures));
+  assert.deepEqual(r.shortfalls, []);
 });
 
 /**
@@ -249,6 +251,41 @@ test('a requirement the reference file does not declare throws', () => {
 });
 
 /**
+ * The relaxation has a boundary, and the boundary is the point. Dropping NFR-01's
+ * reference-environment clause moved host QUALITY out of the way; it did not
+ * move the EVIDENCE out of the way. If this list ever shrinks, an acceptance
+ * measurement could be claimed from a run that did too little work or named no
+ * machine, which is the thing the reference-environment clause existed to stop.
+ */
+test('the relaxation is bounded: evidence still blocks, only host quality is disclosed', () => {
+  const BLOCKING = ['min_events', 'min_repeats', 'node_major_at_least', 'requires_attestation'];
+  const disclosed = new Set(REF.disclosed_constraints);
+  for (const k of BLOCKING) {
+    assert.ok(!disclosed.has(k),
+      `${k} is evidence, not host quality, and must never be merely disclosed`);
+  }
+  // And each one actually stops a run, rather than being nominally blocking.
+  const cases = [
+    ['min_events', { events: 10 }, /10 events < 1000000/],
+    ['min_repeats', { repeats: 1 }, /1 repeats < 3/],
+    ['requires_attestation', { machine: undefined }, /no operator attestation/],
+  ];
+  for (const [label, patch, re] of cases) {
+    const r = offCi(() => qualifyRun(REF, { ...ample, .../** @type {any} */ (patch) }));
+    assert.equal(r.qualifies, false, `${label} did not block`);
+    assert.ok(r.shortfalls.some(x => /** @type {RegExp} */ (re).test(x)),
+      `${label}: ${JSON.stringify(r.shortfalls)}`);
+  }
+});
+
+test('a disclosed_constraints entry that names no constraint throws', () => {
+  const typo = structuredClone(REF);
+  typo.disclosed_constraints = [...typo.disclosed_constraints, 'max_load_avarage_1m'];
+  assert.throws(() => qualifyRun(typo, ample),
+    /lists "max_load_avarage_1m" in disclosed_constraints but declares no such constraint/);
+});
+
+/**
  * A preflight runs before the measurement, so that a host which cannot qualify
  * is not discovered twenty minutes later. It must never report a pass: the
  * constraints it cannot evaluate yet are deferred, not satisfied.
@@ -263,11 +300,16 @@ test('a preflight defers what it cannot evaluate and never qualifies a run', () 
 
 test('a preflight still names what is already short, before the time is spent', () => {
   const { env, ...beforeTheRun } = ample;
-  const r = qualifyRun(REF, /** @type {any} */ ({
+  const r = offCi(() => qualifyRun(REF, /** @type {any} */ ({
     ...beforeTheRun, before: { ...quiet(), load_average_1m: 3.1, free_disk_gb: 9 },
-  }), { phase: 'preflight' });
-  assert.ok(r.shortfalls.some(x => /load average 3\.1 > 1 before the run started/.test(x)));
-  assert.ok(r.shortfalls.some(x => /9 GB free/.test(x)), JSON.stringify(r.shortfalls));
+  }), { phase: 'preflight' }));
+  // Disclosed, but disclosed BEFORE the twenty minutes rather than after.
+  assert.ok(r.disclosures.some(x => /load average 3\.1 > 1 before the run started/.test(x)));
+  assert.ok(r.disclosures.some(x => /9 GB free/.test(x)), JSON.stringify(r.disclosures));
+  const short = qualifyRun(REF, /** @type {any} */ ({ ...beforeTheRun, events: 10 }),
+    { phase: 'preflight' });
+  assert.ok(short.shortfalls.some(x => /10 events < 1000000/.test(x)),
+    'the blocking constraints still block, and still before the time is spent');
 });
 
 test('the final verdict refuses to be reached without the post-run sample', () => {
@@ -368,8 +410,17 @@ test('each shortfall is named, so a near miss is actionable', () => {
     events: 100, repeats: 1, clockAdequate: false,
   });
   assert.equal(r.qualifies, false);
-  assert.ok(r.shortfalls.length >= 7, JSON.stringify(r.shortfalls));
+  // Every condition is still named; which list it lands in says whether it
+  // blocks acceptance or is published alongside the figure.
+  const named = [...r.shortfalls, ...r.disclosures];
+  assert.ok(named.length >= 7, JSON.stringify(named));
   for (const needle of ['cpus', 'memory', 'load average', 'events', 'repeats', 'clock', 'GB free']) {
-    assert.ok(r.shortfalls.some(s => s.includes(needle)), `${needle} not named`);
+    assert.ok(named.some(s => s.includes(needle)), `${needle} not named`);
+  }
+  for (const needle of ['events', 'repeats', 'clock']) {
+    assert.ok(r.shortfalls.some(s => s.includes(needle)), `${needle} must BLOCK, not merely disclose`);
+  }
+  for (const needle of ['cpus', 'memory', 'load average', 'GB free']) {
+    assert.ok(r.disclosures.some(s => s.includes(needle)), `${needle} must be disclosed`);
   }
 });

@@ -164,6 +164,20 @@ export async function environment() {
  * So an observation without a distinct `before` sample THROWS rather than
  * falling back to `env`. The fallback is the bug.
  *
+ * Blocking versus disclosed. NFR-01's "defined reference environment" clause was
+ * dropped deliberately: no such host was available, and a requirement cannot be
+ * closed against evidence nobody can produce. What replaced it is attribution,
+ * so the host-quality constraints named in the reference file's
+ * `disclosed_constraints` no longer stop a run being an acceptance measurement —
+ * they are returned in `disclosures`, printed with the figure, and carried in
+ * the result. What still blocks is the evidence itself: event count, repeats,
+ * Node version, and the operator naming the machine and its storage.
+ *
+ * A relaxation stated as a relaxation. The disclosures are not optional output:
+ * tools/lint-figures.mjs refuses a MEASURED NFR-01 or NFR-04 figure that does
+ * not name its host, because a figure whose conditions are disclosed is honest
+ * and a figure whose conditions are unknown is not.
+ *
  * Per-requirement constraints are merged over the shared host constraints from
  * the `requirements` block, selected by `observed.requirement`. NFR-01 and
  * NFR-04 do not want the same event count — a tail needs a million samples, a
@@ -185,7 +199,8 @@ export async function environment() {
  *           repeats: number, clockAdequate: boolean,
  *           machine?: string, storage?: string }} observed
  * @param {{ phase?: 'preflight'|'final' }} [opts]
- * @returns {{ qualifies: boolean, shortfalls: string[], deferred: string[] }}
+ * @returns {{ qualifies: boolean, shortfalls: string[], deferred: string[],
+ *             disclosures: string[] }}
  */
 export function qualifyRun(ref, observed, opts = {}) {
   const phase = opts.phase ?? 'final';
@@ -284,6 +299,7 @@ export function qualifyRun(ref, observed, opts = {}) {
   // Descriptive keys carry no constraint; everything else must be evaluated.
   const descriptive = new Set([
     'note', 'requirement', 'excluded', 'attestation_note', 'requirements', 'requirements_note',
+    'disclosed_constraints', 'disclosed_note',
   ]);
   /** @type {Record<string, any>} */
   const effective = { ...ref };
@@ -305,6 +321,19 @@ export function qualifyRun(ref, observed, opts = {}) {
     }
   }
 
+  // Host-quality constraints that are reported rather than enforced. Named in
+  // the reference file so the relaxation lives next to the thresholds it
+  // relaxes, and validated here so a typo cannot silently un-relax one -- or
+  // silently relax a constraint that does not exist.
+  const disclosedKeys = new Set(ref.disclosed_constraints ?? []);
+  for (const k of disclosedKeys) {
+    if (!(k in effective)) {
+      throw new Error(
+        `reference-env.json lists ${JSON.stringify(k)} in disclosed_constraints but declares no `
+        + 'such constraint, so nothing is being disclosed and nothing is being enforced.');
+    }
+  }
+
   // Evaluated only in the final phase, because they read the post-run sample.
   const needsTheRun = new Set(['max_load_increase_1m']);
 
@@ -312,6 +341,8 @@ export function qualifyRun(ref, observed, opts = {}) {
   const shortfalls = [];
   /** @type {string[]} */
   const deferred = [];
+  /** @type {string[]} */
+  const disclosures = [];
   for (const [key, want] of Object.entries(effective)) {
     if (phase === 'preflight' && needsTheRun.has(key)) {
       deferred.push(`${key} cannot be evaluated until the run has finished`);
@@ -325,7 +356,7 @@ export function qualifyRun(ref, observed, opts = {}) {
         + 'not; add an evaluator or move the key to the descriptive list.');
     }
     const shortfall = evaluate(want);
-    if (shortfall) shortfalls.push(shortfall);
+    if (shortfall) (disclosedKeys.has(key) ? disclosures : shortfalls).push(shortfall);
   }
   if (!observed.clockAdequate) shortfalls.push('clock resolution too coarse for what is reported');
   // A preflight with nothing short does not qualify anything: the deferred
@@ -334,5 +365,6 @@ export function qualifyRun(ref, observed, opts = {}) {
     qualifies: phase === 'final' && shortfalls.length === 0,
     shortfalls,
     deferred,
+    disclosures,
   };
 }

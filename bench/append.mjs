@@ -240,6 +240,10 @@ if (!JSON_OUT) {
     : `\nPREFLIGHT  this run will be a REGRESSION METRIC, not an acceptance measurement:\n`
       + pre.shortfalls.map(x => `  - ${x}\n`).join('')
       + '  Continuing anyway, because a regression metric is still worth having.\n\n');
+  if (pre.disclosures.length > 0) {
+    process.stderr.write('PREFLIGHT  host conditions this figure must be published with:\n'
+      + pre.disclosures.map(x => `  - ${x}\n`).join('') + '\n');
+  }
 }
 
 /** @type {ReturnType<typeof percentiles>[]} */
@@ -267,7 +271,7 @@ const env = await environment();          // after the run, for attribution
  * constraint the reference file declares and refuses to run if one has no
  * evaluator.
  */
-const { qualifies, shortfalls } = qualifyRun(REF, {
+const { qualifies, shortfalls, disclosures } = qualifyRun(REF, {
   requirement: 'NFR-01',
   before: hostBefore,
   env,
@@ -296,6 +300,9 @@ const report = {
   gc_recorder: recorder.verified ? 'verified' : 'UNVERIFIED',
   kind: qualifies ? 'acceptance measurement' : 'regression metric',
   reference_environment_shortfalls: shortfalls,
+  // Host-quality conditions this run fell short of. An acceptance measurement
+  // may carry these; it may not carry them silently.
+  host_disclosures: disclosures,
   verdict: {
     p95: full.p95_ms <= BUDGET_P95_MS ? 'within' : 'over',
     p99: full.p99_ms <= BUDGET_P99_MS ? 'within' : 'over',
@@ -342,7 +349,9 @@ NFR-01  append overhead · ${EVENTS.toLocaleString('en-US')} events per arm · $
         budget: p95 <= ${BUDGET_P95_MS} ms, p99 <= ${BUDGET_P99_MS} ms (stretch p99 <= ${STRETCH_P99_MS} ms)
         ${env.cpu} · ${env.cpus} cpu · ${env.platform} · node ${env.node} · load ${env.load_average_1m}
         clock tick ${clock.tick_ms.toFixed(6)} ms (${clock.adequate ? 'adequate' : 'TOO COARSE'}) · gc recorder ${recorder.verified ? 'verified' : 'UNVERIFIED'}
-        this run is a ${qualifies ? 'QUALIFYING ACCEPTANCE MEASUREMENT' : 'REGRESSION METRIC'}${qualifies ? '' : ` — ${shortfalls.join('; ')}`}
+        this run is a ${qualifies ? 'QUALIFYING ACCEPTANCE MEASUREMENT' : 'REGRESSION METRIC'}${qualifies ? '' : ` — ${shortfalls.join('; ')}`}${disclosures.length ? `
+        taken under these conditions, which this figure must be published with:
+${disclosures.map(x => `          - ${x}`).join('\n')}` : ''}
         percentiles are the median across repeats; worst p99 and max are the worst seen
 
                    p50       p95       p99  worst p99       max   rate
