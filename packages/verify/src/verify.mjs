@@ -30,7 +30,7 @@ import { join } from 'node:path';
 import { Store } from '@splitstick/core/store';
 import { recomputeChain } from '@splitstick/core/chain';
 import { treeRoot, prefixRoots, consistencyProof, verifyConsistency } from '@splitstick/core/merkle';
-import { parseNote, parseCheckpointText, parseVkey, SUITES } from '@splitstick/core/note';
+import { parseNote, parseCheckpointText, parseVkey, parseSignatureLine, SUITES } from '@splitstick/core/note';
 import { verifyNoteSignature } from '@splitstick/core/signer';
 import { successionReport } from '@splitstick/core/succession';
 import { validateFindings, verdictFor } from '@splitstick/core/findings';
@@ -59,10 +59,12 @@ import { createHash as nodeCreateHash } from 'node:crypto';
  *   proof on a checkpoint whose tree reaches record N is evidence about record
  *   N; one on an earlier checkpoint is not, however well it verifies.
  * @property {string} [received_at] FR-39 — the witness's own clock
- * @property {'absent'|'witness-asserted, unsigned'|'signed by the TSA, inside the token'}
- *   [received_at_basis] what that value rests on. A C2SP note has nowhere
- *   inside it to carry a time, so the value sits beside the proof rather than
- *   under it, and the report says which.
+ * @property {'absent'|'witness-asserted, unsigned'|'signed by the TSA, inside the token'
+ *   |'signed by the witness, inside the cosignature'}
+ *   [received_at_basis] what that value rests on: inside an RFC 3161 token,
+ *   inside a cosignature/v1 signed message, or merely beside the proof. A
+ *   plain C2SP note signature has nowhere to carry a time; a cosignature/v1
+ *   signature covers one, and the report says which rather than assuming.
  * @property {number} [unwitnessed_for_ms] how long the batch went unwitnessed
  * @property {number} [clock_disagreement] by how much the witness's clock is
  *   EARLIER than the batch's self-asserted ts
@@ -76,7 +78,7 @@ import { createHash as nodeCreateHash } from 'node:crypto';
  */
 const RECEIPT_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 
-import { noteKeyId } from '@splitstick/core/note';
+import { noteKeyId, ALG_ED25519 } from '@splitstick/core/note';
 
 /** @typedef {'ok'|'fail'|'inconclusive'} Verdict */
 
@@ -874,9 +876,18 @@ function report(tree_size, anchored, checks, findings, notes, collector, vkey, s
       );
     } else if (w.received_at_basis === 'witness-asserted, unsigned') {
       cannot.push(
-        `${w.id}'s receipt time is witness-asserted and UNSIGNED: a C2SP note has nowhere inside `
-        + 'it to carry a time, so the value sits beside the proof rather than under it. It is '
-        + "exactly as good as that witness's word",
+        `${w.id}'s receipt time is witness-asserted and UNSIGNED: it sits beside the proof rather `
+        + 'than under it, so nothing binds the witness to it. It is exactly as good as that '
+        + "witness's word",
+      );
+    } else if (w.received_at_basis === 'signed by the witness, inside the cosignature') {
+      // What this DOES establish is in `can`; what it does not is here, and the
+      // distinction that matters to a lawyer is qualification, not signing.
+      cannot.push(
+        `${w.id}'s receipt time is signed by the witness, inside the cosignature/v1 message, so `
+        + 'the witness is bound to it — but nothing here disciplines that witness\'s clock to '
+        + 'UTC(k) and no eIDAS presumption attaches to it. It is a signed assertion about an '
+        + 'undisciplined clock',
       );
     }
   }
@@ -1378,7 +1389,7 @@ function credit(credited, issuer, classes) {
 /**
  * @param {string} noteBlob
  * @param {import('@splitstick/core/envelope').Countersignature} cs
- * @param {{ id: string, public_key?: string,
+ * @param {{ id: string, public_key?: string, algorithm?: number,
  *           key_history?: { keys?: { public_key?: string }[], note?: string } }} spec
  * @returns {Promise<'ok'|'bad'|'no-key'|{ via: string }|{ detail: string }>}
  */
@@ -1397,13 +1408,45 @@ async function checkNoteLine(noteBlob, cs, spec) {
   if (!line) return 'bad';
   const found = line;
 
-  /** @param {Buffer} pub */
-  const matches = async (pub) => {
+  // WHICH ALGORITHM THIS ISSUER SIGNS WITH, taken from the READER'S POLICY.
+  //
+  // A witness cosignature is not a plain note signature: cosignature/v1 uses
+  // algorithm byte 0x04, so its key id hashes 0x04, and it covers
+  // `cosignature/v1\ntime <unix>\n<text>` rather than the text. FR-15 taught
+  // the Anchorer this and did NOT teach the verifier, so a real
+  // transparency-dev/witness cosignature verified when it was attached and
+  // then failed the shape check here for every reader -- worse than failing
+  // in one place, because the operator saw it accepted and an auditor saw it
+  // as bad.
+  //
+  // The algorithm is NEVER read from the line being checked. Letting the line
+  // choose would let a witness present a plain signature where the policy
+  // expects a timestamped cosignature, which is a downgrade the reader never
+  // agreed to. A policy may say so explicitly with `algorithm`, or implicitly
+  // by giving `public_key` as a vkey, which carries the byte. A bare base64
+  // key still means algorithm 1, which is what every policy written before
+  // this meant by it.
+  /** @param {string} value @returns {{ publicKey: Buffer, algorithm: number }|null} */
+  const resolveKey = (value) => {
+    if (/^[^+]+\+[0-9a-f]{8}\+/.test(value)) {
+      try {
+        const v = parseVkey(value);
+        return { publicKey: v.publicKey, algorithm: spec.algorithm ?? v.algorithm };
+      } catch { return null; }
+    }
+    const raw = Buffer.from(value, 'base64');
+    if (raw.length !== 32) return null;
+    return { publicKey: raw, algorithm: spec.algorithm ?? ALG_ED25519 };
+  };
+
+  /** @param {Buffer} pub @param {number} [algorithm] */
+  const matches = async (pub, algorithm = spec.algorithm ?? ALG_ED25519) => {
     // Shape check first: a key id that does not match cannot be a signature by
     // this key, and saying "does not verify" would be vaguer.
-    if (!found.keyId.equals(noteKeyId(cs.issuer, pub))) return false;
+    if (!found.keyId.equals(noteKeyId(cs.issuer, pub, algorithm))) return false;
     return verifyNoteSignature(text, found, {
-      name: cs.issuer, publicKey: pub, keyId: noteKeyId(cs.issuer, pub),
+      name: cs.issuer, publicKey: pub, algorithm,
+      keyId: noteKeyId(cs.issuer, pub, algorithm),
     });
   };
 
@@ -1431,7 +1474,15 @@ async function checkNoteLine(noteBlob, cs, spec) {
   }
 
   if (!spec.public_key) return 'no-key';
-  return await matches(Buffer.from(spec.public_key, 'base64')) ? 'ok' : 'bad';
+  const resolved = resolveKey(spec.public_key);
+  if (resolved === null) {
+    return {
+      detail: `${cs.issuer}'s public_key in this acceptance policy is neither a 32-byte base64 `
+        + 'key nor a vkey (name+keyid+key), so this reader cannot use it. A key it cannot read is '
+        + 'a witness it does not know, not evidence of tampering',
+    };
+  }
+  return await matches(resolved.publicKey, resolved.algorithm) ? 'ok' : 'bad';
 }
 
 /**
@@ -1695,6 +1746,46 @@ async function verifyRollups({ store, notes, pinned, epochKeys, findings }) {
  * @param {import('@splitstick/core/envelope').ParsedCountersignature} cs
  * @param {string|null} batchTs
  */
+/**
+ * Is the reported receipt time the one the witness SIGNED?
+ *
+ * A cosignature/v1 signature covers `cosignature/v1\ntime <unix>\n<note text>`,
+ * so the witness's observation time is inside the signed message. This verifier
+ * told readers the opposite -- "a C2SP note has nowhere inside it to carry a
+ * time... exactly as good as that witness's word" -- which was the third place
+ * that premise appeared after FR-15 disproved it, and the worst, because it is
+ * what an auditor reads.
+ *
+ * Two things must hold, not one. The line must carry a cosignature/v1
+ * timestamp, AND the receipt time being reported must BE that timestamp. The
+ * second is what stops an adapter's own clock being presented as signed: a
+ * `received_at` beside a signed value is not the signed value, and only
+ * equality makes it the same assertion.
+ *
+ * Whether the signature itself verified is decided elsewhere and is reported
+ * separately; this says what the value RESTS on, not that it is true.
+ *
+ * @param {import('@splitstick/core/envelope').ParsedCountersignature} cs
+ * @param {string} reported the received_at being described
+ */
+function signedInsideCosignature(cs, reported) {
+  const line = cs.entry?.line;
+  if (typeof line !== 'string') return false;
+  try {
+    const sig = parseSignatureLine(line);
+    if (sig.timestamp === undefined) return false;
+    return new Date(Number(sig.timestamp) * 1000).toISOString() === reported;
+  } catch {
+    // A line this verifier cannot parse is not one it may describe as signed.
+    return false;
+  }
+}
+
+/**
+ * FR-39 — the witness's own receipt time, and what it rests on.
+ * @param {import('@splitstick/core/envelope').ParsedCountersignature} cs
+ * @param {string|null} batchTs
+ */
 function receiptTime(cs, batchTs) {
   const raw = cs.entry?.received_at;
   // Strict RFC 3339, the same shape DES-01 requires of `ts`. Date.parse is
@@ -1709,7 +1800,11 @@ function receiptTime(cs, batchTs) {
   }
   const basis = cs.type === 'rfc3161'
     ? /** @type {const} */ ('signed by the TSA, inside the token')
-    : /** @type {const} */ ('witness-asserted, unsigned');
+    // `raw` is a valid RFC 3339 string by here -- `at` is not NaN -- but the
+    // narrowing does not survive, so it is stated rather than asserted.
+    : signedInsideCosignature(cs, String(raw))
+      ? /** @type {const} */ ('signed by the witness, inside the cosignature')
+      : /** @type {const} */ ('witness-asserted, unsigned');
   const batch = batchTs === null ? NaN : Date.parse(batchTs);
   if (Number.isNaN(batch)) {
     return { detail: ` at ${raw}`, fields: { received_at: raw, received_at_basis: basis } };

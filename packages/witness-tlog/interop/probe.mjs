@@ -144,6 +144,32 @@ for (const e of envs) {
     console.log(JSON.stringify({ issuer: cs.issuer, type: cs.type, covers: cs.covers, received_at: cs.received_at ?? null, line: (cs.line||'').slice(0,28)+'...' }));
   }
 }
+// ── THE VERIFIER, not just the Anchorer ────────────────────────────────────
+//
+// FR-15 asserted that every cosignature "verified under the verifier this
+// project ships". It verified under the ANCHORER's acceptance check, which is a
+// different code path from verifyStore -- the one an auditor actually runs. The
+// verifier computed the key id with the default algorithm, so it could never
+// match a cosignature/v1 key id, and the claim was wrong in the place that
+// matters. This is the check that would have caught it.
+const { verifyStore } = await import('@splitstick/verify');
+const report = await verifyStore(root, {
+  collector: 'fr15-host',
+  vkey: ourVkey,
+  policy: { quorum: 1, witnesses: [{ id: WITNESS_ID, public_key: wVkey, establishes: ['sequence', 'time'] }] },
+});
+console.log('raw witnesses:', JSON.stringify(report.witnesses));
+console.log('trusting:', JSON.stringify(report.trusting), '| quorum:', JSON.stringify(report.quorum));
+const wit = (report.witnesses ?? []).filter(w => w.issuer === WITNESS_ID);
+console.log('\n--- what the VERIFIER says about the witness ---');
+for (const w of wit) {
+  console.log(JSON.stringify({
+    issuer: w.issuer, verified: w.verified, accepted: w.accepted,
+    detail: (w.detail ?? '').slice(0, 110),
+  }));
+}
+console.log('verdict:', report.verdict, '| failed checks:', report.summary?.failed ?? 0);
+
 // A fixture from the REAL implementation, so tests that must not depend on a
 // Go toolchain can still be written against bytes a Go witness actually
 // produced. A hand-built blob proves the parser agrees with itself.

@@ -113,3 +113,166 @@ test('FR-39: a malformed receipt time is absent, not parsed into something', asy
     assert.equal(entry?.received_at_basis, 'absent', `${bad} should not parse`);
   }
 });
+
+// ── LEG-09 groundwork: cosignature/v1 through the VERIFIER ──────────────────
+
+/**
+ * A store countersigned with a real cosignature/v1 line.
+ *
+ * FR-15 established interoperability with transparency-dev/witness and fixed
+ * the ANCHORER's acceptance check. It did not fix this verifier, which computed
+ * the key id with the default algorithm — so the shape check could never match
+ * a cosignature/v1 key id (0x04 hashes differently from 0x01) and every real
+ * witness cosignature came back `bad`. That is the worse place for it to fail:
+ * the operator saw the proof attached and an auditor saw it as invalid.
+ *
+ * @param {{ received_at?: string, signedTs?: number, issuer?: string }} [o]
+ */
+async function cosigned(o = {}) {
+  const { ALG_ED25519_COSIG_V1, cosignatureV1Message } = await import('@splitstick/core/note');
+  const issuer = o.issuer ?? 'tlog.example';
+  const root = mkdtempSync(join(tmpdir(), 'ss-cosig-'));
+  const signer = await generateDevSigner(ORIGIN);
+  const store = new Store(root, 'host-1');
+  let t = Date.parse('2026-10-11T10:00:00.000Z');
+  const c = new Collector({ store, config: parseConfig(CFG, root), signer,
+    collector: 'host-1', origin: ORIGIN, now: () => new Date(t += 1000) });
+  c.action(tx());
+  const cp = await c.checkpoint();
+
+  const wkey = await generateDevSigner(issuer);
+  const text = parseNote(cp.note).text;
+  const signedTs = o.signedTs ?? Math.floor(Date.parse('2026-10-11T14:30:00.000Z') / 1000);
+  const sig = await wkey.sign(Buffer.from(cosignatureV1Message(signedTs, text), 'utf8'));
+  const { noteKeyId } = await import('@splitstick/core/note');
+  const ts8 = Buffer.alloc(8);
+  ts8.writeBigUInt64BE(BigInt(signedTs));
+  const blob = Buffer.concat([
+    noteKeyId(issuer, wkey.publicKey, ALG_ED25519_COSIG_V1), ts8, sig,
+  ]);
+
+  const env = JSON.parse(String(store.readCheckpointEnvelope(cp.checkpoint_seq)));
+  env.countersignatures = [{
+    type: 'c2sp-note', issuer, covers: 'note',
+    line: `— ${issuer} ${blob.toString('base64')}`,
+    received_at: o.received_at ?? new Date(signedTs * 1000).toISOString(),
+  }];
+  store.writeCheckpointEnvelope(cp.checkpoint_seq, env);
+  store.close();
+  const { formatVkey: fv } = await import('@splitstick/core/note');
+  return {
+    root, signedTs,
+    vkey: formatVkey(ORIGIN, signer.publicKey),
+    // The policy names the key as a VKEY, which carries the algorithm byte.
+    policy: {
+      quorum: 1,
+      witnesses: [{
+        id: issuer, establishes: ['sequence', 'time'],
+        public_key: fv(issuer, wkey.publicKey, ALG_ED25519_COSIG_V1),
+      }],
+    },
+    rawKeyPolicy: {
+      quorum: 1,
+      witnesses: [{
+        id: issuer, establishes: ['sequence', 'time'],
+        public_key: wkey.publicKey.toString('base64'),   // no algorithm
+      }],
+    },
+  };
+}
+
+test('LEG-09: the verifier ACCEPTS a cosignature/v1 countersignature', async () => {
+  const w = await cosigned();
+  const r = await verifyStore(w.root, { collector: 'host-1', vkey: w.vkey, policy: w.policy });
+  const entry = r.witnesses.find(x => x.id === 'tlog.example');
+  assert.equal(entry?.verdict, 'ok', JSON.stringify(entry));
+  assert.equal(entry?.accepted, true);
+});
+
+/**
+ * The algorithm comes from the READER'S POLICY and never from the line. A bare
+ * base64 key still means algorithm 1, which is what every policy written
+ * before cosignature/v1 existed meant by it — so a policy that has not said
+ * otherwise must NOT be silently upgraded to accept a timestamped cosignature.
+ * Letting the line choose would be a downgrade, or upgrade, the reader never
+ * agreed to.
+ */
+test('LEG-09: a bare key in the policy still means algorithm 1, not whatever arrived', async () => {
+  const w = await cosigned();
+  const r = await verifyStore(w.root, {
+    collector: 'host-1', vkey: w.vkey, policy: w.rawKeyPolicy,
+  });
+  const entry = r.witnesses.find(x => x.id === 'tlog.example');
+  assert.notEqual(entry?.verdict, 'ok',
+    'a cosignature/v1 line must not verify against a policy entry that declares no algorithm');
+});
+
+test('LEG-09: an unreadable key in the policy is a witness this reader does not know', async () => {
+  const w = await cosigned();
+  const r = await verifyStore(w.root, {
+    collector: 'host-1',
+    vkey: w.vkey,
+    policy: { quorum: 1, witnesses: [{ id: 'tlog.example', public_key: 'not-base64-or-a-vkey!!' }] },
+  });
+  const entry = r.witnesses.find(x => x.id === 'tlog.example');
+  assert.match(String(entry?.detail), /neither a 32-byte base64 key nor a vkey/);
+});
+
+/**
+ * The basis the report prints. This verifier told readers that "a C2SP note has
+ * nowhere inside it to carry a time... exactly as good as that witness's word"
+ * — about a timestamp that is inside the signed message. Third place that
+ * premise appeared after FR-15 disproved it, and the worst, because it is what
+ * an auditor reads.
+ */
+test('LEG-09: a signed cosignature timestamp is reported as SIGNED', async () => {
+  const w = await cosigned();
+  const r = await verifyStore(w.root, { collector: 'host-1', vkey: w.vkey, policy: w.policy });
+  const entry = r.witnesses.find(x => x.id === 'tlog.example');
+  assert.equal(entry?.received_at_basis, 'signed by the witness, inside the cosignature');
+  assert.ok(r.capability.cannot.some(s => /signed by the witness, inside the cosignature/.test(s)
+    && /no eIDAS presumption attaches/.test(s)),
+  'it must say what the signature does NOT buy: ' + JSON.stringify(r.capability.cannot));
+});
+
+/**
+ * And equality is load-bearing. A received_at that merely sits BESIDE a signed
+ * value is not the signed value — an adapter writing its own clock into the
+ * envelope must not have it described as signed by the witness.
+ */
+test('LEG-09: a received_at that is not the signed one is NOT reported as signed', async () => {
+  const w = await cosigned({ received_at: '2026-10-11T23:59:59.000Z' });   // the adapter's clock
+  const r = await verifyStore(w.root, { collector: 'host-1', vkey: w.vkey, policy: w.policy });
+  const entry = r.witnesses.find(x => x.id === 'tlog.example');
+  assert.equal(entry?.received_at, '2026-10-11T23:59:59.000Z');
+  assert.equal(entry?.received_at_basis, 'witness-asserted, unsigned',
+    'a value beside a signed one is not the signed one');
+});
+
+test('LEG-09: a plain c2sp-note signature is still reported as unsigned', async () => {
+  // The regression guard in the other direction: witness-self signs plain note
+  // signatures, and those really do carry no time.
+  const w = await witnessed({ received_at: '2026-10-11T14:30:00.000Z' });
+  const r = await verifyStore(w.root, { collector: 'host-1', vkey: w.vkey, policy: w.policy });
+  const entry = r.witnesses.find(x => x.id === 'audit.internal');
+  assert.equal(entry?.received_at_basis, 'witness-asserted, unsigned');
+});
+
+/** The real bytes, from transparency-dev/witness, so this is not self-agreement. */
+test('LEG-09: the captured Go-witness cosignature verifies under this verifier', async () => {
+  const { parseVkey, parseSignatureLine, ALG_ED25519_COSIG_V1, cosignatureV1Message } =
+    await import('@splitstick/core/note');
+  const { verifyNoteSignature } = await import('@splitstick/core/signer');
+  const fixture = JSON.parse(readFileSync(
+    new URL('../../witness-tlog/interop/results/cosignature-fixture.json', import.meta.url), 'utf8'));
+  const { name, publicKey, algorithm } = parseVkey(fixture.witness_vkey);
+  assert.equal(algorithm, ALG_ED25519_COSIG_V1);
+
+  const text = parseNote(fixture.checkpoint_note).text;
+  const sig = parseSignatureLine(fixture.cosignature_line);
+  assert.equal(typeof sig.timestamp, 'bigint');
+  assert.ok(cosignatureV1Message(sig.timestamp, text).startsWith('cosignature/v1\ntime '));
+  assert.equal(await verifyNoteSignature(text, sig, {
+    name, publicKey, algorithm, keyId: sig.keyId,
+  }), true, 'the real witness cosignature must verify under the shipped verifier');
+});

@@ -1,8 +1,8 @@
 {
   "note": "Captured from transparency-dev/witness. `note` is the operator-signed checkpoint as submitted; `cosignature_line` is the witness's own reply line, algorithm 0x04, 76 bytes of keyId+timestamp+signature.",
-  "witness_vkey": "fr15.witness.local+070e9861+BN6GTR7onUyHHlZtL2GsFJUibnv2BPLSBZ0tyLKbpZWJ",
-  "log_vkey": "splitstick.dev/fr15-host+24991468+ASjAU5cw9CVbG08f/7gmUGVTL2wvPiVRYqjfTXM9i11e",
-  "checkpoint_note": "splitstick.dev/fr15-host\n3\n5iljIoXVZ77ETHwucEq07ZqaAPa2+0M9qfRDDI6YQMc=\nsuite SS1\n\n— splitstick.dev/fr15-host JJkUaEn8JDruXTMauFZZORZWXh7aoagDWLX0EEgZK1xWcrJ1OwE1TU3NmnKtZZkw2XcCNWfvgN5xua5SS9pTL7jF8w0=\n",
-  "cosignature_line": "— fr15.witness.local Bw6YYQAAAABq0zY/ewJJ3oZivAUJLxB5CClJMW0MzgRDX+ibe5D36PZye9BYkY+bphVXTwXuIlMz8DiTSILoZ515FW9qO1jMDmmAAg==",
-  "received_at": "2026-10-17T08:47:59.000Z"
+  "witness_vkey": "fr15.witness.local+baf40fe1+BFmfKbH5FxqJt50fG5ecoYJs8u/Zvg3hE1j03Ype5bp3",
+  "log_vkey": "splitstick.dev/fr15-host+037c1717+Afl3KqYh7PO5nTHq207cWFbgDQihmyQiKeRQMiAiPIZ5",
+  "checkpoint_note": "splitstick.dev/fr15-host\n3\nKa+K6jeJl5s9ZcLx7t9ZihvbKru2J0IDjjDz6teC/Gs=\nsuite SS1\n\n— splitstick.dev/fr15-host A3wXF8Yn2m4h4Tv9l6HBu+yxP2OJEZqXZBbGYBqJRCIST2Gvxvq6wQ5o76UJULTyDxqwfruzNilydocZ9qFMmxiSYwE=\n",
+  "cosignature_line": "— fr15.witness.local uvQP4QAAAABq0/ZcV/Z7H8CehlyEBTfdxTi3i8ir440nqEnAtw19xAg/CI+/c6e6MkSWdBzLKQBe9OSJD4iU7jvhSuqbgynb2ZvSAQ==",
+  "received_at": "2026-10-17T22:27:40.000Z"
 }
