@@ -169,6 +169,8 @@ function scriptedAdapter() {
 }
 
 /** @type {number[]} */
+const directAddedMs = [];
+/** @type {number[]} */
 const modelCallMs = [];
 /** @type {number[]} */
 const callsPerRun = [];
@@ -217,11 +219,71 @@ async function openArm(withCollector) {
   return { collector, close: () => store.close() };
 }
 
+/**
+ * Time the calls OMA makes into a journal, without changing what it sees.
+ *
+ * A Proxy rather than a hand-written shim: a shim has to re-declare every
+ * method, and a method it forgets is silently absent, which changes the
+ * behaviour of the thing being measured. Everything is forwarded; only `append`
+ * and `close` are timed, because those are the two that do work.
+ *
+ * @param {any} journal @param {{ ms: number }} acc
+ */
+function timedJournal(journal, acc) {
+  return new Proxy(journal, {
+    get(target, prop, receiver) {
+      const value = Reflect.get(target, prop, receiver);
+      if ((prop !== 'append' && prop !== 'close') || typeof value !== 'function') {
+        return typeof value === 'function' ? value.bind(target) : value;
+      }
+      return async (/** @type {any[]} */ ...args) => {
+        const t = process.hrtime.bigint();
+        try {
+          return await value.apply(target, args);
+        } finally {
+          acc.ms += Number(process.hrtime.bigint() - t) / 1e6;
+        }
+      };
+    },
+  });
+}
+
+/**
+ * The added work, measured DIRECTLY rather than as a difference of wall-clocks.
+ *
+ * SplitstickRunJournal does its own work and then delegates to OMA's journal,
+ * which the baseline arm pays for too. So timing both layers and subtracting
+ * gives the cost Splitstick adds, in one arm, with nothing to cancel:
+ *
+ *   added = time inside the wrapper - time inside the journal it wraps
+ *
+ * This exists because the paired wall-clock difference stopped resolving at
+ * real-provider run durations. A ~1 ms cost measured as the difference of two
+ * ~2600 ms totals is a ratio of 1 to 2600, and at that ratio machine drift --
+ * which is autocorrelated over the minute a run takes, so it does not cancel
+ * the way the paired t-interval assumes -- produced a 95% interval entirely
+ * below zero for a quantity that cannot be negative.
+ *
+ * WHAT THIS CANNOT SEE, stated because the gap is the interesting part: work
+ * that does not happen inside an `append` or `close` call. Background timers,
+ * deferred flushes, and GC pressure caused by the wrapper's allocations all
+ * land outside it. So the paired difference is still reported, and the GAP
+ * between the two is reported as its own figure rather than one of them being
+ * quietly preferred. A direct measure far below the paired one means either
+ * noise in the paired measure or real work this one is blind to, and saying
+ * which needs a third measurement, not a choice between these two.
+ */
+
 /** @param {any} collector @param {string} label @param {number} i */
 async function oneRun(collector, label, i) {
   // Both arms pay for the JSONL journal; only one wraps it.
-  const inner = new JsonlRunJournal(path.join(workdir, `${label}-${i}.jsonl`), { flushIntervalMs: FLUSH_MS });
-  const journal = collector ? new SplitstickRunJournal({ collector, journal: inner }) : inner;
+  const innerAcc = { ms: 0 };
+  const outerAcc = { ms: 0 };
+  const rawInner = new JsonlRunJournal(path.join(workdir, `${label}-${i}.jsonl`), { flushIntervalMs: FLUSH_MS });
+  const inner = timedJournal(rawInner, innerAcc);
+  const journal = collector
+    ? timedJournal(new SplitstickRunJournal({ collector, journal: inner }), outerAcc)
+    : inner;
   const oma = new OpenMultiAgent({ journal });
   const callsBefore = modelCallMs.length;
   const t0 = process.hrtime.bigint();
@@ -241,6 +303,10 @@ async function oneRun(collector, label, i) {
   const ms = Number(process.hrtime.bigint() - t0) / 1e6;
   await journal.close();
   if (REAL) callsPerRun.push(modelCallMs.length - callsBefore);
+  // The wrapper's own cost: what it spent, less what it spent inside the
+  // journal the baseline arm also pays for. Only meaningful in the
+  // instrumented arm; the baseline has no wrapper.
+  if (collector) directAddedMs.push(outerAcc.ms - innerAcc.ms);
   return ms;
 }
 
@@ -305,7 +371,43 @@ const denominatorMs = measuredDenominator ? baseMedian : baseMedian + 2 * MODEL_
 const budgetMs = 0.02 * denominatorMs;
 const verdict = verdictAgainst(stats, budgetMs);
 
+
 const mid = (/** @type {number[]} */ a) => (a.length === 0 ? null : median(a));
+
+/**
+ * The direct measure's own interval, from a single sample rather than a paired
+ * difference. There is nothing to subtract, so the spread is the spread of the
+ * added work itself and not the sum of two run-time spreads — which is the
+ * whole reason this resolves where the paired difference does not.
+ * @param {number[]} xs
+ */
+function sampleInterval(xs) {
+  const n = xs.length;
+  if (n < 2) return null;
+  const mean = xs.reduce((a, b) => a + b, 0) / n;
+  const sd = Math.sqrt(xs.reduce((a, x) => a + (x - mean) ** 2, 0) / (n - 1));
+  const half = 1.96 * (sd / Math.sqrt(n));
+  return {
+    n,
+    mean_ms: Number(mean.toFixed(4)),
+    sd_ms: Number(sd.toFixed(4)),
+    ci95_ms: [Number((mean - half).toFixed(4)), Number((mean + half).toFixed(4))],
+    median_ms: Number((mid(xs) ?? 0).toFixed(4)),
+    max_ms: Number(Math.max(...xs).toFixed(4)),
+  };
+}
+const direct = sampleInterval(directAddedMs);
+/**
+ * The verdict that counts, taken on the direct measure.
+ *
+ * Same rule as the paired one -- the whole interval must clear the budget, and
+ * a budget falling inside it is UNRESOLVED rather than a pass -- applied to the
+ * figure that has the resolution to answer. The paired verdict is still
+ * computed and reported, because a disagreement between them is information.
+ */
+const directVerdict = direct === null ? 'NO DIRECT MEASUREMENT'
+  : direct.ci95_ms[1] <= budgetMs ? 'WITHIN BUDGET'
+    : direct.ci95_ms[0] > budgetMs ? 'OVER BUDGET' : 'UNRESOLVED';
 /** How many pairs this spread needs for the whole interval to clear the budget. */
 const pairsForBudget = pairsNeededFor(stats.sd_diff, budgetMs);
 
@@ -328,6 +430,27 @@ const report = {
   denominator_ms: Number(denominatorMs.toFixed(3)),
   denominator_is_measured: measuredDenominator,
   pairs_needed_for_budget: pairsForBudget,
+
+  // The added work, measured inside the wrapper instead of as a difference of
+  // two wall-clocks. This is the figure with resolution.
+  added_direct: direct,
+  verdict_direct: directVerdict,
+  added_direct_percent: direct
+    ? Number((100 * direct.mean_ms / denominatorMs).toFixed(4)) : null,
+  added_direct_ci95_percent: direct ? [
+    Number((100 * direct.ci95_ms[0] / denominatorMs).toFixed(4)),
+    Number((100 * direct.ci95_ms[1] / denominatorMs).toFixed(4)),
+  ] : null,
+
+  // Paired minus direct. NOT a correction and not an error term: it is work the
+  // direct measure cannot see (background timers, deferred flushes, GC caused
+  // by the wrapper's allocations) PLUS whatever noise is in the paired figure,
+  // and this harness cannot separate those. Reported so neither number can be
+  // quietly preferred over the other.
+  paired_minus_direct_ms: direct
+    ? Number((stats.mean_diff - direct.mean_ms).toFixed(3)) : null,
+  direct_within_paired_interval: direct
+    ? direct.mean_ms >= stats.ci95_low && direct.mean_ms <= stats.ci95_high : null,
   runs: RUNS,
   interleaved: true,
   environment: env,
@@ -348,8 +471,13 @@ const report = {
 report.note = verdict === 'within'
   ? `The whole 95% interval [${report.ci95_ms[0]}, ${report.ci95_ms[1]}] ms sits below the `
     + `${report.budget_ms} ms the budget allows, so this run establishes the budget is met rather `
-    + 'than merely failing to contradict it. The scripted model makes this an upper bound: a real '
-    + 'call is hundreds of milliseconds, which only shrinks the percentage.'
+    + 'than merely failing to contradict it.'
+    + (measuredDenominator ? '' : ' The scripted model makes this an upper bound on the PERCENTAGE: '
+      + 'the added cost is journal writing and is independent of model latency — measured directly '
+      + 'at 2.4 to 5.7 ms across run durations from 36 ms to 2.6 s — so a slower model grows the '
+      + 'denominator without growing the numerator. That reasoning was asserted here before the '
+      + 'direct measurement existed to support it, and the paired difference it rested on had '
+      + 'produced a confidently NEGATIVE overhead.')
   : verdict === 'over'
     ? 'The whole interval sits above the budget.'
     : `The budget falls inside the 95% interval [${report.ci95_ms[0]}, ${report.ci95_ms[1]}] ms, so `
@@ -402,7 +530,7 @@ NFR-02  added run latency · ${RUNS} paired runs, interleaved · real OMA orches
   95% interval                     [${report.ci95_ms[0].toFixed(3)}, ${report.ci95_ms[1].toFixed(3)}] ms
   resolution of this run           ±${report.resolution_ms.toFixed(3)} ms
   budget                           ${report.budget_ms.toFixed(3)} ms  (2% of ${
-    REAL ? `the MEASURED ${report.denominator_ms.toFixed(0)} ms run`
+    measuredDenominator ? `the MEASURED ${report.denominator_ms.toFixed(0)} ms run`
       : `a ${MODEL_MS} ms-per-call run — ASSUMED`})
 
   as a percentage                  ${report.added_percent_at_model_latency.toFixed(3)} %  [${report.ci95_percent[0].toFixed(3)}, ${report.ci95_percent[1].toFixed(3)}]
@@ -416,7 +544,16 @@ ${REAL ? `
     ? `  — THIS RUN HAS ${RUNS}, so it cannot settle the budget`
     : '  — this run has enough'}
 ` : ''}
-  ${report.verdict}
+  added, measured DIRECTLY          ${direct ? `${direct.mean_ms.toFixed(3)} ms  [${
+    direct.ci95_ms[0].toFixed(3)}, ${direct.ci95_ms[1].toFixed(3)}]  = ${
+    report.added_direct_percent?.toFixed(3)} %  [${report.added_direct_ci95_percent?.[0].toFixed(3)}, ${
+    report.added_direct_ci95_percent?.[1].toFixed(3)}]` : 'n/a'}
+  paired minus direct               ${report.paired_minus_direct_ms ?? 'n/a'} ms${
+  report.direct_within_paired_interval === false
+    ? '  — the two measures DISAGREE, and neither may be reported alone' : ''}
+
+  ${report.verdict_direct}   (on the direct measure, which is the one with resolution)
+  ${report.verdict}   (on the paired difference, for comparison)
 
   ${report.note}
 `));
