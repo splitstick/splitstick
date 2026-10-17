@@ -23,7 +23,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { spawn } from 'node:child_process';
@@ -48,7 +48,25 @@ const GOOD_NFR01 = {
   requirement: 'NFR-01', kind: 'acceptance measurement', events: 1_000_000, repeats: 3,
   machine: 'bench-01, bare metal', storage: 'NVMe SSD, ext4, 40% full',
   host_disclosures: [],
+  budget: { p95_ms: 1, p99_ms: 3, p99_stretch_ms: 1 },
+  arms: { full: { worst_p95_ms: 0.7587, worst_p99_ms: 2.6065 } },
+  verdict: { p95: 'within', p99: 'within', p99_stretch: 'not met' },
 };
+
+/** A good NFR-04 acceptance result, as bench/verify.mjs --json emits one. */
+const GOOD_NFR04 = {
+  requirement: 'NFR-04', kind: 'acceptance', events: 100_000, repeats: 3,
+  machine: 'bench-01, bare metal', storage: 'NVMe SSD, ext4, 40% full',
+  host_disclosures: [],
+  budget_ms: 30_000,
+  verify_ms: { median: 13_650, worst: 14_230 },
+  within_budget: true,
+};
+
+const NFR01_ROW = '| **p99 2.61 ms** | append overhead (NFR-01) | **MEASURED** | '
+  + '`bench/append.mjs`, `bench/results/nfr-01.json` |';
+const NFR04_ROW = '| **14.2 s** | offline verification (NFR-04) | **MEASURED** | '
+  + '`bench/verify.mjs`, `bench/results/nfr-04.json` |';
 
 /**
  * A fixture world: a notes file, a requirements directory, and a root the
@@ -324,4 +342,166 @@ test('an unrecognised flag is refused', async () => {
 test('the real release notes pass this guard', async () => {
   const r = await run([]);
   assert.equal(r.code, 0, r.all);
+});
+
+// ---- the outcome, not only the qualification (PR #16 review, P1) ----
+
+/**
+ * The checks above establish that evidence EXISTS and is QUALIFIED: right
+ * kind, named machine, enough events and repeats, disclosures present. None of
+ * them asked whether the number in it PASSED.
+ *
+ * Reproduced on the committed evidence before fixing: setting
+ * verify_ms.worst to 45000 and within_budget to false, against a 30,000 ms
+ * budget, satisfied every check — so the figures table could go on calling
+ * NFR-04 MEASURED while the evidence it cited reported a miss. Evidence being
+ * present is not evidence establishing the claimed result, which is the
+ * principle this project applies everywhere else.
+ */
+test('qualified evidence that MISSES its budget is refused — NFR-04', async () => {
+  const w = world({
+    rows: [NFR04_ROW],
+    reqs: [req('NFR-04', 'done')],
+    files: ['bench/verify.mjs'],
+    results: {
+      'bench/results/nfr-04.json': {
+        ...GOOD_NFR04, verify_ms: { median: 44_000, worst: 45_000 }, within_budget: false,
+      },
+    },
+  });
+  try {
+    const r = await run(w.args);
+    assert.equal(r.code, 1, 'a figure citing a failed measurement must not pass');
+    assert.match(r.all, /elapsed on the worst run of 45000 ms against a budget of 30000 ms/);
+    assert.match(r.all, /reports a MISS/);
+  } finally { w.cleanup(); }
+});
+
+test('qualified evidence that MISSES its budget is refused — NFR-01, both percentiles', async () => {
+  for (const [patch, re] of [
+    [{ worst_p95_ms: 1.4, worst_p99_ms: 2.6065 }, /p95 on the worst repeat of 1\.4 ms against a budget of 1 ms/],
+    [{ worst_p95_ms: 0.7587, worst_p99_ms: 9.5 }, /p99 on the worst repeat of 9\.5 ms against a budget of 3 ms/],
+  ]) {
+    const w = world({
+      rows: [NFR01_ROW],
+      reqs: [req('NFR-01', 'done')],
+      files: ['bench/append.mjs'],
+      results: {
+        'bench/results/nfr-01.json': {
+          ...GOOD_NFR01, arms: { full: /** @type {any} */ (patch) },
+        },
+      },
+    });
+    try {
+      const r = await run(w.args);
+      assert.equal(r.code, 1, JSON.stringify(patch));
+      assert.match(r.all, /** @type {RegExp} */ (re));
+    } finally { w.cleanup(); }
+  }
+});
+
+/**
+ * The verdict LABELS in the evidence are not trusted. A file whose numbers
+ * pass but whose harness called it a miss is a disagreement between the
+ * harness and this guard, and a disagreement is a finding rather than
+ * something to resolve in favour of whichever is more convenient.
+ */
+test('the stored verdict label must agree with the recomputation', async () => {
+  const w = world({
+    rows: [NFR01_ROW],
+    reqs: [req('NFR-01', 'done')],
+    files: ['bench/append.mjs'],
+    results: {
+      'bench/results/nfr-01.json': {
+        ...GOOD_NFR01, verdict: { ...GOOD_NFR01.verdict, p99: 'over' },
+      },
+    },
+  });
+  try {
+    const r = await run(w.args);
+    assert.equal(r.code, 1);
+    assert.match(r.all, /reports verdict\.p99 = "over" rather than "within"/);
+  } finally { w.cleanup(); }
+});
+
+test('within_budget false is refused even when the numbers would pass', async () => {
+  const w = world({
+    rows: [NFR04_ROW],
+    reqs: [req('NFR-04', 'done')],
+    files: ['bench/verify.mjs'],
+    results: { 'bench/results/nfr-04.json': { ...GOOD_NFR04, within_budget: false } },
+  });
+  try {
+    const r = await run(w.args);
+    assert.equal(r.code, 1);
+    assert.match(r.all, /reports within_budget = false rather than true/);
+  } finally { w.cleanup(); }
+});
+
+/**
+ * The budget is held by the guard, not read from the evidence. Comparing a
+ * measurement against a budget the same file declares is not a check — this
+ * was not in the review, and it would have defeated the fix for what was.
+ */
+test('evidence cannot supply its own budget', async () => {
+  const w = world({
+    rows: [NFR04_ROW],
+    reqs: [req('NFR-04', 'done')],
+    files: ['bench/verify.mjs'],
+    results: {
+      'bench/results/nfr-04.json': {
+        ...GOOD_NFR04, budget_ms: 999_999,
+        verify_ms: { median: 890_000, worst: 900_000 }, within_budget: true,
+      },
+    },
+  });
+  try {
+    const r = await run(w.args);
+    assert.equal(r.code, 1, 'a file that raises its own budget must not pass');
+    assert.match(r.all, /declares budget_ms = 999999, but NFR-04's budget/);
+  } finally { w.cleanup(); }
+});
+
+test('an unreadable measurement is not a passing one', async () => {
+  for (const bad of [undefined, null, 'fast', Number.NaN]) {
+    const w = world({
+      rows: [NFR04_ROW],
+      reqs: [req('NFR-04', 'done')],
+      files: ['bench/verify.mjs'],
+      results: {
+        'bench/results/nfr-04.json': {
+          ...GOOD_NFR04, verify_ms: { median: 13_650, worst: bad },
+        },
+      },
+    });
+    try {
+      const r = await run(w.args);
+      assert.equal(r.code, 1, String(bad));
+      assert.match(r.all, /no finite verify_ms\.worst/);
+    } finally { w.cleanup(); }
+  }
+});
+
+test('an NFR-04 figure backed by a passing measurement still passes', async () => {
+  const w = world({
+    rows: [NFR04_ROW],
+    reqs: [req('NFR-04', 'done')],
+    files: ['bench/verify.mjs'],
+    results: { 'bench/results/nfr-04.json': GOOD_NFR04 },
+  });
+  try {
+    const r = await run(w.args);
+    assert.equal(r.code, 0, r.all);
+  } finally { w.cleanup(); }
+});
+
+/** The committed evidence must itself establish the figures it backs. */
+test('the real committed evidence establishes both published figures', async () => {
+  const r = await run([]);
+  assert.equal(r.code, 0, r.all);
+  for (const rel of ['bench/results/nfr-01-append.json', 'bench/results/nfr-04-verify.json']) {
+    const d = JSON.parse(readFileSync(new URL(`../${rel}`, import.meta.url), 'utf8'));
+    assert.ok(Array.isArray(d.host_disclosures), `${rel} carries its disclosures`);
+    assert.ok(typeof d.machine === 'string' && d.machine.trim() !== '', `${rel} names its machine`);
+  }
 });

@@ -42,8 +42,13 @@ const run = (/** @type {string[]} */ args) => new Promise((resolve) => {
  * the repository does not have — so the suite passed while the gate was blind
  * to requirements/backlog.json and the 47 requirements in it.
  *
+ * By default the resolved merge mirrors `reqs`, because that is what a real
+ * repository looks like after `npm run requirements`. Pass `resolved` to make
+ * the two disagree, or `noResolved` to model a fresh clone where the generated
+ * file does not exist yet — which the gate refuses.
+ *
  * @param {{ reqs?: any[], versions?: Record<string, string>, file?: string,
- *           resolved?: any[] }} o
+ *           resolved?: any[], noResolved?: boolean }} o
  */
 function world(o) {
   const dir = mkdtempSync(join(tmpdir(), 'ss-rel-'));
@@ -54,9 +59,10 @@ function world(o) {
   if (o.reqs !== undefined) {
     writeFileSync(join(reqs, o.file ?? 'part1.json'), JSON.stringify({ requirements: o.reqs }));
   }
-  if (o.resolved !== undefined) {
+  const resolved = o.resolved ?? o.reqs ?? [];
+  if (!o.noResolved) {
     writeFileSync(join(reqs, 'backlog.resolved.json'),
-      JSON.stringify({ count: o.resolved.length, requirements: o.resolved }));
+      JSON.stringify({ count: resolved.length, requirements: resolved }));
   }
   for (const [name, version] of Object.entries(o.versions ?? { a: '1.0.0' })) {
     mkdirSync(join(pkgs, name));
@@ -327,4 +333,43 @@ test('the real repository backlog is read in full, FR-15 included', async () => 
       `${id} is open in the resolved backlog and the gate did not report it`);
   }
   assert.match(r.out, /1\.0: \d+\/\d+ done/);
+});
+
+/**
+ * PR #16 review, P2. The completeness cross-check ran only when
+ * requirements/backlog.resolved.json happened to exist, and otherwise printed
+ * a note and continued. For a report that is defensible; for a gate whose
+ * stated purpose is establishing that no required item was missed it is not,
+ * and this gate exists precisely because 47 requirements were once invisible
+ * to it.
+ *
+ * The release workflow already runs `npm run backlog` before the gate step, so
+ * refusing here makes that ordering self-enforcing rather than implicit.
+ */
+test('P2: the gate refuses when it cannot establish that it read everything', async () => {
+  const w = world({ reqs: [req('FR-01', '1.0', 'done')], noResolved: true });
+  try {
+    const r = await run([...w.args, ...publish('v1.0.0')]);
+    assert.equal(r.code, 2, 'a completeness check that did not run is not a passed one');
+    assert.match(r.out + r.err, /cannot establish that it read every requirement file/);
+    assert.match(r.out + r.err, /Run `npm run requirements` before the gate/);
+  } finally { w.cleanup(); }
+});
+
+test('P2: a dry run is also held to it, because it is still gate mode', async () => {
+  const w = world({ reqs: [req('FR-01', '1.0', 'done')], noResolved: true });
+  try {
+    const r = await run([...w.args, '--gate', 'v1.0.0', '--ref-type', 'tag', '--dry-run', 'true']);
+    assert.equal(r.code, 2);
+  } finally { w.cleanup(); }
+});
+
+test('P2: --report still reads on a fresh clone, saying what it could not check', async () => {
+  const w = world({ reqs: [req('FR-01', '1.0', 'open')], noResolved: true });
+  try {
+    const r = await run([...w.args, '--report']);
+    assert.equal(r.code, 0, 'a report decides nothing and must stay readable');
+    assert.match(r.out + r.err, /could not cross-check/);
+    assert.match(r.out, /OPEN\s+FR-01/);
+  } finally { w.cleanup(); }
 });

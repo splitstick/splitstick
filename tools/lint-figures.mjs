@@ -152,11 +152,52 @@ if (start === -1) {
    * Requirements whose acceptance rests on attribution rather than on a
    * reference environment, with what their evidence file must show. Each entry
    * is the price of the relaxation that let the requirement close.
+   *
+   * `budgets` is the part that was missing, and the omission was exactly the
+   * failure this project keeps finding: the checks established that evidence
+   * EXISTED and was QUALIFIED -- right kind, named machine, enough events and
+   * repeats, disclosures present -- and never asked whether the number in it
+   * passed. Evidence reporting `"worst": 45000` against a 30,000 ms budget with
+   * `"within_budget": false` satisfied every check and let the figures table go
+   * on calling NFR-04 MEASURED. Evidence being present is not evidence
+   * establishing the claimed result.
+   *
+   * The limits live HERE rather than being read from the evidence. Comparing a
+   * measurement against a budget the same file declares is not a check: a file
+   * stating `"budget_ms": 999999` next to a 900-second measurement would pass.
+   * So the limit is held by the guard, the evidence's own declared budget must
+   * EQUAL it, and the harness's own pass/fail flag must agree with the
+   * recomputation -- three statements that have to line up rather than one that
+   * is taken on trust.
+   *
+   * NFR-01's p99 STRETCH target of 1 ms is deliberately not checked: the
+   * requirement states that meeting p95 while missing the stretch is a pass
+   * against the budget.
    */
   const ATTRIBUTED = {
-    'NFR-01': { kind: 'acceptance measurement', events: 1_000_000, repeats: 3 },
-    'NFR-04': { kind: 'acceptance', events: 100_000, repeats: 3 },
+    'NFR-01': {
+      kind: 'acceptance measurement', events: 1_000_000, repeats: 3,
+      budgets: [
+        { label: 'p95 on the worst repeat', limit: 1, unit: 'ms',
+          declaredAt: 'budget.p95_ms', measuredAt: 'arms.full.worst_p95_ms',
+          verdictAt: 'verdict.p95', passes: 'within' },
+        { label: 'p99 on the worst repeat', limit: 3, unit: 'ms',
+          declaredAt: 'budget.p99_ms', measuredAt: 'arms.full.worst_p99_ms',
+          verdictAt: 'verdict.p99', passes: 'within' },
+      ],
+    },
+    'NFR-04': {
+      kind: 'acceptance', events: 100_000, repeats: 3,
+      budgets: [
+        { label: 'elapsed on the worst run', limit: 30_000, unit: 'ms',
+          declaredAt: 'budget_ms', measuredAt: 'verify_ms.worst',
+          verdictAt: 'within_budget', passes: true },
+      ],
+    },
   };
+
+  /** @param {any} o @param {string} path */
+  const at = (o, path) => path.split('.').reduce((v, k) => (v === undefined || v === null ? v : v[k]), o);
 
   /**
    * Which strings in a row are requirement references, derived from the ids
@@ -275,6 +316,37 @@ if (start === -1) {
           if (!Array.isArray(r.host_disclosures)) {
             findings.push(`${id}'s evidence ${rel} carries no host_disclosures array. An empty `
               + 'array is a claim that nothing was short; a missing one is silence');
+          }
+
+          // And the point of the whole file: did the number PASS?
+          for (const b of want.budgets) {
+            const declared = at(r, b.declaredAt);
+            if (declared !== b.limit) {
+              findings.push(`${id}'s evidence ${rel} declares ${b.declaredAt} = `
+                + `${JSON.stringify(declared)}, but ${id}'s budget for ${b.label} is `
+                + `${b.limit} ${b.unit}. A measurement checked against a budget its own file `
+                + 'supplies is not checked; the budget is held by this guard');
+              continue;
+            }
+            const measured = at(r, b.measuredAt);
+            if (typeof measured !== 'number' || !Number.isFinite(measured)) {
+              findings.push(`${id}'s evidence ${rel} has no finite ${b.measuredAt}, so its `
+                + `${b.label} cannot be checked against the ${b.limit} ${b.unit} budget. An `
+                + 'unreadable measurement is not a passing one');
+              continue;
+            }
+            if (measured > b.limit) {
+              findings.push(`${id} is published as MEASURED, but its evidence ${rel} reports `
+                + `${b.label} of ${measured} ${b.unit} against a budget of ${b.limit} ${b.unit} `
+                + '— the cited evidence reports a MISS. Evidence being present is not evidence '
+                + 'establishing the claimed result');
+            }
+            const verdict = at(r, b.verdictAt);
+            if (verdict !== b.passes) {
+              findings.push(`${id}'s evidence ${rel} reports ${b.verdictAt} = `
+                + `${JSON.stringify(verdict)} rather than ${JSON.stringify(b.passes)}, so the `
+                + `harness itself did not call ${b.label} a pass`);
+            }
           }
         }
       }

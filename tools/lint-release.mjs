@@ -95,7 +95,7 @@ for (const a of argv.filter(x => x.startsWith('--'))) {
  * That catches both an input file this function forgot and a stale generated
  * file, without either one being able to pass quietly.
  */
-function requirements(dir = join(ROOT, 'requirements')) {
+function requirements(dir = join(ROOT, 'requirements'), { strict = false } = {}) {
   if (!existsSync(dir) || !statSync(dir).isDirectory()) {
     console.error(`\n  ${dir} is not a directory of requirement files.\n`);
     process.exit(2);
@@ -124,12 +124,31 @@ function requirements(dir = join(ROOT, 'requirements')) {
 
   // Cross-check against the generated merge, when the fixture or repo has one.
   // backlog.resolved.json is generated and gitignored, so it is absent on a
-  // fresh clone until `npm run requirements` runs. That must not be a SILENT
-  // skip: a guard that checked nothing has to say so, or the next reader will
-  // believe it ran.
+  // fresh clone until `npm run requirements` runs.
+  //
+  // In GATE mode that is a refusal, not a note. The gate's whole purpose is to
+  // establish that no required item was missed, and the cross-check is the only
+  // thing standing between it and a repeat of the defect that produced it: this
+  // loader read `part\d+.json` only, there is no part1.json, and 47
+  // requirements went unseen while it reported a total. A completeness check
+  // that silently does not run leaves the gate in exactly the state that
+  // allowed that. The release workflow already generates it before the gate
+  // runs -- `npm run backlog` precedes the gate step -- so refusing here makes
+  // that ordering self-enforcing instead of implicit, and a reordering fails
+  // loudly rather than quietly weakening the gate.
+  //
+  // In report mode it stays a note: --report prints state and decides nothing,
+  // and a developer on a fresh clone should still be able to read it.
   const resolved = join(dir, 'backlog.resolved.json');
   if (!existsSync(resolved)) {
-    console.error(`  note: ${resolved} is absent, so this gate could not cross-check that it `
+    if (strict) {
+      console.error(`\n  ${resolved} does not exist, so this gate cannot establish that it read `
+        + 'every requirement file. Refused rather than reported: a completeness check that did '
+        + 'not run is not a passed one, and this gate exists because 47 requirements were once '
+        + 'invisible to it.\n  Run `npm run requirements` before the gate.\n');
+      process.exit(2);
+    }
+    console.error(`  note: ${resolved} is absent, so this report could not cross-check that it `
       + 'read every requirement file. Run `npm run requirements` first for that check.');
   }
   if (existsSync(resolved)) {
@@ -154,7 +173,7 @@ function requirements(dir = join(ROOT, 'requirements')) {
 }
 
 const reqDir = flag('requirements');
-const all = requirements(reqDir === undefined ? undefined : reqDir);
+const all = requirements(reqDir === undefined ? undefined : reqDir, { strict: wants('gate') });
 const releases = [...new Set(all.map(r => String(r.release)))].sort();
 /** @param {string} rel */
 const openIn = (rel) => all.filter(r => String(r.release) === rel && r.status !== 'done');
