@@ -4,3 +4,7 @@ out/
 .DS_Store
 requirements/backlog.resolved.json
 .contract-js-*
+
+# A real-provider API key for bench/run-latency.mjs --provider anthropic.
+# Never committed; the harness also refuses to put it in a result.
+bench/.env.local
