@@ -84,6 +84,8 @@ const PROVIDER = str('provider') ?? 'scripted';
 // percentage claim is the worst case, which is the quickest model an operator
 // might realistically run.
 const MODEL = str('model') ?? 'claude-haiku-4-5-20251001';
+const MODEL_SLEEP_MS = num('model-sleep-ms', 0);
+const FLUSH_MS = num('flush-ms', 1);
 
 if (!['scripted', 'anthropic'].includes(PROVIDER)) {
   console.error(`\n  --provider ${PROVIDER} is not one this harness knows (scripted, anthropic).\n`);
@@ -130,12 +132,23 @@ const transferFunds = defineTool({
   },
 });
 
-/** @returns {any} the only stub in this benchmark: a deterministic provider */
+/**
+ * @returns {any} the only stub in this benchmark: a deterministic provider
+ *
+ * `--model-sleep-ms` makes it wait before answering, which separates two
+ * explanations that a real provider confounds. If added overhead grows when the
+ * MODEL is slow but the network is not involved, the cost is inside our code
+ * and scales with run duration; if it only grows against a real provider, it is
+ * the provider's variance. The pilot's paired mean jumped from about 1 ms
+ * scripted to about 100 ms against Haiku, and guessing which of those it was
+ * would have meant spending 500 API calls to measure the wrong thing.
+ */
 function scriptedAdapter() {
   let call = 0;
   return {
     name: 'scripted',
     async chat() {
+      if (MODEL_SLEEP_MS > 0) await new Promise(r => setTimeout(r, MODEL_SLEEP_MS));
       call += 1;
       if (call % 2 === 1) {
         return {
@@ -207,7 +220,7 @@ async function openArm(withCollector) {
 /** @param {any} collector @param {string} label @param {number} i */
 async function oneRun(collector, label, i) {
   // Both arms pay for the JSONL journal; only one wraps it.
-  const inner = new JsonlRunJournal(path.join(workdir, `${label}-${i}.jsonl`), { flushIntervalMs: 1 });
+  const inner = new JsonlRunJournal(path.join(workdir, `${label}-${i}.jsonl`), { flushIntervalMs: FLUSH_MS });
   const journal = collector ? new SplitstickRunJournal({ collector, journal: inner }) : inner;
   const oma = new OpenMultiAgent({ journal });
   const callsBefore = modelCallMs.length;
@@ -285,7 +298,10 @@ const stats = pairedDifference(base, instrumented);
 // microseconds, so the real total has to be modelled as `baseMedian + 2 x
 // MODEL_MS` — and MODEL_MS being an assumption that had never met a provider is
 // exactly why M7 reverted this requirement from done.
-const denominatorMs = REAL ? baseMedian : baseMedian + 2 * MODEL_MS;
+// A sleeping scripted model produces a real run duration, so its denominator is
+// measured too; only the instantaneous scripted model needs one modelled.
+const measuredDenominator = REAL || MODEL_SLEEP_MS > 0;
+const denominatorMs = measuredDenominator ? baseMedian : baseMedian + 2 * MODEL_MS;
 const budgetMs = 0.02 * denominatorMs;
 const verdict = verdictAgainst(stats, budgetMs);
 
@@ -298,9 +314,10 @@ const report = {
   budget_percent: 2,
   budget_ms: Number(budgetMs.toFixed(3)),
   provider: PROVIDER,
+  model_sleep_ms: MODEL_SLEEP_MS,
   model: REAL ? MODEL : 'scripted-1',
   // Assumed OR measured, never both, and the null says which.
-  model_latency_assumed_ms: REAL ? null : MODEL_MS,
+  model_latency_assumed_ms: measuredDenominator ? null : MODEL_MS,
   model_latency_measured_ms: REAL ? {
     calls: modelCallMs.length,
     median: Number((mid(modelCallMs) ?? 0).toFixed(3)),
@@ -309,7 +326,7 @@ const report = {
   } : null,
   model_calls_per_run: REAL ? [...new Set(callsPerRun)].sort((a, b) => a - b) : null,
   denominator_ms: Number(denominatorMs.toFixed(3)),
-  denominator_is_measured: REAL,
+  denominator_is_measured: measuredDenominator,
   pairs_needed_for_budget: pairsForBudget,
   runs: RUNS,
   interleaved: true,
