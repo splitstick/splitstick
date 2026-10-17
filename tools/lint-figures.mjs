@@ -129,6 +129,14 @@ if (start === -1) {
   const resolvedPath = join(REQS, 'backlog.resolved.json');
   /** @type {string[]} */
   let declaredIds = [];
+  if (!existsSync(resolvedPath)) {
+    // Generated and gitignored, so absent on a fresh clone. Announced rather
+    // than skipped quietly: without it this guard cannot tell that it read
+    // every requirement file, and cannot recognise an id whose whole family
+    // went unread.
+    console.error(`  note: ${resolvedPath} is absent, so this guard could not cross-check that `
+      + 'it read every requirement file. Run `npm run requirements` first for that check.');
+  }
   if (existsSync(resolvedPath)) {
     declaredIds = itemsOf(JSON.parse(readFileSync(resolvedPath, 'utf8')))
       .map((/** @type {any} */ r) => r?.id).filter(Boolean);

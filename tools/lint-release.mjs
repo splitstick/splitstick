@@ -123,7 +123,15 @@ function requirements(dir = join(ROOT, 'requirements')) {
   }
 
   // Cross-check against the generated merge, when the fixture or repo has one.
+  // backlog.resolved.json is generated and gitignored, so it is absent on a
+  // fresh clone until `npm run requirements` runs. That must not be a SILENT
+  // skip: a guard that checked nothing has to say so, or the next reader will
+  // believe it ran.
   const resolved = join(dir, 'backlog.resolved.json');
+  if (!existsSync(resolved)) {
+    console.error(`  note: ${resolved} is absent, so this gate could not cross-check that it `
+      + 'read every requirement file. Run `npm run requirements` first for that check.');
+  }
   if (existsSync(resolved)) {
     const expected = new Set(itemsOf(JSON.parse(readFileSync(resolved, 'utf8')))
       .map((/** @type {any} */ r) => r?.id).filter(Boolean));

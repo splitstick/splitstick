@@ -1,0 +1,108 @@
+{
+  "requirement": "NFR-01",
+  "budget": {
+    "p95_ms": 1,
+    "p99_ms": 3,
+    "p99_stretch_ms": 1
+  },
+  "events": 1000000,
+  "repeats": 3,
+  "arms": {
+    "chain": {
+      "runs": 3,
+      "p50_ms": 0.0742,
+      "p95_ms": 0.1407,
+      "p99_ms": 0.4169,
+      "p999_ms": 6.916,
+      "max_ms": 1049.1492,
+      "worst_p99_ms": 0.9195,
+      "events_per_second": 8886,
+      "rss_mb": 363,
+      "gc_pauses": 872,
+      "gc_total_ms": 6619.3,
+      "gc_share_of_slowest": 0.09
+    },
+    "full": {
+      "runs": 3,
+      "p50_ms": 0.2375,
+      "p95_ms": 0.6744,
+      "p99_ms": 2.8203,
+      "p999_ms": 15.0213,
+      "max_ms": 1012.3756,
+      "worst_p99_ms": 3.1723,
+      "events_per_second": 2507,
+      "rss_mb": 210,
+      "gc_pauses": 2020,
+      "gc_total_ms": 26263.6,
+      "gc_share_of_slowest": 0.2
+    }
+  },
+  "filesystem_baseline": {
+    "write_to_open_fd": {
+      "runs": 3,
+      "p50_ms": 0.0083,
+      "p95_ms": 0.0124,
+      "p99_ms": 0.0613,
+      "p999_ms": 0.9066,
+      "max_ms": 30.673,
+      "worst_p99_ms": 0.0644,
+      "events_per_second": 70666
+    },
+    "create_new_file": {
+      "runs": 3,
+      "p50_ms": 0.2024,
+      "p95_ms": 0.6821,
+      "p99_ms": 2.7222,
+      "p999_ms": 23.65,
+      "max_ms": 412.9645,
+      "worst_p99_ms": 3.0184,
+      "events_per_second": 2301
+    }
+  },
+  "environment": {
+    "node": "v22.23.2",
+    "platform": "darwin 21.6.0",
+    "arch": "x64",
+    "cpu": "Intel(R) Core(TM) i5-5350U CPU @ 1.80GHz",
+    "cpus": 4,
+    "total_memory_gb": 8,
+    "load_average_1m": 19.88,
+    "free_disk_gb": 8.53
+  },
+  "environment_before_run": {
+    "node": "v22.23.2",
+    "platform": "darwin 21.6.0",
+    "arch": "x64",
+    "cpu": "Intel(R) Core(TM) i5-5350U CPU @ 1.80GHz",
+    "cpus": 4,
+    "total_memory_gb": 8,
+    "load_average_1m": 6.51,
+    "free_disk_gb": 8.5
+  },
+  "machine": "MacBook Air, Intel i5-5350U @ 1.80GHz, 4 logical cpus, 8 GB, macOS 21.6.0 — a shared development laptop, not a dedicated host",
+  "storage": "internal Apple NVMe SSD, APFS, volume 90% full, shared with the OS",
+  "clock": {
+    "tick_ms": 0.000193,
+    "adequate": true
+  },
+  "gc_recorder": "verified",
+  "kind": "acceptance measurement",
+  "reference_environment_shortfalls": [],
+  "host_disclosures": [
+    "load average 6.51 > 1 before the run started",
+    "load average climbed 13.37 during the run (6.51 to 19.88), more than the 1.5 this benchmark can account for, so other work joined it",
+    "8.5 GB free on the fixture volume < 20 GB; a filesystem near capacity measurably slows file creation, which is most of this requirement's tail"
+  ],
+  "verdict": {
+    "p95": "within",
+    "p99": "within",
+    "p99_stretch": "not met"
+  },
+  "attribution": [
+    "Cryptography is not the cost. SHA-256 and AES-GCM over a record are 0.03 ms together, while creating one file measured p50 0.2024 ms against 0.0083 ms for a write to an already-open descriptor. So the append path creates no file at all: both journals are held open and every payload goes into one append-only encrypted blob.",
+    "A single file creation has a p99 of 2.7222 ms on this machine, which is why no design that creates a file per record can meet a 1 ms p99 here, however fast its hashing.",
+    "The remaining tail is not per-record work: an open-descriptor write has a p99 of 0.0613 ms against the chain arm's 0.4169 ms. What it is instead is reported above and not guessed at — if the GC share of the slowest samples is low, the outliers are the operating system, and the maxima here routinely exceed anything the per-record work could account for.",
+    "Across 3 repeats the full arm's p99 ranged up to 3.1723 ms and the filesystem baseline moved with it, so this machine is not the reference environment NFR-01 now requires. The p50 and p95 are the stable figures.",
+    "Garbage collection is measured, not inferred: 2020 pause(s) totalling 26263.6 ms during the full arm, overlapping 20% of its slowest one per cent of samples. The recorder was verified against a deliberate allocation storm in this same run (10 pauses seen), so a low number here is a measurement rather than a lost one — an earlier version reported zero because it disconnected the observer before the asynchronous entries could be delivered."
+  ]
+}

@@ -19,7 +19,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -298,13 +298,29 @@ test('a backlog the gate cannot fully see is refused, not totalled', async () =>
 test('the real repository backlog is read in full, FR-15 included', async () => {
   // Against the repository itself, not a fixture. The defect was a mismatch
   // between the fixture layout and the real one, so a fixture cannot catch it.
+  //
+  // The expected set comes from the TRACKED inputs, not from
+  // requirements/backlog.resolved.json. That file is generated and gitignored,
+  // so it does not exist in the CI job that runs this suite -- depending on it
+  // here would make the check pass locally and crash in CI, which is the wrong
+  // way round for a test about reading everything.
   const r = await run(['--report']);
   assert.equal(r.code, 0);
-  const resolved = JSON.parse(
-    readFileSync(new URL('../requirements/backlog.resolved.json', import.meta.url), 'utf8'));
-  const open10 = resolved.requirements
-    .filter((/** @type {any} */ x) => String(x.release) === '1.0' && x.status !== 'done')
-    .map((/** @type {any} */ x) => x.id);
+  const reqDir = new URL('../requirements/', import.meta.url);
+  const inputs = readdirSync(reqDir).filter(f => /^(backlog|part\d+)\.json$/.test(f));
+  assert.ok(inputs.includes('backlog.json'),
+    'backlog.json is the file the gate used to miss; this check needs it to exist');
+  /** @type {any[]} */
+  const all = [];
+  for (const f of inputs) {
+    const parsed = JSON.parse(readFileSync(new URL(f, reqDir), 'utf8'));
+    for (const x of (Array.isArray(parsed) ? parsed : parsed.requirements ?? [])) {
+      if (x?.id) all.push(x);
+    }
+  }
+  const open10 = all
+    .filter(x => String(x.release) === '1.0' && x.status !== 'done')
+    .map(x => x.id);
   assert.ok(open10.length > 0, 'this check needs at least one open 1.0 requirement to be meaningful');
   for (const id of open10) {
     assert.match(r.out, new RegExp(`OPEN\\s+${id}\\b`),
