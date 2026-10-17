@@ -63,6 +63,33 @@ const GOOD_NFR04 = {
   within_budget: true,
 };
 
+/** A good NFR-02 acceptance result, as bench/run-latency.mjs --json emits one. */
+const GOOD_NFR02 = {
+  requirement: 'NFR-02', kind: 'acceptance', events: 24, repeats: 1,
+  machine: 'bench-01, bare metal', storage: null,
+  budget_percent: 2,
+  added_end_to_end_percent_ci_high: 0.29,
+  verdict_end_to_end: 'WITHIN BUDGET',
+  added_direct_percent_ci_high: 0.16,
+  verdict_direct: 'WITHIN BUDGET',
+  denominator_ms: 2725,
+  added_direct: { mean_ms: 3.03 },
+};
+
+/**
+ * The published figures are annotated with the evidence field each one quotes,
+ * so the guard reads the PROSE rather than a constant inside itself. A markdown
+ * comment renders invisibly and sits beside the number it binds.
+ * @param {{ e2e?: string, direct?: string, denom?: string, directMs?: string }} [o]
+ */
+const nfr02Row = (o = {}) => '| **below ' + (o.e2e ?? '0.29')
+  + '%**<!--=added_end_to_end_percent_ci_high--> | added end-to-end run latency (NFR-02) '
+  + '| **MEASURED**, denominator ' + (o.denom ?? '2725') + '<!--=denominator_ms--> ms, journal ops '
+  + (o.directMs ?? '3.03') + '<!--=added_direct.mean_ms--> ms below '
+  + (o.direct ?? '0.16') + '%<!--=added_direct_percent_ci_high--> '
+  + '| `bench/run-latency.mjs`, `bench/results/nfr-02.json` |';
+const NFR02_ROW = nfr02Row();
+
 const NFR01_ROW = '| **p99 2.61 ms** | append overhead (NFR-01) | **MEASURED** | '
   + '`bench/append.mjs`, `bench/results/nfr-01.json` |';
 const NFR04_ROW = '| **14.2 s** | offline verification (NFR-04) | **MEASURED** | '
@@ -504,4 +531,285 @@ test('the real committed evidence establishes both published figures', async () 
     assert.ok(Array.isArray(d.host_disclosures), `${rel} carries its disclosures`);
     assert.ok(typeof d.machine === 'string' && d.machine.trim() !== '', `${rel} names its machine`);
   }
+});
+
+/**
+ * NFR-02's budget is a PERCENTAGE, so the limit is checked in percent and the
+ * measured figure is the UPPER BOUND of the interval — the requirement is met
+ * only if the whole interval clears 2%, not if the point estimate does.
+ */
+test('NFR-02 is checked on the whole interval, in percent', async () => {
+  const ok = world({
+    rows: [NFR02_ROW], reqs: [req('NFR-02', 'done')],
+    files: ['bench/run-latency.mjs'],
+    results: { 'bench/results/nfr-02.json': GOOD_NFR02 },
+  });
+  try {
+    assert.equal((await run(ok.args)).code, 0, 'a passing interval must pass');
+  } finally { ok.cleanup(); }
+
+  // A point estimate under budget with the interval over it must NOT pass.
+  const over = world({
+    rows: [NFR02_ROW], reqs: [req('NFR-02', 'done')],
+    files: ['bench/run-latency.mjs'],
+    results: { 'bench/results/nfr-02.json': { ...GOOD_NFR02, added_direct_percent_ci_high: 3.4 } },
+  });
+  try {
+    const r = await run(over.args);
+    assert.equal(r.code, 1);
+    assert.match(r.all, /whole interval of 3\.4 % against a budget of 2 %/);
+  } finally { over.cleanup(); }
+});
+
+/**
+ * Its verdict field is the DIRECT one. The paired wall-clock difference on the
+ * same runs reports UNRESOLVED, so checking that field would refuse a
+ * requirement its own evidence establishes.
+ */
+test('NFR-02 is judged on the direct verdict, not the paired one', async () => {
+  const w = world({
+    rows: [NFR02_ROW], reqs: [req('NFR-02', 'done')],
+    files: ['bench/run-latency.mjs'],
+    results: {
+      'bench/results/nfr-02.json': {
+        ...GOOD_NFR02, verdict: 'UNRESOLVED', verdict_direct: 'WITHIN BUDGET',
+      },
+    },
+  });
+  try {
+    assert.equal((await run(w.args)).code, 0,
+      'an unresolved PAIRED verdict must not block a figure the direct measure establishes');
+  } finally { w.cleanup(); }
+
+  const bad = world({
+    rows: [NFR02_ROW], reqs: [req('NFR-02', 'done')],
+    files: ['bench/run-latency.mjs'],
+    results: { 'bench/results/nfr-02.json': { ...GOOD_NFR02, verdict_direct: 'UNRESOLVED' } },
+  });
+  try {
+    const r = await run(bad.args);
+    assert.equal(r.code, 1);
+    assert.match(r.all, /verdict_direct = "UNRESOLVED"/);
+  } finally { bad.cleanup(); }
+});
+
+test('NFR-02 still has to name its machine, and cannot set its own budget', async () => {
+  for (const [patch, re] of [
+    [{ machine: '   ' }, /does not name its machine/],
+    [{ budget_percent: 99 }, /declares budget_percent = 99/],
+  ]) {
+    const w = world({
+      rows: [NFR02_ROW], reqs: [req('NFR-02', 'done')],
+      files: ['bench/run-latency.mjs'],
+      results: { 'bench/results/nfr-02.json': { ...GOOD_NFR02, .../** @type {any} */ (patch) } },
+    });
+    try {
+      const r = await run(w.args);
+      assert.equal(r.code, 1, JSON.stringify(patch));
+      assert.match(r.all, /** @type {RegExp} */ (re));
+    } finally { w.cleanup(); }
+  }
+});
+
+/**
+ * bench/run-latency.mjs has no reference-environment gate, so it has nothing to
+ * disclose. Requiring the array would require it to publish an empty one, and
+ * an empty list claims "nothing was short" about a check never run.
+ */
+test('NFR-02 is exempt from host_disclosures, and the exemption is declared', async () => {
+  const { host_disclosures, ...withoutDisclosures } = { ...GOOD_NFR02, host_disclosures: [] };
+  const w = world({
+    rows: [NFR02_ROW], reqs: [req('NFR-02', 'done')],
+    files: ['bench/run-latency.mjs'],
+    results: { 'bench/results/nfr-02.json': withoutDisclosures },
+  });
+  try {
+    assert.equal((await run(w.args)).code, 0, r => r);
+  } finally { w.cleanup(); }
+
+  // But NFR-01 is NOT exempt, so the exemption is per-requirement and not a
+  // weakening of the check itself.
+  const nfr01 = world({
+    rows: [NFR01_ROW], reqs: [req('NFR-01', 'done')],
+    files: ['bench/append.mjs'],
+    results: { 'bench/results/nfr-01.json': (() => {
+      const { host_disclosures, ...rest } = GOOD_NFR01; return rest;
+    })() },
+  });
+  try {
+    const r = await run(nfr01.args);
+    assert.equal(r.code, 1);
+    assert.match(r.all, /carries no host_disclosures array/);
+  } finally { nfr01.cleanup(); }
+});
+
+// ── PR #18 review ───────────────────────────────────────────────────────────
+
+/**
+ * P2. The release notes, the requirement's evidence and the PR description
+ * each quoted a DIFFERENT run: 0.088% beside a measured 0.0931%, 2.33 ms
+ * beside 2.4269 ms, a 2,624 ms denominator beside 2,608 ms. Every number came
+ * from a real measurement; none came from the one that shipped as the
+ * evidence, because the file was regenerated after the prose was written.
+ *
+ * The budget OUTCOME was checked and the numerals were not, so it passed.
+ */
+test('a published number that is not the measured one is refused', async () => {
+  for (const [patch, re] of [
+    [{ added_end_to_end_percent_ci_high: 0.0931 }, /publishes 0\.29 for added_end_to_end_percent_ci_high/],
+    [{ denominator_ms: 2608.019 }, /publishes 2725 for denominator_ms/],
+    [{ added_direct: { mean_ms: 2.4269 } }, /publishes 3\.03 for added_direct\.mean_ms/],
+  ]) {
+    const w = world({
+      rows: [NFR02_ROW], reqs: [req('NFR-02', 'done')],
+      files: ['bench/run-latency.mjs'],
+      results: { 'bench/results/nfr-02.json': { ...GOOD_NFR02, .../** @type {any} */ (patch) } },
+    });
+    try {
+      const r = await run(w.args);
+      assert.equal(r.code, 1, JSON.stringify(patch));
+      assert.match(r.all, /** @type {RegExp} */ (re));
+      assert.match(r.all, /how a number outlives the run that produced it/);
+    } finally { w.cleanup(); }
+  }
+});
+
+test('a figure is judged at the precision it is quoted at, not to the last digit', async () => {
+  // The declared quote is 0.29. A measurement of 0.2871 IS that number to two
+  // places and must pass -- refusing it would force every published figure to
+  // carry four decimals. A measurement of 0.284 is not, and must not.
+  for (const [measured, shouldPass] of /** @type {[number, boolean][]} */ ([
+    [0.2871, true], [0.2949, true], [0.284, false], [0.296, false],
+  ])) {
+    const w = world({
+      rows: [NFR02_ROW], reqs: [req('NFR-02', 'done')],
+      files: ['bench/run-latency.mjs'],
+      results: {
+        'bench/results/nfr-02.json': { ...GOOD_NFR02, added_end_to_end_percent_ci_high: measured },
+      },
+    });
+    try {
+      const r = await run(w.args);
+      assert.equal(r.code, shouldPass ? 0 : 1,
+        `${measured} should ${shouldPass ? 'pass' : 'fail'} against a published 0.29: ${r.all.slice(0, 200)}`);
+    } finally { w.cleanup(); }
+  }
+});
+
+/**
+ * P2. Closing NFR-02 on the direct journal-operation measure alone established
+ * a NARROWER property than its statement claims -- it excludes work outside an
+ * append or close call. The end-to-end measure is the verdict; the direct one
+ * is corroboration, and both are checked.
+ */
+test('NFR-02 is judged END TO END, not on journal operations alone', async () => {
+  const w = world({
+    rows: [NFR02_ROW], reqs: [req('NFR-02', 'done')],
+    files: ['bench/run-latency.mjs'],
+    results: {
+      'bench/results/nfr-02.json': {
+        ...GOOD_NFR02,
+        // Journal operations fine; end to end over budget.
+        added_end_to_end_percent_ci_high: 4.1, verdict_end_to_end: 'OVER BUDGET',
+      },
+    },
+  });
+  try {
+    const r = await run(w.args);
+    assert.equal(r.code, 1, 'a passing journal measure must not carry a failing end-to-end one');
+    assert.match(r.all, /added end-to-end run latency, whole interval of 4\.1 %/);
+  } finally { w.cleanup(); }
+});
+
+test('an UNRESOLVED end-to-end verdict cannot close NFR-02', async () => {
+  const w = world({
+    rows: [NFR02_ROW], reqs: [req('NFR-02', 'done')],
+    files: ['bench/run-latency.mjs'],
+    results: {
+      'bench/results/nfr-02.json': { ...GOOD_NFR02, verdict_end_to_end: 'UNRESOLVED' },
+    },
+  });
+  try {
+    const r = await run(w.args);
+    assert.equal(r.code, 1);
+    assert.match(r.all, /verdict_end_to_end = "UNRESOLVED"/);
+  } finally { w.cleanup(); }
+});
+
+// ── PR #18 re-review: the numeric lint must read the PUBLISHED text ─────────
+
+/**
+ * The first version of this check listed the expected numbers in the guard
+ * itself, so it compared its own constant against the evidence and never
+ * looked at the release notes. Editing the published headline from 0.29% to
+ * 0.10% left it passing -- the exact regression the check was added to catch.
+ *
+ * The numbers now come out of the published row.
+ */
+test('mutating the PUBLISHED figure fails, with the evidence untouched', async () => {
+  const w = world({
+    rows: [nfr02Row({ e2e: '0.10' })],       // the note says 0.10%
+    reqs: [req('NFR-02', 'done')],
+    files: ['bench/run-latency.mjs'],
+    results: { 'bench/results/nfr-02.json': GOOD_NFR02 },   // the evidence still says 0.29
+  });
+  try {
+    const r = await run(w.args);
+    assert.equal(r.code, 1, 'a published figure that is not the measured one must fail');
+    assert.match(r.all, /publishes 0\.1 for added_end_to_end_percent_ci_high/);
+    assert.match(r.all, /measured 0\.29/);
+  } finally { w.cleanup(); }
+});
+
+test('every annotated figure in the row is checked, not just the headline', async () => {
+  for (const [patch, re] of /** @type {[any, RegExp][]} */ ([
+    [{ denom: '2600' }, /publishes 2600 for denominator_ms/],
+    [{ directMs: '9.99' }, /publishes 9\.99 for added_direct\.mean_ms/],
+    [{ direct: '0.01' }, /publishes 0\.01 for added_direct_percent_ci_high/],
+  ])) {
+    const w = world({
+      rows: [nfr02Row(patch)], reqs: [req('NFR-02', 'done')],
+      files: ['bench/run-latency.mjs'],
+      results: { 'bench/results/nfr-02.json': GOOD_NFR02 },
+    });
+    try {
+      const r = await run(w.args);
+      assert.equal(r.code, 1, JSON.stringify(patch));
+      assert.match(r.all, re);
+    } finally { w.cleanup(); }
+  }
+});
+
+/**
+ * And the annotation cannot be removed to escape the check. A comparison that
+ * does not happen is indistinguishable from one that passed, which is the
+ * failure mode this whole guard exists to prevent.
+ */
+test('deleting an annotation fails rather than silently skipping the check', async () => {
+  const stripped = NFR02_ROW.replace('<!--=denominator_ms-->', '');
+  const w = world({
+    rows: [stripped], reqs: [req('NFR-02', 'done')],
+    files: ['bench/run-latency.mjs'],
+    results: { 'bench/results/nfr-02.json': GOOD_NFR02 },
+  });
+  try {
+    const r = await run(w.args);
+    assert.equal(r.code, 1);
+    assert.match(r.all, /must quote denominator_ms and annotate it in the row/);
+    assert.match(r.all, /indistinguishable from it passing/);
+  } finally { w.cleanup(); }
+});
+
+test('the real release notes carry an annotation for every required field', async () => {
+  const { readFileSync } = await import('node:fs');
+  const notes = readFileSync(
+    new URL('../docs/splitstick-1.0-release-notes.md', import.meta.url), 'utf8');
+  for (const field of [
+    'added_end_to_end_percent_ci_high', 'added_direct_percent_ci_high',
+    'denominator_ms', 'added_direct.mean_ms',
+  ]) {
+    assert.ok(notes.includes(`<!--=${field}-->`),
+      `the published notes do not bind ${field} to its evidence`);
+  }
+  assert.equal((await run([])).code, 0);
 });

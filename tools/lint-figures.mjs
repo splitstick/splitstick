@@ -186,6 +186,53 @@ if (start === -1) {
           verdictAt: 'verdict.p99', passes: 'within' },
       ],
     },
+    // NFR-02's budget is a PERCENTAGE, so the limit is checked in percent and
+    // the measured figure is the UPPER BOUND of the interval -- the requirement
+    // is met only if the whole interval is below 2%, not if the point estimate
+    // is. Its verdict field is the DIRECT one: the paired wall-clock difference
+    // on the same runs reports UNRESOLVED, and checking that one would refuse
+    // a requirement its own evidence establishes.
+    'NFR-02': {
+      kind: 'acceptance', events: 24, repeats: 1,
+      // Storage is not a variable this benchmark's result depends on: it
+      // measures time inside a journal wrapper, not file creation.
+      attests: ['machine'],
+      // Which evidence fields this figure MUST quote in the release notes. The
+      // numbers themselves are read out of the published row, not listed here:
+      // a table of expected numbers inside the guard compares the guard's own
+      // constant against the evidence and never looks at the prose, so editing
+      // the published figure would not fail it -- which was the regression the
+      // check was added to catch.
+      //
+      // Naming the fields here is still necessary: without it, deleting an
+      // annotation from the row would silently disable the comparison instead
+      // of failing it.
+      must_quote: [
+        'added_end_to_end_percent_ci_high',
+        'added_direct_percent_ci_high',
+        'denominator_ms',
+        'added_direct.mean_ms',
+      ],
+      // bench/run-latency.mjs has no reference-environment gate, so it has no
+      // shortfalls to disclose. Requiring the array would be requiring it to
+      // publish an empty one, and an empty list claims "nothing was short" --
+      // a statement about a check that was never run. The machine is still
+      // required, because that is what attribution means.
+      disclosures_required: false,
+      budgets: [
+        // END-TO-END, which is what the requirement's statement says: "added
+        // end-to-end agent run latency below 2%". The direct journal-operation
+        // measure is checked too, but it cannot be the one that closes this
+        // requirement -- it excludes work outside an append or close call, so
+        // on its own it would establish a narrower property than the claim.
+        { label: 'added end-to-end run latency, whole interval', limit: 2, unit: '%',
+          declaredAt: 'budget_percent', measuredAt: 'added_end_to_end_percent_ci_high',
+          verdictAt: 'verdict_end_to_end', passes: 'WITHIN BUDGET' },
+        { label: 'added journal-operation latency, whole interval', limit: 2, unit: '%',
+          declaredAt: 'budget_percent', measuredAt: 'added_direct_percent_ci_high',
+          verdictAt: 'verdict_direct', passes: 'WITHIN BUDGET' },
+      ],
+    },
     'NFR-04': {
       kind: 'acceptance', events: 100_000, repeats: 3,
       budgets: [
@@ -299,7 +346,7 @@ if (start === -1) {
             findings.push(`${id}'s evidence ${rel} reports kind ${JSON.stringify(r.kind)}, not `
               + `${JSON.stringify(want.kind)}. A regression metric may not back a MEASURED figure`);
           }
-          for (const k of ['machine', 'storage']) {
+          for (const k of want.attests ?? ['machine', 'storage']) {
             if (typeof r[k] !== 'string' || r[k].trim() === '') {
               findings.push(`${id}'s evidence ${rel} does not name its ${k}, which is the whole of `
                 + 'what replaced the reference-environment requirement');
@@ -313,7 +360,55 @@ if (start === -1) {
             findings.push(`${id}'s evidence ${rel} reports ${r.repeats} repeat(s), fewer than `
               + `${want.repeats}`);
           }
-          if (!Array.isArray(r.host_disclosures)) {
+          // THE PUBLISHED NUMBERS MUST BE THE MEASURED ONES, read from the
+          // PUBLISHED ROW rather than from a constant in this file.
+          //
+          // A review found the release notes, the requirement's evidence and
+          // this PR's description each quoting a DIFFERENT run: 0.088% beside
+          // 0.0931%, 2.33 ms beside 2.4269 ms, a 2,624 ms denominator beside
+          // 2,608 ms. Every number was from a real measurement; none was from
+          // the measurement that shipped as the evidence, because the file was
+          // regenerated after the prose was written. The budget outcome was
+          // checked and the NUMERALS were not, so the check passed.
+          //
+          // So each figure declares which field it is quoting, and the quoted
+          // value must match the evidence to the precision it is quoted at.
+          // Each published figure is annotated in the row with the evidence
+          // field it quotes: `**below 0.29%**<!--=added_end_to_end_percent_ci_high-->`.
+          // A markdown comment renders invisibly, and it sits next to the
+          // number, so a human editing the figure sees what it is bound to.
+          const annotated = new Map();
+          for (const q of row.matchAll(/([0-9][0-9,]*(?:\.[0-9]+)?)\s*%?\s*\**\s*<!--=\s*([A-Za-z0-9_.]+)\s*-->/g)) {
+            annotated.set(String(q[2]), String(q[1]).replace(/,/g, ''));
+          }
+          for (const field of want.must_quote ?? []) {
+            const claimedText = annotated.get(field);
+            if (claimedText === undefined) {
+              findings.push(`${id}'s figure must quote ${field} and annotate it in the row as `
+                + `\`<!--=${field}-->\` so this check reads the PUBLISHED number rather than a `
+                + 'constant. Without the annotation the comparison does not happen, which is '
+                + 'indistinguishable from it passing');
+              continue;
+            }
+            const claimed = Number(claimedText);
+            const actual = at(r, field);
+            if (typeof actual !== 'number') {
+              findings.push(`${id}'s evidence ${rel} has no numeric ${field}, which this figure `
+                + 'quotes');
+              continue;
+            }
+            // Compared at the precision the figure is published at: 0.29 may
+            // stand for a measured 0.2871 without forcing four decimals into
+            // the prose, while 0.088 may not.
+            const dp = (claimedText.split('.')[1] ?? '').length;
+            if (Number(actual.toFixed(dp)) !== claimed) {
+              findings.push(`${id} publishes ${claimed} for ${field}, but its evidence ${rel} `
+                + `measured ${actual} (${actual.toFixed(dp)} at that precision). A published figure `
+                + 'must be the measured one; this is how a number outlives the run that produced it');
+            }
+          }
+
+          if (want.disclosures_required !== false && !Array.isArray(r.host_disclosures)) {
             findings.push(`${id}'s evidence ${rel} carries no host_disclosures array. An empty `
               + 'array is a claim that nothing was short; a missing one is silence');
           }

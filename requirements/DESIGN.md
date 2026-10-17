@@ -291,7 +291,7 @@ Build reproducibility, provenance attestation, release signing, SBOM generation,
 | `SEC-22` | Build provenance attestation | ✅ |
 | `SEC-23` | Signed releases and SBOM | ✅ |
 | `NFR-01` | Low-overhead evidence capture | ✅ |
-| `NFR-02` | Run latency budget | ☐ |
+| `NFR-02` | Run latency budget | ✅ |
 | `FR-49` | Documented CLI contract | ✅ |
 
 ### [DES-18 — Witness practice statement structure](../design/DES-18-practice-statement-structure.md)
