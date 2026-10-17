@@ -276,3 +276,19 @@ test('LEG-09: the captured Go-witness cosignature verifies under this verifier',
     name, publicKey, algorithm, keyId: sig.keyId,
   }), true, 'the real witness cosignature must verify under the shipped verifier');
 });
+
+test('a configured, VERIFIED witness does not discharge the completeness assumption', async () => {
+  // The line read "the operator for the completeness of what was captured,
+  // until a witness is configured" and was pushed unconditionally, so a store
+  // with a verified witness still said it -- a conditional clause on an
+  // unconditional statement, promising that a witness would lift an assumption
+  // no witness can lift.
+  const w = await cosigned();
+  const r = await verifyStore(w.root, { collector: 'host-1', vkey: w.vkey, policy: w.policy });
+  assert.equal(r.witnesses.find(x => x.id === 'tlog.example')?.verdict, 'ok',
+    'this test needs a verified witness to be meaningful');
+  const line = r.trusting.find(t => /completeness/i.test(t));
+  assert.ok(line, JSON.stringify(r.trusting));
+  assert.doesNotMatch(String(line), /until a witness is configured/);
+  assert.match(String(line), /No witness discharges this/);
+});

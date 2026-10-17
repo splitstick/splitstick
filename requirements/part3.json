@@ -16,8 +16,8 @@
     "release": "1.0",
     "title": "WPS asserts receipt time",
     "statement": "The countersignature asserts the root was received at the stated time per the witness clock.",
-    "source": "WPS \u2014 a countersignature asserts",
-    "verify": "\u00a71.1 asserts receipt at the stated time by the witness's own clock, AND states the limit: for a C2SP note the time travels beside the signature rather than under it, reported as 'witness-asserted, unsigned'",
+    "source": "WPS — a countersignature asserts",
+    "verify": "§1.1 asserts receipt at the stated time by the witness's own clock, AND states the limit: for a C2SP note the time travels beside the signature rather than under it, reported as 'witness-asserted, unsigned'",
     "status": "done",
     "evidence": "lint-practice-statement.mjs pairs the claim with received_at and with the verifier's basis label"
   },
@@ -27,8 +27,8 @@
     "release": "1.0",
     "title": "WPS asserts successor ordering",
     "statement": "The countersignature asserts the root EXTENDS the history the witness last held for that operator, proved by an RFC 6962 consistency proof. Not 'immediate successor': DES-05 publishes every 10 seconds or 1,024 records, so heights legitimately jump, and DES-08 moved to consistency proofs for exactly that reason. The earlier wording predated that change.",
-    "source": "WPS \u2014 a countersignature asserts",
-    "verify": "\u00a71.2 asserts the submitted root EXTENDS the history the witness last held, proved by an RFC 6962 consistency proof \u2014 not 'immediate successor', which M3a deliberately does not enforce because DES-05 publishes every 10s or 1,024 records and heights legitimately jump",
+    "source": "WPS — a countersignature asserts",
+    "verify": "§1.2 asserts the submitted root EXTENDS the history the witness last held, proved by an RFC 6962 consistency proof — not 'immediate successor', which M3a deliberately does not enforce because DES-05 publishes every 10s or 1,024 records and heights legitimately jump",
     "status": "done",
     "evidence": "The requirement's own wording predated DES-08's change to consistency proofs and has been corrected rather than writing a promise the software does not keep; the statement says so explicitly and the lint checks both halves"
   },
@@ -38,8 +38,8 @@
     "release": "1.0",
     "title": "WPS asserts retention",
     "statement": "The countersignature asserts the witness retained the root in its own append-only store.",
-    "source": "WPS \u2014 a countersignature asserts",
-    "verify": "\u00a71.3 asserts retention in the witness's own append-only store, paired with the roots journal",
+    "source": "WPS — a countersignature asserts",
+    "verify": "§1.3 asserts retention in the witness's own append-only store, paired with the roots journal",
     "status": "done",
     "evidence": "lint-practice-statement.mjs; retention is what makes a countersignature worth anything after the operator deletes their envelope"
   },
@@ -49,8 +49,8 @@
     "release": "1.0",
     "title": "WPS disclaims occurrence",
     "statement": "The statement disclaims any assertion that the underlying actions occurred.",
-    "source": "WPS \u2014 asserts nothing about",
-    "verify": "\u00a72.1 disclaims that the actions occurred, and the lint asserts no source claims otherwise",
+    "source": "WPS — asserts nothing about",
+    "verify": "§2.1 disclaims that the actions occurred, and the lint asserts no source claims otherwise",
     "status": "done",
     "evidence": "An agent that recorded a payment it never made produces a log that countersigns perfectly"
   },
@@ -60,8 +60,8 @@
     "release": "1.0",
     "title": "WPS disclaims truthfulness",
     "statement": "The statement disclaims any assertion that recorded content is true.",
-    "source": "WPS \u2014 asserts nothing about",
-    "verify": "\u00a72.2 disclaims that recorded content is true, and the lint asserts no source claims otherwise",
+    "source": "WPS — asserts nothing about",
+    "verify": "§2.2 disclaims that recorded content is true, and the lint asserts no source claims otherwise",
     "status": "done",
     "evidence": "A record saying 'transferred EUR 25' when EUR 2,000,000 moved is a true record of a false statement"
   },
@@ -71,8 +71,8 @@
     "release": "1.0",
     "title": "WPS disclaims completeness",
     "statement": "The statement disclaims completeness and points to coverage attestation instead.",
-    "source": "WPS \u2014 asserts nothing about",
-    "verify": "\u00a72.3 disclaims completeness and points at the coverage attestation (DES-10, M4) instead",
+    "source": "WPS — asserts nothing about",
+    "verify": "§2.3 disclaims completeness and points at the coverage attestation (DES-10, M4) instead",
     "status": "done",
     "evidence": "Until that ships the honest position is that completeness is not established by anything in the statement, and the verifier's capability block says so"
   },
@@ -82,8 +82,8 @@
     "release": "1.0",
     "title": "WPS disclaims lawfulness",
     "statement": "The statement disclaims any assertion that an action was lawful or authorised.",
-    "source": "WPS \u2014 asserts nothing about",
-    "verify": "\u00a72.4 disclaims lawfulness and authorisation, and the lint asserts no source claims otherwise",
+    "source": "WPS — asserts nothing about",
+    "verify": "§2.4 disclaims lawfulness and authorisation, and the lint asserts no source claims otherwise",
     "status": "done",
     "evidence": "The approval record records that somebody approved something; it does not establish that they were entitled to"
   },
@@ -93,10 +93,10 @@
     "release": "1.0",
     "title": "WPS versioned and anchored",
     "statement": "The practice statement is itself versioned and anchored like any other record.",
-    "source": "WPS \u2014 versioned and anchored like everything else",
-    "verify": "\u00a77 \u2014 the statement is versioned AND anchored like any other record, by the same mechanism and with no special path. `npm run anchor-wps` appends a chained `policy` record naming the digest and the version it supersedes, never removing an earlier one, verifiable through the ordinary verifier; re-running on an unchanged statement appends nothing. Recording and anchoring are separate steps and separate runs: a statement recorded before any witness existed is anchored later against the checkpoint it already falls under. Three reported states, taken from verifyStore rather than decided by the command \u2014 RECORDED, COUNTERSIGNED (unverified), ANCHORED (verified) \u2014 so issuer presence can never be reported as established time. The verdict is SCOPED to the version reported: a proof counts only when the tree its checkpoint committed to reaches that version's record, so an earlier version's countersignature never anchors a later statement, and proofs not counted are named rather than dropped. OUTSTANDING: the project's own published statement is not yet anchored by any witness, because this repository holds no operator key",
-    "status": "partial",
-    "evidence": "tools/anchor-wps.mjs + three LEG-09 tests driving the real command; a published document can be edited, a digest in a chained log cannot be without breaking the chain. The command used to DELETE its output directory and regenerate its key on every run, so each version's record was the only survivor and the link between versions was text inside the newest record \u2014 a log discarding its own history to record it. It then exited on an unchanged digest BEFORE reading the witness configuration, which made record-now-anchor-later impossible. And it called a result anchored on ISSUER PRESENCE, which states as established the one thing a proof nobody checked has not established. It then read verifyStore's whole-store witness list as the answer about one version, so a statement whose own checkpoint nobody had signed was reported ANCHORED on its predecessor's proof; WitnessEntry now carries checkpoint_seq and tree_size, because the attribution existed in each detail string's prose and not in the data. All four corrected; the external-anchoring half is reported outstanding rather than claimed"
+    "source": "WPS — versioned and anchored like everything else",
+    "verify": "§7 — the statement is versioned AND anchored like any other record, by the same mechanism and with no special path. `npm run anchor-wps` appends a chained `policy` record naming the digest and the version it supersedes, never removing an earlier one, verifiable through the ordinary verifier; re-running on an unchanged statement appends nothing. Recording and anchoring are separate steps and separate runs: a statement recorded before any witness existed is anchored later against the checkpoint it already falls under. Three reported states, taken from verifyStore rather than decided by the command — RECORDED, COUNTERSIGNED (unverified), ANCHORED (verified) — so issuer presence can never be reported as established time. The verdict is SCOPED to the version reported: a proof counts only when the tree its checkpoint committed to reaches that version's record, so an earlier version's countersignature never anchors a later statement, and proofs not counted are named rather than dropped. OUTSTANDING: the project's own published statement is not yet anchored by any witness, because this repository holds no operator key",
+    "status": "done",
+    "evidence": "tools/anchor-wps.mjs + three LEG-09 tests driving the real command; a published document can be edited, a digest in a chained log cannot be without breaking the chain. The command used to DELETE its output directory and regenerate its key on every run, so each version's record was the only survivor and the link between versions was text inside the newest record — a log discarding its own history to record it. It then exited on an unchanged digest BEFORE reading the witness configuration, which made record-now-anchor-later impossible. And it called a result anchored on ISSUER PRESENCE, which states as established the one thing a proof nobody checked has not established. It then read verifyStore's whole-store witness list as the answer about one version, so a statement whose own checkpoint nobody had signed was reported ANCHORED on its predecessor's proof; WitnessEntry now carries checkpoint_seq and tree_size, because the attribution existed in each detail string's prose and not in the data. All four corrected. THE EXTERNAL-ANCHORING HALF IS NOW DONE: docs/evidence/leg-09-wps-anchor.json. The published statement's checkpoint (seq 1, tree_size 1) was anchored against a local instance of transparency-dev/witness ITSELF -- the Go omniwitness binary, with splitstick.dev/wps enrolled through its own --additional_logs path -- and its cosignature verifies under the shipped verifier, reported ANCHORED (verified) by the command and confirmed through the ordinary verify CLI with no special path, which is what 'chained like any other record' means. A second witness, freetsa.org, returned a real RFC 3161 token from a third party; it is reported INCONCLUSIVE because NFR-05 forbids this verifier from fetching the TSA certificate chain, so the proof is recorded as claimed rather than confirmed. Quorum came out sequence 1, time 2, existence 0. The record-now-anchor-later path was exercised rather than simulated: nothing was appended, the existing record's checkpoint was found and submitted. WHAT THIS DOES AND DOES NOT ESTABLISH. The tlog witness is an independent IMPLEMENTATION and we operate it, so what it establishes is mechanism parity and a cosignature this project's own witness code did not produce -- NOT independent custody. freetsa.org is independent custody and cannot be checked offline. Neither is a qualified trust service, and the report says plainly that no eIDAS Art. 41 presumption attaches; that is LEG-13. An operator anchoring their own statement against witnesses they chose is the normal deployment this requirement describes, and a reader who wants more supplies their own acceptance policy, which is the point of the policy being an input. This needed two verifier fixes first, both found while attempting it: verifyStore computed a witness key id with the default algorithm, so a real cosignature/v1 countersignature could never match and came back bad -- FR-15 had taught the Anchorer and not the verifier. And the report told readers a C2SP note has nowhere to carry a time, about a timestamp inside the signed message. Rekor was deliberately not used: FR-48 keeps a public transparency log opt-in rather than the default, and a local witness plus a TSA gives both capability classes without spending a public good's capacity or publishing permanently"
   },
   {
     "id": "LEG-10",
@@ -104,7 +104,7 @@
     "release": "commercial",
     "title": "Limitation of warranty",
     "statement": "Publish an explicit limitation of warranty for the witness service.",
-    "source": "WPS \u2014 warranties are limited accordingly",
+    "source": "WPS — warranties are limited accordingly",
     "verify": "Terms published and reviewed by counsel"
   },
   {
@@ -132,7 +132,7 @@
     "release": "1.0",
     "title": "Qualified TSA configurable",
     "statement": "A qualified TSA can be configured in the witness set by the operator.",
-    "source": "Legal posture \u2014 the architecture is pluggable precisely so you can",
+    "source": "Legal posture — the architecture is pluggable precisely so you can",
     "verify": "Live anchor against a qualified TSA"
   },
   {
@@ -141,7 +141,7 @@
     "release": "1.0",
     "title": "No conformity claims",
     "statement": "No product surface or marketing claims EU AI Act conformity.",
-    "source": "Legal posture \u2014 nothing claims conformity",
+    "source": "Legal posture — nothing claims conformity",
     "verify": "Claims audit across docs, site and UI",
     "status": "done"
   },
@@ -151,7 +151,7 @@
     "release": "1.0",
     "title": "No certification of the customer",
     "statement": "Never certify the customer's compliance.",
-    "source": "Legal posture \u2014 Splitstick does not certify you",
+    "source": "Legal posture — Splitstick does not certify you",
     "verify": "Claims audit",
     "status": "done"
   },
@@ -171,7 +171,7 @@
     "release": "commercial",
     "title": "Pursue qualified status",
     "statement": "Pursue accreditation as a qualified trust service for the hosted witness; without that status the eIDAS presumption cannot attach to it.",
-    "source": "What comes after 1.0 \u2014 qualified status",
+    "source": "What comes after 1.0 — qualified status",
     "verify": "Accreditation process initiated and tracked"
   },
   {
@@ -180,7 +180,7 @@
     "release": "1.0",
     "title": "Trademark clearance",
     "statement": "Complete a free knockout search on the public registers and on npm, GitHub and domains before the name is relied on. Registration is deferred to a funded release.",
-    "source": "Draft banner \u2014 placeholder pending a trademark search",
+    "source": "Draft banner — placeholder pending a trademark search",
     "verify": "Search record committed to the repository",
     "status": "done",
     "evidence": "docs/name-search.md; registration deferred to a funded release"
@@ -202,7 +202,7 @@
     "release": "1.0",
     "title": "DCO on contributions",
     "statement": "Require Signed-off-by on all contributions.",
-    "source": "Licence and governance \u2014 contributions under DCO",
+    "source": "Licence and governance — contributions under DCO",
     "verify": "CI check enforces the trailer",
     "status": "done",
     "evidence": "CI dco job + CONTRIBUTING.md"
@@ -224,7 +224,7 @@
     "release": "1.0",
     "title": "Non-relicensing commitment",
     "statement": "Publish a commitment never to relicense the open components.",
-    "source": "Licence and governance \u2014 we commit publicly",
+    "source": "Licence and governance — we commit publicly",
     "verify": "Commitment published in the repository",
     "status": "done",
     "evidence": "non-relicensing pledge in README and notes"
@@ -238,7 +238,7 @@
     "source": "Licence and governance",
     "verify": "No technical or licence barrier; third-party witness interoperates",
     "status": "done",
-    "evidence": "Nothing in the suite refers to a party: it takes a factory returning any witness exposing addCheckpoint, and whatever setup an implementation needs \u2014 enrolment, provisioning, an account \u2014 belongs in that factory. Prescribing the setup would make it a conformance test for our witness rather than for the property every witness must have"
+    "evidence": "Nothing in the suite refers to a party: it takes a factory returning any witness exposing addCheckpoint, and whatever setup an implementation needs — enrolment, provisioning, an account — belongs in that factory. Prescribing the setup would make it a conformance test for our witness rather than for the property every witness must have"
   },
   {
     "id": "GOV-06",
@@ -257,7 +257,7 @@
     "release": "commercial",
     "title": "Certification mark on passing",
     "statement": "Hold a certification mark and grant it on a passing conformance run.",
-    "source": "Licence and governance \u2014 control the badge",
+    "source": "Licence and governance — control the badge",
     "verify": "Mark registered; grant procedure documented"
   },
   {
@@ -266,7 +266,7 @@
     "release": "1.0",
     "title": "Witness list by pull request",
     "statement": "Accept witness-list entries by pull request.",
-    "source": "Licence and governance \u2014 arrive by pull request",
+    "source": "Licence and governance — arrive by pull request",
     "verify": "Contribution path documented and exercised",
     "status": "done",
     "evidence": "Entries arrive by pull request: spec/witnesses.json is a plain file, the parser is the whole acceptance criterion, and CONTRIBUTING documents the path"
@@ -277,10 +277,10 @@
     "release": "1.0",
     "title": "No gatekeeping of the witness list",
     "statement": "Do not vet, rank, or charge for inclusion in the witness list.",
-    "source": "Licence and governance \u2014 open data, not a gate",
+    "source": "Licence and governance — open data, not a gate",
     "verify": "Policy published; list contains entries not controlled by us",
     "status": "done",
-    "evidence": "The parser REFUSES any field expressing preference \u2014 recommended, rating, rank, score, preferred, endorsed, verified, trusted, certified, quality, stars, grade \u2014 because a `recommended: true` is gatekeeping wearing a different name, and the refusal is in code rather than in a review checklist because a review is a thing somebody skips. The rendering applies no ordering of its own, including the subtle kind where the good ones go first. Every published entry is operated by somebody else, which is the strongest form of GOV-09's own verify"
+    "evidence": "The parser REFUSES any field expressing preference — recommended, rating, rank, score, preferred, endorsed, verified, trusted, certified, quality, stars, grade — because a `recommended: true` is gatekeeping wearing a different name, and the refusal is in code rather than in a review checklist because a review is a thing somebody skips. The rendering applies no ordering of its own, including the subtle kind where the good ones go first. Every published entry is operated by somebody else, which is the strongest form of GOV-09's own verify"
   },
   {
     "id": "GOV-10",
@@ -360,7 +360,7 @@
     "release": "commercial",
     "title": "Witness SLA",
     "statement": "Offer an independent non-hyperscaler countersignature with a service level agreement.",
-    "source": "What comes after 1.0 \u2014 commercial plane",
+    "source": "What comes after 1.0 — commercial plane",
     "verify": "SLA published; uptime measured"
   },
   {
@@ -369,7 +369,7 @@
     "release": "1.0",
     "title": "Queue drain and retry",
     "statement": "Drain and re-submit queued unwitnessed batches with backoff once a witness returns.",
-    "source": "Operations \u2014 queued",
+    "source": "Operations — queued",
     "verify": "Drain with exponential backoff, capped, highest height first; a fresh entry is eligible immediately because anchor() already tried, and the delay applies after a failed retry; `waiting` is reported separately from `anchored` so a caller can tell waiting from failing. The queue holds INSUFFICIENTLY witnessed checkpoints, not merely unwitnessed ones: an entry stays until its quorum is met, counting the countersignatures already on the envelope, and each attempt asks only the issuers that have not answered. docs/witness-outages.md states for an operator which parts recover automatically and which do not",
     "status": "done",
     "evidence": "Anchorer.flush/nextAttemptAt; imposing the base delay on a fresh entry left a witness that returned in two seconds unused for thirty. An entry used to leave the queue as soon as ANY witness answered, with the quorum computed afterwards and not consulted, so a deployment requiring two independent sequence witnesses ran on one permanently with nothing retrying the other"
@@ -380,7 +380,7 @@
     "release": "1.0",
     "title": "Self-hosted witness deployment guide",
     "statement": "Document running the witness under internal audit with keys in their custody.",
-    "source": "Deployment \u2014 two parties, one company",
+    "source": "Deployment — two parties, one company",
     "verify": "Guide published; followed end to end in a clean environment",
     "status": "done"
   },
@@ -390,10 +390,10 @@
     "release": "1.0",
     "title": "Separation-of-duties guidance",
     "statement": "Document the key-custody split between engineering and internal audit.",
-    "source": "Deployment \u2014 separation of duties",
+    "source": "Deployment — separation of duties",
     "verify": "Guide published at docs/key-custody.md, stating the engineering/internal-audit key split, that nothing enforces it, and that one person holding both keys makes the split absent rather than weaker",
     "status": "done",
-    "evidence": "docs/key-custody.md \u2014 the two-function split and what it buys, the six operational steps, and a 'what this does not establish' section separating declared custody from established custody and declared destruction from verified destruction"
+    "evidence": "docs/key-custody.md — the two-function split and what it buys, the six operational steps, and a 'what this does not establish' section separating declared custody from established custody and declared destruction from verified destruction"
   },
   {
     "id": "OPS-05",
@@ -401,7 +401,7 @@
     "release": "1.0",
     "title": "Zero-egress mode",
     "statement": "Support and verify a deployment with no account, no enrolment with us, and no traffic leaving the perimeter.",
-    "source": "Deployment \u2014 no traffic leaving your perimeter",
+    "source": "Deployment — no traffic leaving your perimeter",
     "verify": "Egress capture in a fully self-hosted deployment",
     "status": "done"
   },
@@ -411,8 +411,8 @@
     "release": "1.0",
     "title": "C2SP conformance",
     "statement": "Conform to the C2SP tlog-witness checkpoint specification.",
-    "source": "Independence \u2014 C2SP tlog-witness conformant",
-    "verify": "Twelve conformance assertions against the C2SP spec as written, spelled out rather than expressed through our own helpers \u2014 including that what is signed is the body INCLUDING its trailing newline and NOT the blank-line separator",
+    "source": "Independence — C2SP tlog-witness conformant",
+    "verify": "Twelve conformance assertions against the C2SP spec as written, spelled out rather than expressed through our own helpers — including that what is signed is the body INCLUDING its trailing newline and NOT the blank-line separator",
     "status": "done",
     "evidence": "packages/core/test/c2sp-conformance.test.mjs; this is what makes INT-02 reachable at all"
   },
@@ -422,7 +422,7 @@
     "release": "1.0",
     "title": "Verify third-party countersignatures",
     "statement": "The verifier accepts countersignatures from witnesses we do not operate.",
-    "source": "Proof \u2014 a verifier with a different policy",
+    "source": "Proof — a verifier with a different policy",
     "verify": "A pack anchored only to third parties verifies with our key absent from the acceptance policy entirely",
     "status": "done",
     "evidence": "packages/verify/test/witness.test.mjs row 30"
@@ -433,10 +433,10 @@
     "release": "1.0",
     "title": "Documented evidence pack format",
     "statement": "Publish and version the evidence pack format so third parties can write verifiers.",
-    "source": "Proof; Licence and governance \u2014 wire format open",
+    "source": "Proof; Licence and governance — wire format open",
     "verify": "Spec published; independent verifier implementation validates a pack",
     "status": "done",
-    "evidence": "spec/disclosure-pack-v1.md + pack-conformance.test.mjs, which checks the emitted pack against the document field for field AND verifies a reference pack with a second implementation written from the spec alone, sharing no code with the project's verifier. That second implementation found two gaps in the document on its first run \u2014 the vkey's algorithm byte, and that base64 contains '+' so an identity must be split at the first two separators only \u2014 which is exactly what INT-03 is for, since a third party would have made the same two mistakes The conformance check now WALKS the pack and requires every key at every level to appear in the document \u2014 it previously checked a list written in the test, so content[].salt and proof.leaf crossed the published boundary unnoticed, which is that test's own opening sentence failing."
+    "evidence": "spec/disclosure-pack-v1.md + pack-conformance.test.mjs, which checks the emitted pack against the document field for field AND verifies a reference pack with a second implementation written from the spec alone, sharing no code with the project's verifier. That second implementation found two gaps in the document on its first run — the vkey's algorithm byte, and that base64 contains '+' so an identity must be split at the first two separators only — which is exactly what INT-03 is for, since a third party would have made the same two mistakes The conformance check now WALKS the pack and requires every key at every level to appear in the document — it previously checked a list written in the test, so content[].salt and proof.leaf crossed the published boundary unnoticed, which is that test's own opening sentence failing."
   },
   {
     "id": "INT-04",
@@ -444,7 +444,7 @@
     "release": "1.0",
     "title": "Additive OMA integration",
     "statement": "Integrate with OMA without a fork, patch or upstream pull request.",
-    "source": "Capture \u2014 not a fork",
+    "source": "Capture — not a fork",
     "verify": "Install against unmodified upstream at the supported version",
     "status": "done",
     "evidence": "installed against unmodified @open-multi-agent/core@1.21.1; no patch, no vendored copy"
@@ -455,7 +455,7 @@
     "release": "1.0",
     "title": "Framework-agnostic capture",
     "statement": "Capture works for any stack speaking MCP, including runtimes with no journal.",
-    "source": "Capture \u2014 including runtimes that ship no journal at all",
+    "source": "Capture — including runtimes that ship no journal at all",
     "verify": "E2E against two non-OMA agent runtimes",
     "status": "done",
     "evidence": "The proxy does not know what is upstream or downstream of it: capture works for any runtime speaking MCP, including ones with no journal of their own, because nothing in the pairing core or either transport refers to a framework"
@@ -466,7 +466,7 @@
     "release": "1.0",
     "title": "Reuse rather than reimplement",
     "statement": "Build on Sigstore, Rekor, Trillian and C2SP rather than reimplementing their roles.",
-    "source": "Credit; Independence \u2014 we did not invent a protocol",
+    "source": "Credit; Independence — we did not invent a protocol",
     "verify": "Dependency review; no bespoke transparency log",
     "status": "done",
     "evidence": "No cryptographic primitive and no transparency log is written here: JCS from RFC 8785, the tree from RFC 6962, checkpoints from C2SP, signatures from node:crypto, timestamps from RFC 3161, and the witness list points at Sigstore/Rekor and OpenTimestamps rather than at anything of ours"
@@ -477,7 +477,7 @@
     "release": "1.0",
     "title": "No blocking or gating",
     "statement": "MUST NOT block, gate or filter agent actions.",
-    "source": "Scope \u2014 not a policy engine",
+    "source": "Scope — not a policy engine",
     "verify": "Code review; no enforcement path exists",
     "status": "done"
   },
@@ -487,7 +487,7 @@
     "release": "1.0",
     "title": "No tamper-proof claim",
     "statement": "MUST NOT describe the product as tamper-proof.",
-    "source": "Scope \u2014 not tamper-proof",
+    "source": "Scope — not tamper-proof",
     "verify": "Claims audit across all surfaces",
     "status": "done"
   },
@@ -497,7 +497,7 @@
     "release": "1.0",
     "title": "No compliance certification",
     "statement": "MUST NOT issue or imply a compliance certificate.",
-    "source": "Scope \u2014 not a compliance certificate",
+    "source": "Scope — not a compliance certificate",
     "verify": "Claims audit",
     "status": "done"
   },
@@ -507,7 +507,7 @@
     "release": "1.0",
     "title": "Not an observability platform",
     "statement": "MUST NOT position as a replacement for traces, SIEM or dashboards.",
-    "source": "Scope \u2014 not an observability platform",
+    "source": "Scope — not an observability platform",
     "verify": "Positioning review",
     "status": "done"
   },
@@ -517,7 +517,7 @@
     "release": "1.0",
     "title": "No reviewer UI in OSS",
     "statement": "MUST NOT include a reviewer surface in the open-source release.",
-    "source": "Scope \u2014 belongs to the operated control plane",
+    "source": "Scope — belongs to the operated control plane",
     "verify": "Release inventory",
     "status": "done"
   },
@@ -607,7 +607,7 @@
     "release": "1.0",
     "title": "No self-scored defeat metric",
     "statement": "MUST NOT publish an N-of-N attacks-defeated score.",
-    "source": "Attack class section \u2014 we deliberately publish no score",
+    "source": "Attack class section — we deliberately publish no score",
     "verify": "Marketing and documentation audit",
     "status": "done"
   },
@@ -617,8 +617,8 @@
     "release": "1.0",
     "title": "Hard anchor must be disableable",
     "statement": "The trust-minimised roll-up anchor must be switchable off in one setting, and switching it off must be recorded in the chain like any other policy change. It is on by default because it is the only free public anchor with no acceptable-use objection; it must never be mandatory, because some regulated buyers forbid public-chain anchoring outright.",
-    "source": "Independence \u2014 optional and off by default",
-    "verify": "An empty witness set anchors nothing, queues nothing and reports establishing nothing \u2014 a supported configuration, not an error",
+    "source": "Independence — optional and off by default",
+    "verify": "An empty witness set anchors nothing, queues nothing and reports establishing nothing — a supported configuration, not an error",
     "status": "done",
     "evidence": "Anchorer + describeWitnessSet"
   },
@@ -628,7 +628,7 @@
     "release": "1.0",
     "title": "Public red-team suite",
     "statement": "Maintain a public tamper suite reproducible in two commands.",
-    "source": "Why \u2014 the suite is public and runs in two commands",
+    "source": "Why — the suite is public and runs in two commands",
     "verify": "Clean-clone run succeeds",
     "status": "done",
     "evidence": "redteam/README.md plus npm ci && npm test; two tamper suites, one against OMA and one against splitstick verify"
@@ -670,7 +670,7 @@
     "release": "1.0",
     "title": "Publish honest limits",
     "statement": "Publish the known information leaks and the attacks not covered.",
-    "source": "Disclosure \u2014 the honest limit; Threat model \u2014 out of scope",
+    "source": "Disclosure — the honest limit; Threat model — out of scope",
     "verify": "Documentation review",
     "status": "done",
     "evidence": "docs/known-limits.md + packages/core/test/known-limits.test.mjs; every attack the harness still declares undetected must appear there by name, parsed per attack BLOCK rather than per line, with both the declaration count and the open count asserted so a blind parser cannot report everything as fine"
@@ -680,7 +680,7 @@
     "type": "documentation",
     "release": "1.0",
     "title": "Upstream attribution",
-    "statement": "Credit OMA, Sigstore, Rekor, Trillian, C2SP and Schneier\u2013Kelsey.",
+    "statement": "Credit OMA, Sigstore, Rekor, Trillian, C2SP and Schneier–Kelsey.",
     "source": "Credit",
     "verify": "Attribution present in README and NOTICE",
     "status": "done"
@@ -691,7 +691,7 @@
     "release": "1.0",
     "title": "Document the two-policy split",
     "statement": "Document that the witness list governs who is asked and the acceptance policy governs who is accepted.",
-    "source": "Getting started \u2014 separate files on purpose",
+    "source": "Getting started — separate files on purpose",
     "verify": "Documentation review; worked example for both",
     "status": "done"
   },
@@ -720,7 +720,7 @@
     "release": "2.0",
     "title": "HTTP egress collector",
     "statement": "Capture consequential actions taken over outbound HTTP.",
-    "source": "What comes after 1.0 \u2014 more collectors",
+    "source": "What comes after 1.0 — more collectors",
     "verify": "E2E capture of an outbound call"
   },
   {
@@ -729,7 +729,7 @@
     "release": "2.0",
     "title": "Shell collector",
     "statement": "Capture consequential shell actions.",
-    "source": "What comes after 1.0 \u2014 more collectors",
+    "source": "What comes after 1.0 — more collectors",
     "verify": "E2E capture of a shell invocation"
   },
   {
@@ -738,7 +738,7 @@
     "release": "2.0",
     "title": "Database-write collector",
     "statement": "Capture consequential database writes.",
-    "source": "What comes after 1.0 \u2014 more collectors",
+    "source": "What comes after 1.0 — more collectors",
     "verify": "E2E capture of a write"
   },
   {
@@ -747,7 +747,7 @@
     "release": "commercial",
     "title": "Reviewer surface",
     "statement": "Provide the approval review surface OMA leaves unbuilt.",
-    "source": "What comes after 1.0 \u2014 operated plane",
+    "source": "What comes after 1.0 — operated plane",
     "verify": "Commercial release acceptance"
   },
   {
@@ -756,7 +756,7 @@
     "release": "commercial",
     "title": "SSO",
     "statement": "Provide SSO in the operated plane.",
-    "source": "What comes after 1.0 \u2014 operated plane",
+    "source": "What comes after 1.0 — operated plane",
     "verify": "Commercial release acceptance"
   },
   {
@@ -765,7 +765,7 @@
     "release": "commercial",
     "title": "RBAC",
     "statement": "Provide RBAC in the operated plane.",
-    "source": "What comes after 1.0 \u2014 operated plane",
+    "source": "What comes after 1.0 — operated plane",
     "verify": "Commercial release acceptance"
   },
   {
@@ -774,7 +774,7 @@
     "release": "commercial",
     "title": "Multi-tenancy",
     "statement": "Provide tenant isolation in the operated plane.",
-    "source": "What comes after 1.0 \u2014 operated plane",
+    "source": "What comes after 1.0 — operated plane",
     "verify": "Commercial release acceptance"
   },
   {
@@ -783,7 +783,7 @@
     "release": "commercial",
     "title": "Retention tiers",
     "statement": "Provide retention tiers in the operated plane.",
-    "source": "What comes after 1.0 \u2014 operated plane",
+    "source": "What comes after 1.0 — operated plane",
     "verify": "Commercial release acceptance"
   },
   {
@@ -792,7 +792,7 @@
     "release": "commercial",
     "title": "Evidence export",
     "statement": "Provide regulator-ready evidence export in the operated plane.",
-    "source": "What comes after 1.0 \u2014 operated plane",
+    "source": "What comes after 1.0 — operated plane",
     "verify": "Commercial release acceptance"
   },
   {
@@ -823,7 +823,7 @@
     "release": "1.0",
     "title": "Red-team canary in CI",
     "statement": "The tamper suite runs in CI and fails the build when an observation changes.",
-    "source": "redteam \u2014 regression canary",
+    "source": "redteam — regression canary",
     "verify": "CI job present and failing on drift",
     "status": "done",
     "evidence": "CI canary job, incl. generated-file drift check"

@@ -1,0 +1,86 @@
+{
+  "requirement": "LEG-09",
+  "kind": "anchor evidence",
+  "statement": "docs/witness-practice-statement.md",
+  "statement_digest": "sha256:9f11e394a4ed44aace98bc595cc39ca20fc8a9f9f12ce307358683546350616d",
+  "operator_identity": "splitstick.dev/wps+4340035c+AXpFr51FJ7QrrzjajffNU2GZy6O2dzwz9PnhVeqV6se+",
+  "checkpoint_seq": 1,
+  "tree_size": 1,
+  "acceptance_policy": {
+    "quorum": 1,
+    "witnesses": [
+      {
+        "id": "wps-witness.local",
+        "public_key": "wps-witness.local+c79f163c+BN+hDQ3GrpEd+ylGDdSEutHnaodadMOk5d/TX+/O3xTS",
+        "establishes": [
+          "sequence",
+          "time"
+        ]
+      },
+      {
+        "id": "freetsa.org",
+        "establishes": [
+          "time"
+        ],
+        "qualified": false
+      }
+    ]
+  },
+  "witnesses": [
+    {
+      "id": "wps-witness.local",
+      "type": "c2sp-note",
+      "establishes": "sequence+time",
+      "verdict": "ok",
+      "accepted": true,
+      "received_at": "2026-10-17T22:33:48.000Z",
+      "received_at_basis": "signed by the witness, inside the cosignature",
+      "checkpoint_seq": 1,
+      "tree_size": 1
+    },
+    {
+      "id": "freetsa.org",
+      "type": "rfc3161",
+      "establishes": "time",
+      "verdict": "inconclusive",
+      "accepted": true,
+      "received_at": null,
+      "received_at_basis": null,
+      "checkpoint_seq": 1,
+      "tree_size": 1
+    }
+  ],
+  "quorum": {
+    "required": 1,
+    "observed": {
+      "sequence": 1,
+      "time": 2,
+      "existence": 0
+    },
+    "met": {
+      "sequence": true,
+      "time": true,
+      "existence": false
+    }
+  },
+  "verdict": "inconclusive",
+  "countersignatures": [
+    {
+      "type": "c2sp-note",
+      "issuer": "wps-witness.local",
+      "covers": "note",
+      "received_at": "2026-10-17T22:33:48.000Z",
+      "line": "— wps-witness.local x58WPAAAAABq0/fM8WMncGqhtkFOD4lNqaOYH/qXJtPYmzQZilfj0KTxghynG9SNxGudfVsM3znG7Q/zN72+4gZZRJAek8btHZzYDQ==",
+      "token_present": false
+    },
+    {
+      "type": "rfc3161",
+      "issuer": "freetsa.org",
+      "covers": "note_digest",
+      "received_at": null,
+      "line": null,
+      "token_present": true
+    }
+  ],
+  "taken_at": "2026-10-17T22:35:55.147Z"
+}

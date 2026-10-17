@@ -937,7 +937,15 @@ function report(tree_size, anchored, checks, findings, notes, collector, vkey, s
 
   const trusting = ['the cryptographic primitives (SHA-256, Ed25519)'];
   if (vkey) trusting.push(`the operator identity ${vkey.split('+')[0]} to be the one you meant`);
-  trusting.push('the operator for the completeness of what was captured, until a witness is configured');
+  // UNCONDITIONAL, and it used to carry the clause "until a witness is
+  // configured" while being pushed unconditionally. No witness ever lifts this:
+  // a witness establishes SEQUENCE and TIME over what it was shown, and
+  // nothing about whether what was shown is everything that happened. The
+  // clause promised that configuring a witness would discharge the assumption,
+  // which is the one direction a capability statement must never err in.
+  trusting.push('the operator for the COMPLETENESS of what was captured. No witness discharges '
+    + 'this: a witness attests to the sequence and the time of what it was shown, never to an '
+    + 'action the collector never observed');
   if (succession && succession.ok && succession.epochs.some(e => e.custody !== 'software')) {
     trusting.push(
       'the operator\'s declaration of key custody, and their declaration that retired private keys '
