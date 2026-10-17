@@ -143,7 +143,7 @@ Submission and response, enrolment, per-operator sequence enforcement, countersi
 | `FR-44` | Witness retains roots | ✅ |
 | `FR-50` | Witness publishes signed tree heads | ✅ |
 | `FR-51` | Witness key rotation | ✅ |
-| `FR-15` | transparency-dev/witness adapter | ☐ |
+| `FR-15` | transparency-dev/witness adapter | ✅ |
 | `FR-48` | Shipped default witness configuration | ✅ |
 | `INT-02` | Verify third-party countersignatures | ✅ |
 | `SEC-15` | Witness sees roots only | ✅ |

@@ -43,7 +43,7 @@
  * one. docs/m6-follow-ups.md carries it.
  */
 
-import { noteKeyId } from '@splitstick/core/note';
+import { noteKeyId, parseSignatureLine } from '@splitstick/core/note';
 
 export class TlogWitnessError extends Error {
   /** @param {string} m */
@@ -60,7 +60,15 @@ export class TlogWitnessError extends Error {
  * outage, and an outage into a gap in the coverage report.
  */
 export class TlogConflict extends TlogWitnessError {
-  /** @param {string} m @param {{ size: number, root: string }} view */
+  /**
+   * `root` is null against a conforming witness: the protocol's 409 body is
+   * `<size>\n` and carries no root. It stays on the type because a witness MAY
+   * send more, and because a caller that wants to re-prove needs the size,
+   * which is the part that is always there. Null, not '': an empty string reads
+   * as a root that was sent and was empty.
+   *
+   * @param {string} m @param {{ size: number, root: string|null }} view
+   */
   constructor(m, view) {
     super(m);
     this.name = 'TlogConflict';
@@ -99,7 +107,23 @@ export function tlogWitness({ id, url, tier = 'anchor', timeout_ms = 10_000, fet
     // nothing about WHEN — a cosignature carries no time inside the note, and
     // claiming `time` here would make the verifier's capability statement a
     // lie by configuration, the same way it would for a TSA claiming sequence.
-    establishes: ['sequence'],
+    // SEQUENCE and TIME. Sequence is the point of the adapter: the witness
+    // holds state and refuses a history that does not extend what it already
+    // signed.
+    //
+    // Time was added by FR-15, after running the real implementation. This
+    // comment used to say a cosignature carries no time and that claiming
+    // `time` would make the verifier's capability statement a lie — which was a
+    // reading of our own document, not of c2sp.org/tlog-cosignature. A
+    // cosignature/v1 signature covers `cosignature/v1\ntime <unix>\n<text>`, so
+    // the witness's observation time is signed over the same message as the
+    // root, by the same key the reader's policy names. It is not metadata
+    // beside the proof; it is inside it.
+    //
+    // What it is NOT is a qualified timestamp: nothing here makes the witness's
+    // clock trustworthy to a court, and the eIDAS Art. 41 presumption is
+    // computed from the proof type elsewhere and is unaffected by this.
+    establishes: ['sequence', 'time'],
     tier,
 
     /**
@@ -137,21 +161,64 @@ export function tlogWitness({ id, url, tier = 'anchor', timeout_ms = 10_000, fet
 
       const text = await res.text();
 
+      // The status map below is the REAL implementation's, read out of
+      // transparency-dev/witness rather than inferred from the protocol
+      // document. Three of these were wrong, and each wrong one turned a
+      // specific, actionable condition into a generic failure.
       if (res.status === 409) {
-        const [size, root] = text.trim().split('\n');
+        // `<size>\n` and NOTHING ELSE. This adapter used to parse
+        // `<size>\n<root>\n` and silently kept root as an empty string — the
+        // extra line exists only in OUR witness, which is where the assumption
+        // came from. A conflict carries the size to re-prove from; the root is
+        // not on offer, and pretending it was gave callers a blank.
+        const size = Number(text.trim().split('\n')[0]);
         throw new TlogConflict(
-          `${id} disagrees about the tree: it last cosigned size ${size ?? '?'}, and this `
-          + `submission proved from ${ctx.old_size}. Re-prove from the size it remembers. A `
+          `${id} disagrees about the tree: it last cosigned size ${Number.isFinite(size) ? size : '?'}, `
+          + `and this submission proved from ${ctx.old_size}. Re-prove from the size it remembers. A `
           + 'conflict is the witness WORKING — it is what refusing a rewritten history looks '
           + 'like, and it must not be recorded as the log being fine.',
-          { size: Number(size ?? NaN), root: String(root ?? '') },
+          { size, root: null },
+        );
+      }
+      if (res.status === 404) {
+        // ErrUnknownLog. THIS is the unenrolled case, and this adapter had the
+        // message on 403, where it told an operator whose SIGNATURE had failed
+        // to go and enrol a key that was already enrolled.
+        throw new TlogWitnessError(
+          `${id} does not know this log (HTTP 404). The log's origin and public key have to be `
+          + 'enrolled with the witness before it will cosign; this is not a transient failure and '
+          + 'retrying will not fix it.',
         );
       }
       if (res.status === 403) {
+        // ErrNoValidSignature — the witness knows the log and could not verify
+        // the operator's own signature on the checkpoint it was handed.
         throw new TlogWitnessError(
-          `${id} does not know this log's key (HTTP 403). The operator identity has to be enrolled `
-          + 'with the witness before it will cosign; this is not a transient failure and retrying '
-          + 'will not fix it.',
+          `${id} rejected the operator's signature on this checkpoint (HTTP 403). The witness knows `
+          + "this log but the note's own signature did not verify under the key enrolled for it, so "
+          + 'either the signing key has rotated without the witness being told, or the note was '
+          + 'altered after signing. Retrying will not fix it.',
+        );
+      }
+      if (res.status === 422) {
+        // ErrInvalidProof or ErrRootMismatch. A REFUSAL, not an outage: the
+        // witness is saying the proof does not carry its remembered root into
+        // the one being claimed. Reported as a conflict-class failure rather
+        // than a generic error, because folding it into "HTTP 422" loses the
+        // one signal this whole witness class exists to produce.
+        throw new TlogWitnessError(
+          `${id} REFUSED this checkpoint (HTTP 422): the consistency proof did not carry the tree `
+          + `it last cosigned into the one claimed here. This is the witness detecting that the `
+          + 'history it was shown is not an extension of the history it already signed — it is '
+          + 'the refusal this witness class exists for, and it must not be read as the witness '
+          + 'being unavailable.',
+        );
+      }
+      if (res.status === 429) {
+        // ErrPushback. Transient, and the only status here that is.
+        throw new TlogWitnessError(
+          `${id} is rate-limiting submissions (HTTP 429). Unlike the other refusals this is `
+          + 'transient: the same checkpoint and proof will be accepted later.',
         );
       }
       if (!res.ok) throw new TlogWitnessError(`${id} returned HTTP ${res.status}: ${text.slice(0, 200)}`);
@@ -212,15 +279,37 @@ export function tlogWitness({ id, url, tier = 'anchor', timeout_ms = 10_000, fet
         );
       }
 
+      // The witness's OWN observation time, out of the signature rather than
+      // off our clock. A cosignature/v1 blob is keyId ‖ timestamp ‖ signature,
+      // and the timestamp is inside the signed message — so recording it is
+      // reporting what the witness asserted, not what we observed.
+      //
+      // This adapter used to record no time at all, on the stated grounds that
+      // "the protocol gives the witness nowhere to put one". It does; we had
+      // read our own document. Where the earlier reasoning still holds is in
+      // what is NOT done here: our clock is never substituted when the
+      // timestamp is absent, because a plain note signature really does carry
+      // no time, and inventing one would attach a time to a proof that does
+      // not cover it.
+      let received_at;
+      try {
+        const sig = parseSignatureLine(line);
+        if (sig.timestamp !== undefined) {
+          received_at = new Date(Number(sig.timestamp) * 1000).toISOString();
+        }
+      } catch {
+        // A line this adapter cannot parse is not a time it may guess at. The
+        // cosignature is still returned: the READER verifies it, and a
+        // malformed line must fail there as a signature rather than here as a
+        // missing timestamp.
+      }
+
       return {
         type: 'c2sp-note',
         issuer: id,
         covers: 'note',
         line,
-        // No received_at. The protocol gives the witness nowhere to put one,
-        // and inventing the submission time here would record OUR clock as the
-        // witness's observation — a time the witness never asserted, attached
-        // to a proof that does not cover it.
+        ...(received_at ? { received_at } : {}),
       };
     },
   };

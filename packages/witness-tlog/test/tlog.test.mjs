@@ -195,33 +195,117 @@ test('FR-15: the operator\'s own signature is never returned as a countersignatu
   assert.ok(signer);
 });
 
-test('FR-15: an unenrolled log is a permanent refusal, not a retry', async () => {
+/**
+ * The real status map, read out of transparency-dev/witness rather than
+ * inferred. This test asserted 403 for the unenrolled case; 403 is
+ * ErrNoValidSignature and 404 is ErrUnknownLog, so the adapter was telling an
+ * operator whose SIGNATURE had failed to go and enrol a key that was already
+ * enrolled. Both are permanent, and they are different diagnoses.
+ */
+test('FR-15: an unenrolled log is 404, and a permanent refusal', async () => {
   const w = tlogWitness({
     id: 'w.example', url: 'http://127.0.0.1:1',
-    fetchImpl: async () => new Response('unknown key', { status: 403 }),
+    fetchImpl: async () => new Response('', { status: 404 }),
   });
   await assert.rejects(
     () => w.submit('x\n1\nr\n\n— x s\n', { old_size: 0, consistency_proof: [] }),
     (/** @type {any} */ e) => e instanceof TlogWitnessError
-      && /not a transient failure and retrying/.test(e.message));
+      && /does not know this log \(HTTP 404\)/.test(e.message)
+      && /retrying will not fix it/.test(e.message));
 });
 
-test('FR-15: it claims SEQUENCE and not time', async () => {
-  // A cosignature carries no time inside the note, so claiming `time` here
-  // would make the verifier's capability statement a lie by configuration —
-  // the same error as a TSA claiming sequence, in the other direction.
+test('FR-15: 403 is the operator\'s own signature failing, not an enrolment problem', async () => {
+  const w = tlogWitness({
+    id: 'w.example', url: 'http://127.0.0.1:1',
+    fetchImpl: async () => new Response('', { status: 403 }),
+  });
+  await assert.rejects(
+    () => w.submit('x\n1\nr\n\n— x s\n', { old_size: 0, consistency_proof: [] }),
+    (/** @type {any} */ e) => e instanceof TlogWitnessError
+      && /rejected the operator's signature/.test(e.message));
+});
+
+/**
+ * 422 is ErrInvalidProof or ErrRootMismatch — the witness REFUSING, which is
+ * the one signal this witness class exists to produce. It used to fall through
+ * to a generic "returned HTTP 422".
+ */
+test('FR-15: 422 is the witness refusing a history, not an outage', async () => {
+  const w = tlogWitness({
+    id: 'w.example', url: 'http://127.0.0.1:1',
+    fetchImpl: async () => new Response('', { status: 422 }),
+  });
+  await assert.rejects(
+    () => w.submit('x\n1\nr\n\n— x s\n', { old_size: 0, consistency_proof: [] }),
+    (/** @type {any} */ e) => e instanceof TlogWitnessError
+      && /REFUSED this checkpoint \(HTTP 422\)/.test(e.message)
+      && /must not be read as the witness being unavailable/.test(e.message));
+});
+
+test('FR-15: 429 is the only transient refusal, and says so', async () => {
+  const w = tlogWitness({
+    id: 'w.example', url: 'http://127.0.0.1:1',
+    fetchImpl: async () => new Response('', { status: 429 }),
+  });
+  await assert.rejects(
+    () => w.submit('x\n1\nr\n\n— x s\n', { old_size: 0, consistency_proof: [] }),
+    (/** @type {any} */ e) => e instanceof TlogWitnessError
+      && /rate-limiting/.test(e.message) && /transient/.test(e.message));
+});
+
+/** The 409 body is `<size>\n` and carries no root. */
+test('FR-15: a conflict carries the size and does not invent a root', async () => {
+  const w = tlogWitness({
+    id: 'w.example', url: 'http://127.0.0.1:1',
+    fetchImpl: async () => new Response('42\n', { status: 409 }),
+  });
+  await assert.rejects(
+    () => w.submit('x\n1\nr\n\n— x s\n', { old_size: 7, consistency_proof: [] }),
+    (/** @type {any} */ e) => e instanceof TlogConflict && e.size === 42 && e.root === null);
+});
+
+/**
+ * This test asserted that a cosignature carries no time, on the reasoning that
+ * claiming `time` would make the verifier's capability statement a lie. The
+ * reasoning was sound and the premise was wrong: a cosignature/v1 signature
+ * covers `cosignature/v1\ntime <unix>\n<text>`, so the witness's observation
+ * time is signed over the same message as the root. Running the real
+ * implementation is what established it (FR-15).
+ *
+ * What still holds is the other half: our clock is never substituted. A line
+ * carrying no timestamp yields no received_at.
+ */
+test('FR-15: it claims SEQUENCE and TIME, because a cosignature signs one', async () => {
   const w = tlogWitness({ id: 'w.example', url: 'http://w.example/' });
-  assert.deepEqual(w.establishes, ['sequence']);
+  assert.deepEqual(w.establishes, ['sequence', 'time']);
   assert.equal(w.proof_type, 'c2sp-note');
-  const line = await (async () => {
-    const t = tlogWitness({
-      id: 'w.example', url: 'http://127.0.0.1:1',
-      fetchImpl: async () => new Response('— w.example c2ln\n', { status: 200 }),
-    });
-    return t.submit('o\n1\nr\n\n— o s\n', { old_size: 0, consistency_proof: [] });
-  })();
-  assert.equal(/** @type {any} */ (line).received_at, undefined,
-    'a receipt time the witness never asserted was invented here');
+});
+
+test('FR-15: the recorded time is the witness\'s signed one, not ours', async () => {
+  // A cosignature/v1 blob: 4-byte key id, 8-byte big-endian timestamp, 64-byte
+  // signature. The timestamp here is 1792224330 = 2026-10-17T08:05:30Z.
+  const blob = Buffer.concat([
+    Buffer.from([0x07, 0x0e, 0x98, 0x61]),
+    (() => { const b = Buffer.alloc(8); b.writeBigUInt64BE(1792224330n); return b; })(),
+    Buffer.alloc(64, 7),
+  ]);
+  const t = tlogWitness({
+    id: 'w.example', url: 'http://127.0.0.1:1',
+    fetchImpl: async () => new Response(`— w.example ${blob.toString('base64')}\n`, { status: 200 }),
+  });
+  const cs = await t.submit('o\n1\nr\n\n— o s\n', { old_size: 0, consistency_proof: [] });
+  assert.equal(/** @type {any} */ (cs).received_at, '2026-10-17T08:05:30.000Z');
+});
+
+test('FR-15: a plain signature line yields no time, because it asserts none', async () => {
+  const t = tlogWitness({
+    id: 'w.example', url: 'http://127.0.0.1:1',
+    fetchImpl: async () => new Response(
+      `— w.example ${Buffer.alloc(68, 3).toString('base64')}\n`, { status: 200 }),
+  });
+  const cs = await t.submit('o\n1\nr\n\n— o s\n', { old_size: 0, consistency_proof: [] });
+  assert.equal(/** @type {any} */ (cs).received_at, undefined,
+    'our clock must never stand in for a time the witness did not assert');
 });
 
 test('FR-15: it is reachable from configuration, as a type like any other', async () => {
@@ -231,7 +315,7 @@ test('FR-15: it is reachable from configuration, as a type like any other', asyn
     witnesses: [{ id: 'w.example', type: 'tlog-witness', url: 'http://w.example/' }],
   });
   assert.equal(a?.id, 'w.example');
-  assert.deepEqual(a?.establishes, ['sequence']);
+  assert.deepEqual(a?.establishes, ['sequence', 'time']);
 });
 
 // ── Review findings: what the adapter CLAIMS about what it hands over ──────
