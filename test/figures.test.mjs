@@ -76,8 +76,19 @@ const GOOD_NFR02 = {
   added_direct: { mean_ms: 3.03 },
 };
 
-const NFR02_ROW = '| **0.088%** | added run latency (NFR-02) | **MEASURED** | '
-  + '`bench/run-latency.mjs`, `bench/results/nfr-02.json` |';
+/**
+ * The published figures are annotated with the evidence field each one quotes,
+ * so the guard reads the PROSE rather than a constant inside itself. A markdown
+ * comment renders invisibly and sits beside the number it binds.
+ * @param {{ e2e?: string, direct?: string, denom?: string, directMs?: string }} [o]
+ */
+const nfr02Row = (o = {}) => '| **below ' + (o.e2e ?? '0.29')
+  + '%**<!--=added_end_to_end_percent_ci_high--> | added end-to-end run latency (NFR-02) '
+  + '| **MEASURED**, denominator ' + (o.denom ?? '2725') + '<!--=denominator_ms--> ms, journal ops '
+  + (o.directMs ?? '3.03') + '<!--=added_direct.mean_ms--> ms below '
+  + (o.direct ?? '0.16') + '%<!--=added_direct_percent_ci_high--> '
+  + '| `bench/run-latency.mjs`, `bench/results/nfr-02.json` |';
+const NFR02_ROW = nfr02Row();
 
 const NFR01_ROW = '| **p99 2.61 ms** | append overhead (NFR-01) | **MEASURED** | '
   + '`bench/append.mjs`, `bench/results/nfr-01.json` |';
@@ -723,4 +734,82 @@ test('an UNRESOLVED end-to-end verdict cannot close NFR-02', async () => {
     assert.equal(r.code, 1);
     assert.match(r.all, /verdict_end_to_end = "UNRESOLVED"/);
   } finally { w.cleanup(); }
+});
+
+// ── PR #18 re-review: the numeric lint must read the PUBLISHED text ─────────
+
+/**
+ * The first version of this check listed the expected numbers in the guard
+ * itself, so it compared its own constant against the evidence and never
+ * looked at the release notes. Editing the published headline from 0.29% to
+ * 0.10% left it passing -- the exact regression the check was added to catch.
+ *
+ * The numbers now come out of the published row.
+ */
+test('mutating the PUBLISHED figure fails, with the evidence untouched', async () => {
+  const w = world({
+    rows: [nfr02Row({ e2e: '0.10' })],       // the note says 0.10%
+    reqs: [req('NFR-02', 'done')],
+    files: ['bench/run-latency.mjs'],
+    results: { 'bench/results/nfr-02.json': GOOD_NFR02 },   // the evidence still says 0.29
+  });
+  try {
+    const r = await run(w.args);
+    assert.equal(r.code, 1, 'a published figure that is not the measured one must fail');
+    assert.match(r.all, /publishes 0\.1 for added_end_to_end_percent_ci_high/);
+    assert.match(r.all, /measured 0\.29/);
+  } finally { w.cleanup(); }
+});
+
+test('every annotated figure in the row is checked, not just the headline', async () => {
+  for (const [patch, re] of /** @type {[any, RegExp][]} */ ([
+    [{ denom: '2600' }, /publishes 2600 for denominator_ms/],
+    [{ directMs: '9.99' }, /publishes 9\.99 for added_direct\.mean_ms/],
+    [{ direct: '0.01' }, /publishes 0\.01 for added_direct_percent_ci_high/],
+  ])) {
+    const w = world({
+      rows: [nfr02Row(patch)], reqs: [req('NFR-02', 'done')],
+      files: ['bench/run-latency.mjs'],
+      results: { 'bench/results/nfr-02.json': GOOD_NFR02 },
+    });
+    try {
+      const r = await run(w.args);
+      assert.equal(r.code, 1, JSON.stringify(patch));
+      assert.match(r.all, re);
+    } finally { w.cleanup(); }
+  }
+});
+
+/**
+ * And the annotation cannot be removed to escape the check. A comparison that
+ * does not happen is indistinguishable from one that passed, which is the
+ * failure mode this whole guard exists to prevent.
+ */
+test('deleting an annotation fails rather than silently skipping the check', async () => {
+  const stripped = NFR02_ROW.replace('<!--=denominator_ms-->', '');
+  const w = world({
+    rows: [stripped], reqs: [req('NFR-02', 'done')],
+    files: ['bench/run-latency.mjs'],
+    results: { 'bench/results/nfr-02.json': GOOD_NFR02 },
+  });
+  try {
+    const r = await run(w.args);
+    assert.equal(r.code, 1);
+    assert.match(r.all, /must quote denominator_ms and annotate it in the row/);
+    assert.match(r.all, /indistinguishable from it passing/);
+  } finally { w.cleanup(); }
+});
+
+test('the real release notes carry an annotation for every required field', async () => {
+  const { readFileSync } = await import('node:fs');
+  const notes = readFileSync(
+    new URL('../docs/splitstick-1.0-release-notes.md', import.meta.url), 'utf8');
+  for (const field of [
+    'added_end_to_end_percent_ci_high', 'added_direct_percent_ci_high',
+    'denominator_ms', 'added_direct.mean_ms',
+  ]) {
+    assert.ok(notes.includes(`<!--=${field}-->`),
+      `the published notes do not bind ${field} to its evidence`);
+  }
+  assert.equal((await run([])).code, 0);
 });

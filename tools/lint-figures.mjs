@@ -197,13 +197,21 @@ if (start === -1) {
       // Storage is not a variable this benchmark's result depends on: it
       // measures time inside a journal wrapper, not file creation.
       attests: ['machine'],
-      // The numbers the release notes publish, each naming the field it quotes.
-      // Checked at the precision they are quoted at.
-      quotes: [
-        [0.29, 'added_end_to_end_percent_ci_high'],
-        [0.16, 'added_direct_percent_ci_high'],
-        [2725, 'denominator_ms'],
-        [3.03, 'added_direct.mean_ms'],
+      // Which evidence fields this figure MUST quote in the release notes. The
+      // numbers themselves are read out of the published row, not listed here:
+      // a table of expected numbers inside the guard compares the guard's own
+      // constant against the evidence and never looks at the prose, so editing
+      // the published figure would not fail it -- which was the regression the
+      // check was added to catch.
+      //
+      // Naming the fields here is still necessary: without it, deleting an
+      // annotation from the row would silently disable the comparison instead
+      // of failing it.
+      must_quote: [
+        'added_end_to_end_percent_ci_high',
+        'added_direct_percent_ci_high',
+        'denominator_ms',
+        'added_direct.mean_ms',
       ],
       // bench/run-latency.mjs has no reference-environment gate, so it has no
       // shortfalls to disclose. Requiring the array would be requiring it to
@@ -352,7 +360,8 @@ if (start === -1) {
             findings.push(`${id}'s evidence ${rel} reports ${r.repeats} repeat(s), fewer than `
               + `${want.repeats}`);
           }
-          // THE PUBLISHED NUMBERS MUST BE THE MEASURED ONES.
+          // THE PUBLISHED NUMBERS MUST BE THE MEASURED ONES, read from the
+          // PUBLISHED ROW rather than from a constant in this file.
           //
           // A review found the release notes, the requirement's evidence and
           // this PR's description each quoting a DIFFERENT run: 0.088% beside
@@ -364,17 +373,34 @@ if (start === -1) {
           //
           // So each figure declares which field it is quoting, and the quoted
           // value must match the evidence to the precision it is quoted at.
-          for (const [claimed, field] of want.quotes ?? []) {
+          // Each published figure is annotated in the row with the evidence
+          // field it quotes: `**below 0.29%**<!--=added_end_to_end_percent_ci_high-->`.
+          // A markdown comment renders invisibly, and it sits next to the
+          // number, so a human editing the figure sees what it is bound to.
+          const annotated = new Map();
+          for (const q of row.matchAll(/([0-9][0-9,]*(?:\.[0-9]+)?)\s*%?\s*\**\s*<!--=\s*([A-Za-z0-9_.]+)\s*-->/g)) {
+            annotated.set(String(q[2]), String(q[1]).replace(/,/g, ''));
+          }
+          for (const field of want.must_quote ?? []) {
+            const claimedText = annotated.get(field);
+            if (claimedText === undefined) {
+              findings.push(`${id}'s figure must quote ${field} and annotate it in the row as `
+                + `\`<!--=${field}-->\` so this check reads the PUBLISHED number rather than a `
+                + 'constant. Without the annotation the comparison does not happen, which is '
+                + 'indistinguishable from it passing');
+              continue;
+            }
+            const claimed = Number(claimedText);
             const actual = at(r, field);
             if (typeof actual !== 'number') {
               findings.push(`${id}'s evidence ${rel} has no numeric ${field}, which this figure `
                 + 'quotes');
               continue;
             }
-            // Compared at the precision of the published figure: a figure
-            // quoting 0.09% must not be refused for a measurement of 0.0931%,
-            // and one quoting 0.088% must be.
-            const dp = (String(claimed).split('.')[1] ?? '').length;
+            // Compared at the precision the figure is published at: 0.29 may
+            // stand for a measured 0.2871 without forcing four decimals into
+            // the prose, while 0.088 may not.
+            const dp = (claimedText.split('.')[1] ?? '').length;
             if (Number(actual.toFixed(dp)) !== claimed) {
               findings.push(`${id} publishes ${claimed} for ${field}, but its evidence ${rel} `
                 + `measured ${actual} (${actual.toFixed(dp)} at that precision). A published figure `
