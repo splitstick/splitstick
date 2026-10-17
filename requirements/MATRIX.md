@@ -13,7 +13,7 @@ Regenerate with `npm run requirements`.
 |---|---:|
 | Functional | 69 |
 | Security | 26 |
-| Legal & regulatory | 19 |
+| Legal & regulatory | 20 |
 | Governance, licensing & community | 19 |
 | Scope guards (negative) | 16 |
 | Non-functional | 13 |
@@ -23,7 +23,7 @@ Regenerate with `npm run requirements`.
 | Interoperability & standards | 7 |
 | Operational | 6 |
 | Traceability & process | 5 |
-| **Total** | **210** |
+| **Total** | **211** |
 
 ### By release
 
@@ -31,8 +31,8 @@ Regenerate with `npm run requirements`.
 |---|---:|
 | 1.0 | 193 |
 | 2.0 | 5 |
-| commercial | 12 |
-| **Total** | **210** |
+| commercial | 13 |
+| **Total** | **211** |
 
 ## Matrix
 
@@ -173,7 +173,7 @@ Regenerate with `npm run requirements`.
 | `PRIV-08` | **Disclose the cadence leak** — Document that anchor cadence leaks activity volume. | Disclosure — anchor cadence likewise leaks | Documentation review | 1.0 | M5 | ✅ |
 | `PRIV-09` | **Operator-controlled retention** — Retention is a setting on operator-controlled storage, not a vendor policy. | Erasure — policy settings on your storage | Configuration test | 1.0 | M5 | ✅ |
 
-### Legal & regulatory — 19
+### Legal & regulatory — 20
 
 | ID | Requirement | Traces to | Verified by | Rel | M | Status |
 |---|---|---|---|---|---|---|
@@ -189,7 +189,8 @@ Regenerate with `npm run requirements`.
 | `LEG-10` | **Limitation of warranty** — Publish an explicit limitation of warranty for the witness service. | WPS — warranties are limited accordingly | Terms published and reviewed by counsel | commercial | — | ☐ |
 | `LEG-11` | **FRE 902(13)/(14) technical shape** — Produce records whose integrity and generation process can be certified by a qualified person, matching the shape those rules contemplate. | Legal posture | Counsel review; certification template produced | commercial | — | ☐ |
 | `LEG-12` | **eIDAS presumption only via qualified TSA** — Document that the Art. 41 presumption attaches only when anchored to a qualified TSA, and not via Splitstick's own witness. | Legal posture | Documentation review; no contrary claim anywhere | 1.0 | M6 | ✅ |
-| `LEG-13` | **Qualified TSA configurable** — A qualified TSA can be configured in the witness set by the operator. | Legal posture — the architecture is pluggable precisely so you can | Live anchor against a qualified TSA | 1.0 | M6 | ☐ |
+| `LEG-13` | **Qualified TSA configurable** — A qualified TSA can be configured in the witness set by the operator: the integration surface exists, including the credential every commercial qualified service requires, and the verifier reports the eIDAS Art. 41 presumption from the operator's declaration about it. | Legal posture — the architecture is pluggable precisely so you can | The surface, exercised end to end rather than asserted. An rfc3161 witness accepts an `auth` block in config -- scheme bearer\|basic\|header, env, optional header -- validated when the witness set is BUILT rather than at submission, so a malformed block fails before a checkpoint is spent and never as an anonymous request the TSA then rejects. The config names the environment variable holding the credential and never the credential: a secret in a witness config file gets committed, and one in argv is readable by every process through ps. A missing variable fails by NAME and does not submit, and because that is a configuration error rather than a network one it is resolved before the request so it cannot be reported as an unreachable witness. The credential must not appear in the stored countersignature, which is asserted rather than assumed. `qualified: true` remains an operator DECLARATION about a legal status this code cannot adjudicate, and the adapter now records what the signer certificate actually carries (id-etsi-qcs-QcCompliance, id-etsi-qct-qtst) and warns when a qualified declaration is made over a certificate carrying neither. The presumption path itself is tested against a real RFC 3161 token. A LIVE anchor against a commercially qualified TSA is LEG-20, in the commercial release alongside LEG-17: it needs an account, which is procurement and not this surface. | 1.0 | M6 | ✅ |
+| `LEG-20` | **Live anchor against a qualified TSA** — Anchor a checkpoint against a commercially qualified TSA and record the token as evidence, so the eIDAS Art. 41 presumption rests on a proof this project has actually obtained rather than only on an operator declaration. | Legal posture — split from LEG-13; the surface is 1.0, the account is not | One live anchor against a TSA listed on an EU Trusted List, through the shipped rfc3161 adapter with a credential supplied via its auth block, with the token committed as evidence and the verifier reporting the presumption as attaching. The signer certificate is expected to carry id-etsi-qct-qtst; if it does not, that is itself the finding and is recorded rather than waved past. | commercial | — | ☐ |
 | `LEG-14` | **No conformity claims** — No product surface or marketing claims EU AI Act conformity. | Legal posture — nothing claims conformity | Claims audit across docs, site and UI | 1.0 | M7 | ✅ |
 | `LEG-15` | **No certification of the customer** — Never certify the customer's compliance. | Legal posture — Splitstick does not certify you | Claims audit | 1.0 | M7 | ✅ |
 | `LEG-16` | **Not-legal-advice disclaimer** — Carry a not-legal-advice disclaimer wherever statutes are cited. | Legal posture; footer | Documentation review | 1.0 | M7 | ✅ |
@@ -308,4 +309,4 @@ Regenerate with `npm run requirements`.
 
 ---
 
-*210 requirements. Status column is maintained by hand as work lands.*
+*211 requirements. Status column is maintained by hand as work lands.*

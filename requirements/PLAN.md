@@ -303,7 +303,7 @@ Stop depending on one upstream project, and make the format genuinely somebody e
 | ✅ `INT-06` | **Reuse rather than reimplement** — Build on Sigstore, Rekor, Trillian and C2SP rather than reimplementing their roles. | Dependency review; no bespoke transparency log |
 | ✅ `OPS-03` | **Self-hosted witness deployment guide** — Document running the witness under internal audit with keys in their custody. | Guide published; followed end to end in a clean environment |
 | ✅ `OPS-05` | **Zero-egress mode** — Support and verify a deployment with no account, no enrolment with us, and no traffic leaving the perimeter. | Egress capture in a fully self-hosted deployment |
-| ☐ `LEG-13` | **Qualified TSA configurable** — A qualified TSA can be configured in the witness set by the operator. | Live anchor against a qualified TSA |
+| ✅ `LEG-13` | **Qualified TSA configurable** — A qualified TSA can be configured in the witness set by the operator: the integration surface exists, including the credential every commercial qualified service requires, and the verifier reports the eIDAS Art. 41 presumption from the operator's declaration about it. | The surface, exercised end to end rather than asserted. An rfc3161 witness accepts an `auth` block in config -- scheme bearer\|basic\|header, env, optional header -- validated when the witness set is BUILT rather than at submission, so a malformed block fails before a checkpoint is spent and never as an anonymous request the TSA then rejects. The config names the environment variable holding the credential and never the credential: a secret in a witness config file gets committed, and one in argv is readable by every process through ps. A missing variable fails by NAME and does not submit, and because that is a configuration error rather than a network one it is resolved before the request so it cannot be reported as an unreachable witness. The credential must not appear in the stored countersignature, which is asserted rather than assumed. `qualified: true` remains an operator DECLARATION about a legal status this code cannot adjudicate, and the adapter now records what the signer certificate actually carries (id-etsi-qcs-QcCompliance, id-etsi-qct-qtst) and warns when a qualified declaration is made over a certificate carrying neither. The presumption path itself is tested against a real RFC 3161 token. A LIVE anchor against a commercially qualified TSA is LEG-20, in the commercial release alongside LEG-17: it needs an account, which is procurement and not this surface. |
 | ✅ `LEG-12` | **eIDAS presumption only via qualified TSA** — Document that the Art. 41 presumption attaches only when anchored to a qualified TSA, and not via Splitstick's own witness. | Documentation review; no contrary claim anywhere |
 | ✅ `FR-49` | **Documented CLI contract** — Provide the entry points and flags printed in Getting started: collect-oma, mcp-proxy (--upstream, --out), verify (--policy), coverage (--from, --to) and disclose (--event, --out). | CLI contract test executes every documented invocation verbatim |
 
@@ -386,11 +386,12 @@ Every promise that is a claim rather than a feature. This milestone is mostly ab
 - `RM-03` Shell collector
 - `RM-04` Database-write collector
 
-**commercial — 12**
+**commercial — 13**
 
 - `FR-18` Splitstick hosted witness adapter
 - `LEG-10` Limitation of warranty
 - `LEG-11` FRE 902(13)/(14) technical shape
+- `LEG-20` Live anchor against a qualified TSA
 - `LEG-17` Pursue qualified status
 - `GOV-07` Certification mark on passing
 - `OPS-01` Witness SLA
@@ -403,4 +404,4 @@ Every promise that is a claim rather than a feature. This milestone is mostly ab
 
 ---
 
-*193 requirements in 1.0 across 9 milestones; 210 total in the backlog.*
+*193 requirements in 1.0 across 9 milestones; 211 total in the backlog.*

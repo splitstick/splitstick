@@ -120,3 +120,147 @@ test('no test here makes a network call: fetch is injected', () => {
   const text = readFileSync(new URL('./tsa.test.mjs', import.meta.url), 'utf8');
   assert.ok(!/[^.]\bfetch\s*\(/.test(text.replace(/fetchImpl/g, '')), 'tests must inject fetch');
 });
+
+// ── LEG-13: the integration surface for a qualified TSA ─────────────────────
+
+/**
+ * LEG-13's statement is that an operator CAN configure a qualified TSA. They
+ * could not: the request's headers were hardcoded and the config builder passed
+ * only id, url and qualified, so an operator with a commercial account had no
+ * way to present a credential. Every qualified trust service is audited and
+ * billable, so every provider meters it behind one.
+ *
+ * The configuration names WHERE the secret is. It never holds it.
+ */
+const withEnv = async (/** @type {Record<string,string|undefined>} */ vars, /** @type {() => any} */ fn) => {
+  const saved = Object.keys(vars).map(k => /** @type {const} */ ([k, process.env[k]]));
+  for (const [k, v] of Object.entries(vars)) {
+    if (v === undefined) delete process.env[k]; else process.env[k] = v;
+  }
+  try { return await fn(); } finally {
+    for (const [k, v] of saved) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+  }
+};
+
+test('LEG-13: a bearer credential is read from the environment and sent', async () => {
+  const t = tsa(() => ({ body: token }));
+  await withEnv({ SS_TSA_TOKEN: 'super-secret-value' }, async () => {
+    const w = tsaWitness({
+      id: 'tsa.example', url: 'https://tsa.example/t', anchors: [root],
+      fetchImpl: t.fetchImpl, auth: { scheme: 'bearer', env: 'SS_TSA_TOKEN' },
+    });
+    const cs = await w.submit(note, { old_size: 0, consistency_proof: [] });
+    assert.equal(t.seen[0].headers.authorization, 'Bearer super-secret-value');
+    // And the content type is still right: auth must not displace it.
+    assert.equal(t.seen[0].headers['content-type'], 'application/timestamp-query');
+    // THE SECRET MUST NOT REACH THE PROOF. A countersignature is stored,
+    // shipped in evidence packs and read by auditors.
+    assert.ok(!JSON.stringify(cs).includes('super-secret-value'),
+      'the credential appeared in the countersignature');
+  });
+});
+
+test('LEG-13: basic auth encodes user:password, and refuses a value it cannot split', async () => {
+  const t = tsa(() => ({ body: token }));
+  await withEnv({ SS_TSA_BASIC: 'alice:hunter2' }, async () => {
+    const w = tsaWitness({
+      id: 'tsa.example', url: 'https://tsa.example/t', anchors: [root],
+      fetchImpl: t.fetchImpl, auth: { scheme: 'basic', env: 'SS_TSA_BASIC' },
+    });
+    await w.submit(note, { old_size: 0, consistency_proof: [] });
+    assert.equal(t.seen[0].headers.authorization,
+      `Basic ${Buffer.from('alice:hunter2').toString('base64')}`);
+  });
+  await withEnv({ SS_TSA_BASIC: 'no-colon-here' }, async () => {
+    const w = tsaWitness({
+      id: 'tsa.example', url: 'https://tsa.example/t', fetchImpl: tsa(() => ({ body: token })).fetchImpl,
+      auth: { scheme: 'basic', env: 'SS_TSA_BASIC' },
+    });
+    await assert.rejects(() => w.submit(note, { old_size: 0, consistency_proof: [] }),
+      /must hold "user:password"/);
+  });
+});
+
+test('LEG-13: a custom header carries the key, and the header name is validated', async () => {
+  const t = tsa(() => ({ body: token }));
+  await withEnv({ SS_TSA_KEY: 'k-123' }, async () => {
+    const w = tsaWitness({
+      id: 'tsa.example', url: 'https://tsa.example/t', anchors: [root],
+      fetchImpl: t.fetchImpl, auth: { scheme: 'header', env: 'SS_TSA_KEY', header: 'X-Api-Key' },
+    });
+    await w.submit(note, { old_size: 0, consistency_proof: [] });
+    assert.equal(t.seen[0].headers['x-api-key'], 'k-123');
+
+    // A header name is not a place to accept arbitrary bytes: a newline here
+    // is request splitting.
+    const bad = tsaWitness({
+      id: 'tsa.example', url: 'https://tsa.example/t', fetchImpl: t.fetchImpl,
+      auth: { scheme: 'header', env: 'SS_TSA_KEY', header: 'X-Bad\r\nInjected: 1' },
+    });
+    await assert.rejects(() => bad.submit(note, { old_size: 0, consistency_proof: [] }),
+      /not a valid header token/);
+  });
+});
+
+test('LEG-13: a missing credential fails by NAME, and never submits anonymously', async () => {
+  const t = tsa(() => ({ body: token }));
+  await withEnv({ SS_TSA_ABSENT: undefined }, async () => {
+    const w = tsaWitness({
+      id: 'tsa.example', url: 'https://tsa.example/t', anchors: [root],
+      fetchImpl: t.fetchImpl, auth: { scheme: 'bearer', env: 'SS_TSA_ABSENT' },
+    });
+    await assert.rejects(() => w.submit(note, { old_size: 0, consistency_proof: [] }),
+      (/** @type {any} */ e) => e instanceof TsaError
+        && /SS_TSA_ABSENT, and it is\s+not set/.test(e.message)
+        && !/was unreachable/.test(e.message));
+    assert.equal(t.seen.length, 0,
+      'a request was made without the credential it was configured to present');
+  });
+});
+
+test('LEG-13: an unknown auth scheme is refused, not dropped', async () => {
+  const t = tsa(() => ({ body: token }));
+  const w = tsaWitness({
+    id: 'tsa.example', url: 'https://tsa.example/t', fetchImpl: t.fetchImpl,
+    auth: /** @type {any} */ ({ scheme: 'magic', env: 'SS_TSA_KEY' }),
+  });
+  await assert.rejects(() => w.submit(note, { old_size: 0, consistency_proof: [] }),
+    (/** @type {any} */ e) => e instanceof TsaError
+      && /does not know/.test(e.message)
+      // NOT reported as unreachable: the credential is resolved before the
+      // fetch, so a configuration error keeps its own diagnosis.
+      && !/was unreachable/.test(e.message));
+  assert.equal(t.seen.length, 0, 'silently dropping a credential looks like a bad credential');
+});
+
+/**
+ * The footgun this is for. Of nine free public RFC 3161 endpoints surveyed,
+ * none was qualified while five belonged to companies that ARE qualified trust
+ * service providers — Certum runs a free basic endpoint next to its commercial
+ * qualified service. So `qualified: true` pointed at a free endpoint is the
+ * expected mistake, and the verifier reports the Art. 41 presumption on the
+ * strength of that flag.
+ */
+test('LEG-13: declaring qualified records what the certificate actually carries', async () => {
+  const t = tsa(() => ({ body: token }));
+  const w = tsaWitness({
+    id: 'tsa.example', url: 'https://tsa.example/t', anchors: [root],
+    fetchImpl: t.fetchImpl, qualified: true,
+  });
+  const cs = await w.submit(note, { old_size: 0, consistency_proof: [] });
+  const q = /** @type {any} */ (cs).qualified_statements;
+  assert.ok(q, 'a qualified declaration must be accompanied by what was seen');
+  assert.equal(typeof q.qc_qtst, 'boolean');
+  // The fixture is an ordinary test TSA, so it carries no qualified statements.
+  assert.equal(q.qc_qtst, false);
+  assert.equal(q.qc_compliance, false);
+});
+
+test('LEG-13: an ordinary TSA is not annotated, because the absence is unremarkable', async () => {
+  const t = tsa(() => ({ body: token }));
+  const w = tsaWitness({
+    id: 'tsa.example', url: 'https://tsa.example/t', anchors: [root], fetchImpl: t.fetchImpl,
+  });
+  const cs = await w.submit(note, { old_size: 0, consistency_proof: [] });
+  assert.equal(/** @type {any} */ (cs).qualified_statements, undefined);
+});

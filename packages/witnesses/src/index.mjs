@@ -104,6 +104,51 @@ export const CREDITED_WITH_TIME = Object.freeze({
   // table exists to stop.
 });
 
+/**
+ * An `auth` block from a witness config — LEG-13.
+ *
+ * Shape-checked before it reaches the adapter. The credential itself is NOT
+ * read here: this validates that the config says where to find it, which is a
+ * different thing from the secret being present. A missing environment
+ * variable is reported at submission time, by name, because that is when the
+ * operator can act on it.
+ *
+ * @param {string} id
+ * @param {any} auth
+ * @returns {{ scheme: 'bearer'|'basic'|'header', env: string, header?: string }}
+ */
+function validateTsaAuth(id, auth) {
+  if (typeof auth !== 'object' || auth === null) {
+    throw new WitnessConfigError(`witness ${id}: auth must be an object, not ${typeof auth}`);
+  }
+  const SCHEMES = ['bearer', 'basic', 'header'];
+  if (!SCHEMES.includes(auth.scheme)) {
+    throw new WitnessConfigError(
+      `witness ${id}: auth.scheme ${JSON.stringify(auth.scheme)} is not one of `
+      + `${SCHEMES.join(', ')}. Refused rather than defaulted: guessing a scheme would send a `
+      + 'credential in a form the TSA does not expect, which looks like a bad credential.');
+  }
+  if (typeof auth.env !== 'string' || !/^[A-Z_][A-Z0-9_]*$/.test(auth.env)) {
+    throw new WitnessConfigError(
+      `witness ${id}: auth.env must be the NAME of an environment variable, got `
+      + `${JSON.stringify(auth.env)}. The config names where the secret is; it never holds it, `
+      + 'because a witness config file gets committed.');
+  }
+  // The commonest way to get this wrong is to paste the secret in.
+  if (/^(?:sk-|Bearer |Basic )/i.test(auth.env) || auth.env.length > 64) {
+    throw new WitnessConfigError(
+      `witness ${id}: auth.env looks like a credential rather than a variable name. It must be the `
+      + 'NAME of an environment variable holding the secret.');
+  }
+  if (auth.scheme === 'header' && (typeof auth.header !== 'string' || auth.header === '')) {
+    throw new WitnessConfigError(`witness ${id}: auth.scheme "header" needs auth.header`);
+  }
+  return {
+    scheme: auth.scheme, env: auth.env,
+    ...(auth.header ? { header: auth.header } : {}),
+  };
+}
+
 /** The types this builder knows. An unknown type is refused, never ignored. */
 export const WITNESS_TYPES = Object.freeze([
   'rfc3161', 'opentimestamps', 'rekor', 'tlog-witness', 'splitstick',
@@ -111,7 +156,8 @@ export const WITNESS_TYPES = Object.freeze([
 
 /**
  * @param {{ witnesses?: { id: string, type: string, url?: string, tier?: string,
- *   calendars?: string[], key?: string, self_hosted?: boolean, qualified?: boolean }[] }} config
+ *   calendars?: string[], key?: string, self_hosted?: boolean, qualified?: boolean,
+ *   auth?: { scheme?: string, env?: string, header?: string } }[] }} config
  * @param {{ fetchImpl?: typeof globalThis.fetch }} [opts]
  * @returns {import('@splitstick/core/anchor').WitnessAdapter[]}
  */
@@ -160,6 +206,12 @@ export function witnessesFromConfig(config, opts = {}) {
           id: w.id,
           url: /** @type {string} */ (w.url),
           ...(w.qualified ? { qualified: true } : {}),
+          // LEG-13 — a credential for a commercial qualified service. Validated
+          // HERE rather than at submission time: a config whose auth block is
+          // malformed should fail when the witness set is built, not minutes
+          // later on a checkpoint, and not silently as an anonymous request
+          // that the TSA then rejects.
+          ...(w.auth ? { auth: validateTsaAuth(w.id, w.auth) } : {}),
           ...(opts.fetchImpl ? { fetchImpl: opts.fetchImpl } : {}),
         })));
         break;
