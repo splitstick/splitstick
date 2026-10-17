@@ -60,8 +60,29 @@ jobs:
       - run: npm ci
       - name: Types
         run: npm run typecheck
+      # The output is kept, because an intermittent failure once cost a pull
+      # request a red run and the evidence was gone before anybody could read
+      # it: the obvious next move is to press re-run, and a green re-run leaves
+      # nothing behind. `set -o pipefail` is on by default in these steps, so
+      # `tee` does not swallow the exit code.
       - name: Unit tests
-        run: npm run test:unit
+        run: npm run test:unit 2>&1 | tee "test-node-${{ matrix.node }}.log"
+      - name: The failing assertions, in the step that failed
+        if: failure()
+        # Before the artifact, because a summary a reader can see without
+        # downloading anything is what they actually needed.
+        run: |
+          echo "::group::failures on node ${{ matrix.node }}"
+          grep -E "^not ok|AssertionError|Error:|error:" "test-node-${{ matrix.node }}.log" \
+            | head -40 || echo "(no assertion lines matched; see the artifact)"
+          echo "::endgroup::"
+      - name: Keep the output of a failed run
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-log-node-${{ matrix.node }}
+          path: test-node-${{ matrix.node }}.log
+          retention-days: 30
 
   # NFR-10 — @open-multi-agent/core 1.21.x, tested at BOTH ENDS of the declared
   # range rather than at the one patch release the lockfile happens to pin.
