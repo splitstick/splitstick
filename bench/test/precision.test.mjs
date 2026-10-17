@@ -223,6 +223,23 @@ test('each requirement is held to its own event count', () => {
     'NFR-01 still needs a million samples to have a tail');
 });
 
+/**
+ * The other direction from "declared but unevaluated": undeclared, and so
+ * unchecked. Moving min_events into a per-requirement block made losing it
+ * silent, because an absent key raises no shortfall — there is nothing to
+ * evaluate.
+ */
+test('a constraint deleted from the reference file throws rather than vanishing', () => {
+  const trimmed = structuredClone(REF);
+  delete trimmed.requirements['NFR-01'].min_events;
+  assert.throws(() => qualifyRun(trimmed, ample),
+    /no longer declares "min_events" for NFR-01, so nothing checks it/);
+
+  const noHostFloor = structuredClone(REF);
+  delete noHostFloor.min_cpus;
+  assert.throws(() => qualifyRun(noHostFloor, ample), /no longer declares "min_cpus"/);
+});
+
 test('a requirement the reference file does not declare throws', () => {
   assert.throws(() => qualifyRun(REF, { ...ample, requirement: 'NFR-99' }),
     /no constraint block for "NFR-99"/);

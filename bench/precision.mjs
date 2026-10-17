@@ -119,14 +119,15 @@ export function clockResolution(expectedMs) {
 export async function environment() {
   const os = await import('node:os');
   const fs = await import('node:fs');
-  let free_disk_gb = Number.POSITIVE_INFINITY;
+  // NaN, not Infinity, and not zero. An unreadable statfs must not satisfy a
+  // free-space floor (Infinity would) and must not read as a measured failure
+  // either (zero would). qualifyRun treats a non-finite reading as its own
+  // named shortfall: the reading could not be taken.
+  let free_disk_gb = Number.NaN;
   try {
     const st = fs.statfsSync(os.tmpdir());
     free_disk_gb = Number(((Number(st.bavail) * Number(st.bsize)) / 1024 ** 3).toFixed(2));
   } catch {
-    // Left at Infinity deliberately: an unreadable statfs must not silently
-    // satisfy a free-space floor, so qualifyRun treats a non-finite reading as
-    // a shortfall rather than a pass.
     free_disk_gb = Number.NaN;
   }
   return {
@@ -288,6 +289,21 @@ export function qualifyRun(ref, observed, opts = {}) {
   const effective = { ...ref };
   for (const k of descriptive) delete effective[k];
   Object.assign(effective, perRequirement[observed.requirement] ?? {});
+
+  // Moving min_events and min_repeats into a per-requirement block made them
+  // easy to lose silently: an absent key raises no shortfall, because there is
+  // nothing to evaluate. Declared-but-unevaluated already throws; this is the
+  // other direction, undeclared-and-therefore-unchecked.
+  for (const required of ['min_cpus', 'min_memory_gb', 'max_load_average_1m',
+    'min_events', 'min_repeats', 'requires_attestation']) {
+    if (!(required in effective)) {
+      throw new Error(
+        `reference-env.json no longer declares ${JSON.stringify(required)} for `
+        + `${observed.requirement}, so nothing checks it. An absent constraint is not a `
+        + 'satisfied one; restore it or decide deliberately that this requirement has no '
+        + 'such threshold and remove it from the required list here.');
+    }
+  }
 
   // Evaluated only in the final phase, because they read the post-run sample.
   const needsTheRun = new Set(['max_load_increase_1m']);
