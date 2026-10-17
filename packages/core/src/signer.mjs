@@ -34,10 +34,15 @@
  * @property {string} name
  * @property {Buffer} publicKey
  * @property {Buffer} keyId
+ * @property {number} [algorithm] the note algorithm this identity signs with —
+ *   ALG_ED25519 (1) for a log's own signature, ALG_ED25519_COSIG_V1 (4) for a
+ *   witness cosignature. It selects WHICH BYTES are verified, so it comes from
+ *   the reader's acceptance policy and never from the line being checked.
+ *   Defaults to ALG_ED25519, which is what every pre-FR-15 caller meant.
  */
 
 import { verify as cryptoVerify, createPublicKey } from 'node:crypto';
-import { noteKeyId } from './note.mjs';
+import { noteKeyId, cosignatureV1Message, ALG_ED25519, ALG_ED25519_COSIG_V1 } from './note.mjs';
 
 /**
  * A custody class is a *declaration*. An HSM signature and a signature from a
@@ -83,7 +88,26 @@ export async function signNote(text, signer) {
  */
 export async function verifyNoteSignature(text, sig, v) {
   if (sig.name !== v.name) return false;
-  const expect = noteKeyId(v.name, v.publicKey);
+  const algorithm = v.algorithm ?? ALG_ED25519;
+  const expect = noteKeyId(v.name, v.publicKey, algorithm);
   if (!expect.equals(sig.keyId)) return false;
+
+  // WHICH BYTES ARE COVERED depends on the algorithm the verifier declares,
+  // and the two are not interchangeable. A cosignature/v1 signature covers
+  // `cosignature/v1\ntime <unix>\n<text>`; a plain note signature covers the
+  // text. Verifying one against the other's message fails, which is how a real
+  // witness cosignature read as "does not verify" until FR-15 ran the Go
+  // implementation.
+  //
+  // The algorithm is taken from the verifier -- the READER's acceptance policy
+  // -- and never from the line being checked. Letting the line choose would let
+  // a witness present a plain signature where the policy expects a timestamped
+  // cosignature, which is a downgrade the reader never agreed to.
+  if (algorithm === ALG_ED25519_COSIG_V1) {
+    if (sig.timestamp === undefined) return false;
+    const msg = cosignatureV1Message(sig.timestamp, text);
+    return cryptoVerify(null, Buffer.from(msg, 'utf8'), publicKeyFromRaw(v.publicKey), sig.signature);
+  }
+  if (sig.timestamp !== undefined) return false;
   return cryptoVerify(null, Buffer.from(text, 'utf8'), publicKeyFromRaw(v.publicKey), sig.signature);
 }

@@ -18,10 +18,23 @@ reading is right. M5 produced two verifier bugs of exactly that shape — the vk
 algorithm byte and the base64 `+` in a three-part split — both from gaps in a specification
 this project wrote itself, and both found only when something external was involved.
 
-Closing it: run `transparency-dev/witness` (Go) locally, enrol the operator key, and anchor
-against it. The failure to expect is in the request framing — the `old <size>` line, the
-proof encoding, and whether a cosignature body carries only the witness's own line.
-`packages/witness-tlog/src/index.mjs` states the format it assumes in one place, at the top.
+**CLOSED.** Done exactly that: four successive checkpoints against the Go omniwitness binary
+with the operator key enrolled through its own `--additional_logs` path, every cosignature
+verifying under the shipped verifier, reproduced three times. Evidence and the full procedure
+are in [`packages/witness-tlog/interop/README.md`](../packages/witness-tlog/interop/README.md).
+
+It did not pass first time, and the prediction above was half right. The request framing and
+the response line format were **already correct**; the failures were somewhere else entirely.
+A witness cosignature is not a plain note signature — algorithm byte `0x04`, a 76-byte blob
+of `keyId ‖ timestamp ‖ signature`, signing `cosignature/v1\ntime <unix>\n<note text>` — so
+the key id was computed under the wrong algorithm, `parseNote` threw on the blob length, and
+verification covered the wrong bytes. It also carries the witness's own signed observation
+time, which the adapter asserted the protocol had nowhere to put. The 409 body carries no
+root, where we parsed one. And four status codes were mapped wrong, with 403 and 404 crossed
+and 422 — the witness *refusing* — folded into a generic error.
+
+Which is the point M5 made and this makes again: the gap was never where the people who wrote
+both sides thought to look.
 
 ### LEG-13 — live anchor against a qualified TSA
 

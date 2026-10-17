@@ -1,0 +1,65 @@
+{
+  "requirement": "FR-15",
+  "kind": "interop measurement",
+  "implementation": "transparency-dev/witness (Go), built with CGO_ENABLED=0 from a shallow clone",
+  "protocol": "c2sp.org/tlog-witness, cosignature/v1 (c2sp.org/tlog-cosignature)",
+  "our_log_vkey": "splitstick.dev/fr15-host+10b9d4e0+ASSVcFjj11ymMj3tuwE+I/OJGP+IZuOnT8RIuU8DgH57",
+  "witness_vkey": "fr15.witness.local+070e9861+BN6GTR7onUyHHlZtL2GsFJUibnv2BPLSBZ0tyLKbpZWJ",
+  "checkpoints": [
+    {
+      "batch": 0,
+      "tree_size": 3,
+      "attached": 1,
+      "verified": true,
+      "failed": []
+    },
+    {
+      "batch": 1,
+      "tree_size": 6,
+      "attached": 1,
+      "verified": true,
+      "failed": []
+    },
+    {
+      "batch": 2,
+      "tree_size": 9,
+      "attached": 1,
+      "verified": true,
+      "failed": []
+    },
+    {
+      "batch": 3,
+      "tree_size": 12,
+      "attached": 1,
+      "verified": true,
+      "failed": []
+    }
+  ],
+  "countersignatures": [
+    {
+      "issuer": "fr15.witness.local",
+      "type": "c2sp-note",
+      "covers": "note",
+      "received_at": "2026-10-17T08:25:59.000Z"
+    },
+    {
+      "issuer": "fr15.witness.local",
+      "type": "c2sp-note",
+      "covers": "note",
+      "received_at": "2026-10-17T08:25:59.000Z"
+    },
+    {
+      "issuer": "fr15.witness.local",
+      "type": "c2sp-note",
+      "covers": "note",
+      "received_at": "2026-10-17T08:25:59.000Z"
+    },
+    {
+      "issuer": "fr15.witness.local",
+      "type": "c2sp-note",
+      "covers": "note",
+      "received_at": "2026-10-17T08:25:59.000Z"
+    }
+  ],
+  "taken_at": "2026-10-17T08:25:59.136Z"
+}

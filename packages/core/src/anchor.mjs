@@ -25,7 +25,7 @@
  * at all, which is the failure DES-20's review named.
  */
 
-import { parseNote, parseCheckpointText, parseVkey, noteKeyId } from './note.mjs';
+import { parseNote, parseCheckpointText, parseVkey, noteKeyId, ALG_ED25519 } from './note.mjs';
 import { verifyNoteSignature } from './signer.mjs';
 import { parseEnvelope, addCountersignature } from './envelope.mjs';
 import { consistencyProof } from './merkle.mjs';
@@ -583,16 +583,25 @@ export class Anchorer {
    * @returns {Promise<boolean|null>} true verified, false refuted, null not checkable here
    */
   async #check(note, cs) {
-    const key = this.acceptance[cs.issuer];
-    if (!key) return null;
+    const entry = this.acceptance[cs.issuer];
+    if (!entry) return null;
     if (cs.type !== 'c2sp-note' || typeof cs.line !== 'string') return null;
     try {
+      // An acceptance entry may be a bare 32-byte key, which means a plain note
+      // signature, or a vkey string, which CARRIES its algorithm byte. A
+      // witness signs cosignature/v1 (algorithm 4) over different bytes than a
+      // log signs (algorithm 1), so the algorithm has to come from the reader's
+      // policy; a bare key keeps meaning algorithm 1, which is what every
+      // caller before FR-15 meant by it.
+      const { publicKey: pub, algorithm } = typeof entry === 'string'
+        ? parseVkey(entry)
+        : { publicKey: Buffer.from(entry), algorithm: ALG_ED25519 };
       const text = parseNote(note).text;
       const line = parseNote(`${text}\n${cs.line}\n`).signatures.find(s => s.name === cs.issuer);
       if (!line) return false;
-      const pub = Buffer.from(key);
       return await verifyNoteSignature(text, line, {
-        name: cs.issuer, publicKey: pub, keyId: noteKeyId(cs.issuer, pub),
+        name: cs.issuer, publicKey: pub, algorithm,
+        keyId: noteKeyId(cs.issuer, pub, algorithm),
       });
     } catch {
       return false;

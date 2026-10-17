@@ -32,6 +32,38 @@ export class NoteError extends Error {
 export const ALG_ED25519 = 1;
 
 /**
+ * cosignature/v1 Ed25519 — the algorithm a tlog-witness signs with.
+ *
+ * Found by running the shipped adapter against transparency-dev/witness for the
+ * first time (FR-15). A witness cosignature is NOT a plain note signature:
+ *
+ *   - its key is declared with algorithm byte 0x04, so its key id hashes 0x04
+ *     and not 0x01 — the same key under the two bytes gives different ids, and
+ *     ours computed 2f117086 where the wire carried 070e9861
+ *   - its blob is 76 bytes, keyId ‖ timestamp ‖ signature, not 68
+ *   - it signs `cosignature/v1\ntime <unix>\n<note text>`, not the note text
+ *
+ * The timestamp is the witness's OWN observation time, signed over the same
+ * message as the root. This adapter's comment used to say the protocol gave a
+ * witness nowhere to put a time; that was a reading of our own document rather
+ * than of theirs. See https://c2sp.org/tlog-cosignature.
+ */
+export const ALG_ED25519_COSIG_V1 = 4;
+
+/** Bytes in a cosignature/v1 blob: 4 key id, 8 big-endian timestamp, 64 signature. */
+const COSIG_V1_LEN = 4 + 8 + 64;
+const PLAIN_LEN = 4 + 64;
+
+/**
+ * The bytes a cosignature/v1 signature actually covers.
+ * @param {bigint|number} timestamp unix seconds, as the witness asserted them
+ * @param {string} text the note text
+ */
+export function cosignatureV1Message(timestamp, text) {
+  return `cosignature/v1\ntime ${timestamp}\n${text}`;
+}
+
+/**
  * Named, frozen algorithm tuples — DES-16. SS1 is SHA-256, Ed25519, JCS,
  * RFC 6962 and the 0x00-0x05 domain prefixes.
  *
@@ -149,7 +181,12 @@ export function parseCheckpointText(text) {
   };
 }
 
-/** @typedef {{ name: string, keyId: Buffer, signature: Buffer }} NoteSignature */
+/**
+ * A signature line. `timestamp` is present only on a cosignature/v1 line, where
+ * it is the witness's own signed observation time in unix seconds, and is part
+ * of the signed message rather than metadata beside it.
+ * @typedef {{ name: string, keyId: Buffer, signature: Buffer, timestamp?: bigint }} NoteSignature
+ */
 
 /**
  * @param {string} text
@@ -180,7 +217,25 @@ export function parseNote(blob) {
 
   /** @type {NoteSignature[]} */
   const signatures = [];
-  for (const line of rest.slice(0, -1).split('\n')) {
+  for (const line of rest.slice(0, -1).split('\n')) signatures.push(parseSignatureLine(line));
+  if (signatures.length === 0) throw new NoteError('a note carries at least one signature');
+  return { text, signatures };
+}
+
+/**
+ * Parse ONE signature line.
+ *
+ * Separate from parseNote because a caller that wants one line should not have
+ * to reconstruct a whole note around it — the tlog adapter did, and a witness
+ * cosignature's timestamp was silently lost whenever any OTHER line in the
+ * reconstructed note failed to parse. Reading one line should fail for reasons
+ * about that line.
+ *
+ * @param {string} line
+ * @returns {NoteSignature}
+ */
+export function parseSignatureLine(line) {
+  {
     if (!line.startsWith(MARKER)) throw new NoteError(`not a signature line: ${JSON.stringify(line)}`);
     const body = line.slice(MARKER.length);
     const sp = body.lastIndexOf(' ');
@@ -189,9 +244,24 @@ export function parseNote(blob) {
     const b64 = body.slice(sp + 1);
     if (!/^[A-Za-z0-9+/]+={0,2}$/.test(b64)) throw new NoteError(`signature is not base64: ${b64}`);
     const raw = Buffer.from(b64, 'base64');
-    if (raw.length !== 4 + 64) throw new NoteError('a signature blob is a 4-byte key id and a 64-byte signature');
-    signatures.push({ name, keyId: raw.subarray(0, 4), signature: raw.subarray(4) });
+    // Two lengths, because a note carries both kinds of line: the log's own
+    // plain signature and a witness's timestamped cosignature. This used to
+    // accept only 68 and THREW on a real witness cosignature, which the
+    // Anchorer caught and reported as "does not verify" — a parse failure
+    // wearing a cryptographic verdict's clothes.
+    if (raw.length === PLAIN_LEN) {
+      return { name, keyId: raw.subarray(0, 4), signature: raw.subarray(4) };
+    }
+    if (raw.length === COSIG_V1_LEN) {
+      return {
+        name,
+        keyId: raw.subarray(0, 4),
+        timestamp: raw.readBigUInt64BE(4),
+        signature: raw.subarray(12),
+      };
+    }
+    throw new NoteError(
+      `a signature blob is ${PLAIN_LEN} bytes (key id and signature) or ${COSIG_V1_LEN} `
+      + `(key id, cosignature/v1 timestamp, signature), got ${raw.length}`);
   }
-  if (signatures.length === 0) throw new NoteError('a note carries at least one signature');
-  return { text, signatures };
 }
