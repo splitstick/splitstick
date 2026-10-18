@@ -1,3 +1,6 @@
+// Copyright 2026 prathish-ks
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * The effective policy, as a document the chain commits to — FR-23, SEC-12,
  * DES-09.

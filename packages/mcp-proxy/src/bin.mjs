@@ -1,4 +1,7 @@
 #!/usr/bin/env node
+// Copyright 2026 prathish-ks
+// SPDX-License-Identifier: Apache-2.0
+
 /** `npm run mcp-proxy -- --upstream <command|url> --out <store>` — FR-03, FR-04. */
 import { generateDevSigner } from '@splitstick/core/signer-file';
 import { runProxy } from './cli.mjs';

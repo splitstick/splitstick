@@ -1,3 +1,6 @@
+// Copyright 2026 prathish-ks
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * Walking a certificate chain to an anchor the READER supplied.
  *

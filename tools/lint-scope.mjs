@@ -17,7 +17,7 @@
 
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
-import { claimSurfaces, paragraphs, sentences } from './claim-text.mjs';
+import { claimSurfaces, paragraphs, sentences, SKIP } from './claim-text.mjs';
 import { GUARDS, TREE_GUARDS, violates } from './scope-guards.mjs';
 import { code } from './code-text.mjs';
 
@@ -112,7 +112,7 @@ function sourceFiles(dir) {
   /** @type {string[]} */
   const out = [];
   for (const name of readdirSync(dir)) {
-    if (['node_modules', '.git', 'out', 'coverage'].includes(name)) continue;
+    if (SKIP.has(name)) continue;
     const p = join(dir, name);
     if (statSync(p).isDirectory()) out.push(...sourceFiles(p));
     else if (name.endsWith('.mjs') || name.endsWith('.json') || name.endsWith('.yaml')) out.push(p);

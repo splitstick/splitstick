@@ -1,3 +1,6 @@
+// Copyright 2026 prathish-ks
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * `splitstick coverage` — FR-28, FR-40, DOC-10.
  *

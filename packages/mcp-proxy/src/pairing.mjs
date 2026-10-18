@@ -1,3 +1,6 @@
+// Copyright 2026 prathish-ks
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * Pairing MCP requests with their results — FR-03, FR-04, DES-14.
  *

@@ -1,3 +1,6 @@
+// Copyright 2026 prathish-ks
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * Building the configured witness set — FR-13, FR-48, SEC-04, SEC-25.
  *

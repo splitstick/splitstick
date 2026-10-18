@@ -1,3 +1,6 @@
+// Copyright 2026 prathish-ks
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * The Rekor transparency-log witness adapter — FR-14, FR-47.
  *

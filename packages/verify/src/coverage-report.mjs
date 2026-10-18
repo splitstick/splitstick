@@ -1,3 +1,6 @@
+// Copyright 2026 prathish-ks
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * Rendering the coverage report — FR-28, FR-40, DOC-10, SEC-11.
  *

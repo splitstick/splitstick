@@ -1,3 +1,6 @@
+// Copyright 2026 prathish-ks
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * `splitstick disclose` and `splitstick verify-disclosure` — FR-32, INT-03.
  *

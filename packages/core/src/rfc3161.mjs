@@ -1,3 +1,6 @@
+// Copyright 2026 prathish-ks
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * RFC 3161 TimeStampToken verification — FR-16, DES-20.
  *

@@ -1,3 +1,6 @@
+// Copyright 2026 prathish-ks
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * The epoch ratchet and its succession chain — FR-11, SEC-08, SEC-17, DES-06.
  *

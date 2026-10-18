@@ -1,4 +1,7 @@
 #!/usr/bin/env node
+// Copyright 2026 prathish-ks
+// SPDX-License-Identifier: Apache-2.0
+
 /** `npm run coverage -- <store> --from <date> --to <date>` — FR-28. */
 import { runCoverage } from './coverage-cli.mjs';
 

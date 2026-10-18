@@ -1,3 +1,6 @@
+// Copyright 2026 prathish-ks
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * Leaf and salt — DES-03, FR-09, SEC-13.
  *

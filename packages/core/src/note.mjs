@@ -1,3 +1,6 @@
+// Copyright 2026 prathish-ks
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * The signed note — DES-07's format, needed in M1 because DES-06 makes the note
  * bytes the signing subject.

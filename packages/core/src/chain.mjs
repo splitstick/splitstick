@@ -1,3 +1,6 @@
+// Copyright 2026 prathish-ks
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * Chain construction — DES-04, FR-08, SEC-06, SEC-07.
  *

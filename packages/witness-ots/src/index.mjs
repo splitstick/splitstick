@@ -1,3 +1,6 @@
+// Copyright 2026 prathish-ks
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * The OpenTimestamps witness adapter — FR-22, FR-48, FR-53, PRIV-01.
  *

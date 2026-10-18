@@ -1,3 +1,6 @@
+// Copyright 2026 prathish-ks
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * AWS KMS signer — FR-10, NFR-09, SEC-14.
  *

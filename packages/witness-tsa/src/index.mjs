@@ -1,3 +1,6 @@
+// Copyright 2026 prathish-ks
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * The RFC 3161 witness adapter — FR-16, FR-21, FR-48, PRIV-01, SEC-15.
  *
