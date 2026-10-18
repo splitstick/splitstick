@@ -51,3 +51,35 @@ every scope guard in `tools/scope-guards.mjs` reads it, as do the SEC-17 and
 LEG-12 rules in `tools/lint-claims.mjs`. Markup and authoring comments are
 stripped first; `aria-label` is read, because it is what a screen-reader user
 is given. `test/scope-guards.test.mjs` breaks it on purpose.
+
+## Repository metadata
+
+GitHub's description and topics are set in the repository settings, which no
+lint in this tree can reach. They are claims all the same — the description is
+the line that appears under the repository name in search results — so the
+exact text is kept here, where the claims audit reads it, and pasted from here
+rather than composed in the settings box.
+
+**Description** (one line):
+
+> A tamper-evident record of what AI agents actually did — including the actions that aren't there. Hash-chained, signed, independently countersigned, verifiable offline by anyone holding the bytes and a public key.
+
+**Topics**:
+
+```
+tamper-evident  transparency-log  merkle-tree  rfc6962  rfc8785
+rfc3161  checkpoint  witness  cosignature  ed25519
+timestamping  audit-trail  provenance  ai-agents  agent-accountability
+```
+
+Three topics were considered and dropped, and the reasons are the same ones the
+scope guards encode:
+
+| Dropped | Why |
+|---------|-----|
+| `eu-ai-act` | LEG-14: no surface claims EU AI Act conformity. A topic is a surface, and a regulation's name sitting beside a product name is read as a claim about it whether or not a sentence makes one. Conformity is assessed by a body. |
+| `append-only` | SCOPE-02: the data structure is append-only; the operator's disk is not. A topic cannot carry the precondition, and the premise of this project is that storage is the thing you cannot trust. |
+| `non-repudiation` | It names a legal conclusion this release does not reach. The records are tamper-evident, and what follows from that is for a court and not for a keyword. |
+
+*The regulation is named above only to explain a topic that is not used. Nothing
+here is a statement about what any statute requires, and it is not legal advice.*
