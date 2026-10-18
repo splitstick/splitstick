@@ -37,7 +37,7 @@
  * run. Deleting `src` from a package's `files` is caught here and nowhere else.
  */
 
-import { execFileSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, readdirSync, readFileSync, writeFileSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -45,19 +45,47 @@ import { join, resolve } from 'node:path';
 const ROOT = new URL('..', import.meta.url).pathname;
 const DIST = resolve(ROOT, process.argv[2] ?? 'dist');
 
-/** @param {string} cmd @param {string[]} args @param {{cwd?: string, allowFail?: boolean}} [o] */
+/**
+ * Run a command, keeping the EXIT STATUS separate from the output.
+ *
+ * It used to merge stdout and stderr into one string and discard the status
+ * when failure was tolerated, so a caller could only ask "did it print
+ * anything". A bin that crashed on startup printed a 465-byte stack trace and
+ * exited 1, and the bin check — whose entire purpose is catching a broken
+ * published executable — recorded it as working. Measured, not supposed:
+ * reproduced by throwing at the top of `cli.mjs`.
+ *
+ * @param {string} cmd @param {string[]} args
+ * @param {{cwd?: string, allowFail?: boolean}} [o]
+ * @returns {{ status: number, stdout: string, stderr: string }}
+ */
 function run(cmd, args, o = {}) {
-  try {
-    return execFileSync(cmd, args, {
-      cwd: o.cwd ?? ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'],
-      env: { ...process.env, npm_config_audit: 'false', npm_config_fund: 'false' },
-    });
-  } catch (e) {
-    if (o.allowFail) return String(/** @type {any} */ (e).stdout ?? '') + String(/** @type {any} */ (e).stderr ?? '');
-    const err = /** @type {any} */ (e);
-    console.error(`\n  ${cmd} ${args.join(' ')} failed\n${err.stdout ?? ''}${err.stderr ?? ''}`);
+  const opts = {
+    cwd: o.cwd ?? ROOT, encoding: /** @type {const} */ ('utf8'),
+    stdio: /** @type {const} */ (['ignore', 'pipe', 'pipe']),
+    env: { ...process.env, npm_config_audit: 'false', npm_config_fund: 'false' },
+  };
+  // spawnSync, not execFileSync. execFileSync RETURNS stdout and gives no
+  // access to stderr on success, so the first version of this hardcoded
+  // `stderr: ''` for a passing run -- and the stderr clause of the bin check
+  // could therefore never fire. Reproduced with process.emitWarning: 108 bytes
+  // on stderr when run directly, invisible to the check. The same shape of
+  // defect as the one it was written to catch, inside the fix for it.
+  const r = spawnSync(cmd, args, opts);
+  const out = {
+    status: typeof r.status === 'number' ? r.status : 1,
+    stdout: String(r.stdout ?? ''),
+    stderr: String(r.stderr ?? ''),
+  };
+  if (r.error) {
+    out.status = out.status || 1;
+    out.stderr = `${out.stderr}${r.error.message}`;
+  }
+  if (out.status !== 0 && !o.allowFail) {
+    console.error(`\n  ${cmd} ${args.join(' ')} failed (exit ${out.status})\n${out.stdout}${out.stderr}`);
     process.exit(1);
   }
+  return out;
 }
 
 // ── pack, unless tarballs are already there ─────────────────────────────────
@@ -75,7 +103,7 @@ const tarballs = readdirSync(DIST).filter(f => f.endsWith('.tgz')).sort();
 /** @type {Map<string, string>} */
 const byName = new Map();
 for (const t of tarballs) {
-  const manifest = run('tar', ['-xzOf', join(DIST, t), 'package/package.json']);
+  const manifest = run('tar', ['-xzOf', join(DIST, t), 'package/package.json']).stdout;
   const { name } = JSON.parse(manifest);
   byName.set(name, join(DIST, t));
 }
@@ -153,11 +181,12 @@ for (const m of expected) {
   for (const spec of specifiers(m)) {
     // A marker the error text cannot contain, so a failure can never be read
     // as a pass. `includes('ok')` was too loose to be trustworthy.
-    const out = run(process.execPath, [
+    const r = run(process.execPath, [
       '-e', `import(${JSON.stringify(spec)}).then(() => console.log('IMPORT-OK'), e => { console.error(e.message); process.exit(1); })`,
     ], { cwd: proj, allowFail: true });
-    if (!out.split('\n').some(l => l.trim() === 'IMPORT-OK')) {
-      failures.push(`import ${spec}: ${out.trim().split('\n')[0]}`);
+    // The status AND the marker. Either alone has been wrong here once.
+    if (r.status !== 0 || !r.stdout.split('\n').some(l => l.trim() === 'IMPORT-OK')) {
+      failures.push(`import ${spec}: exit ${r.status}, ${(r.stderr || r.stdout).trim().split('\n')[0]}`);
     } else console.log(`  import ${spec}`);
   }
 }
@@ -170,11 +199,31 @@ for (const m of expected) {
   for (const bin of Object.keys(m.bin ?? {})) {
     const p = join(proj, 'node_modules', '.bin', bin);
     if (!existsSync(p)) { failures.push(`bin ${bin} was not linked`); continue; }
-    // --help must print something and exit without a crash. An exit code is
-    // not enough: the defect this is for exited 0 and printed nothing.
-    const out = run(p, ['--help'], { cwd: proj, allowFail: true });
-    if (out.trim() === '') failures.push(`bin ${bin} printed nothing for --help`);
-    else console.log(`  bin ${bin} (${out.trim().split('\n')[0].slice(0, 56)})`);
+    // THE DOCUMENTED CONTRACT, not "it printed something". Every bin answers
+    // --help with exit 0, its usage on stdout, and nothing on stderr; that was
+    // measured for all four rather than assumed. Each clause catches a
+    // different real failure:
+    //
+    //   status 0      a bin that crashes on startup exits non-zero
+    //   stdout        usage is output, not a diagnostic
+    //   stderr empty  a stack trace or a deprecation goes here
+    //   names itself  a wrong bin linked, or a help text for something else
+    //
+    // The defect this check was first written for exited 0 and printed
+    // NOTHING; the one found next printed a stack trace and exited 1. Asking
+    // only about output passed the second, asking only about status passes
+    // the first.
+    const r = run(p, ['--help'], { cwd: proj, allowFail: true });
+    const first = r.stdout.trim().split('\n')[0] ?? '';
+    if (r.status !== 0) {
+      failures.push(`bin ${bin} --help exited ${r.status}: ${(r.stderr || r.stdout).trim().split('\n')[0]}`);
+    } else if (r.stdout.trim() === '') {
+      failures.push(`bin ${bin} --help printed nothing on stdout`);
+    } else if (r.stderr.trim() !== '') {
+      failures.push(`bin ${bin} --help wrote to stderr: ${r.stderr.trim().split('\n')[0]}`);
+    } else if (!first.includes(bin)) {
+      failures.push(`bin ${bin} --help does not name itself; it printed ${JSON.stringify(first.slice(0, 60))}`);
+    } else console.log(`  bin ${bin} (exit 0, ${first.slice(0, 48)})`);
   }
 }
 
