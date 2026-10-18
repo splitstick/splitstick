@@ -15,10 +15,11 @@ countersigned, and verifiable offline by anyone holding the bytes and a public k
 > what this release is putting up for review.
 >
 > Two things to know before you start. **One attack is deliberately left open:** an operator
-> who patches their own collector so that one action is never recorded at all. Nothing here
-> detects it, the attack suite runs it on every build and prints `NOT CLOSED`, and the
-> verifier tells every reader they are trusting the operator on that point. It is explained
-> in full further down.
+> who patches their own collector so that one action is never recorded at all. The patched
+> build needs to forge nothing — it reports the published digest by reporting it, because
+> nothing measures the process that does the reporting. The attack suite runs it on every
+> build and prints `NOT CLOSED`, and the verifier tells every reader they are trusting the
+> operator on that point. It is explained in full further down.
 >
 > And nobody outside this project has operated any of this yet, so the likely rough edges
 > are a witness configuration this author never tried and an onboarding step that works by
@@ -212,7 +213,7 @@ needs new cryptography. A notary you supply to yourself is not a notary.
 
 | | Attack | Why it stands |
 |---|---|---|
-| G2 | Patch the collector to suppress one action, keeping the cadence and the build digest | The heartbeats continue, the digest is the published one, the chain recomputes, and the action is simply absent. A self-reported digest is not remote attestation: the patched process controls what it reports. Coverage proves the heartbeat was continuous; it proves nothing about whether the process emitting that digest was the artifact the digest names. |
+| G2 | Patch the collector so that one action is never recorded. It goes on reporting the published build digest, which is a string it chooses | Nothing is forged and nothing has to be kept in place. The build digest is a value handed to the collector when it starts, so a patched one reports the published digest by passing the same string an honest one passes. The heartbeats continue, the chain recomputes, and the action is simply absent. Coverage proves the heartbeat was continuous; it proves nothing about whether the process emitting that digest was the artifact the digest names. |
 
 That limit is written into the requirements in three places, and remote attestation is
 ruled out as the fix: it would move the trust rather than remove it, onto a chip vendor and

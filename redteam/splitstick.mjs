@@ -117,7 +117,10 @@ async function buildTimed({ suppress = false } = {}) {
   const collector = new Collector({
     store, config: parseConfig('version: 1\nstore: ./s\nheartbeat_interval: 5s\n', root),
     signer, collector: COLLECTOR, origin: ORIGIN,
-    build: `sha256:${'7f'.repeat(32)}`,            // the published build digest
+    // The published build digest. It is a value the CALLER passes, and G2
+    // passes the same one: a patched collector has nothing to forge and
+    // nothing to keep, because nothing measures the process that reports it.
+    build: `sha256:${'7f'.repeat(32)}`,
     now: () => new Date(t),
   });
   for (let i = 0; i < 30; i += 1) {
@@ -474,8 +477,8 @@ const attacks = [
     build: () => buildTimed({ suppress: true }), detect: 'coverage',
     out_of_scope: 'SEC-11, FR-25 and DOC-10 (remote attestation, rejected by SCOPE-12)',
     closes: 'NOTHING in this release — SEC-11, FR-25 and DOC-10 state the limit, and this attack is what they are about',
-    name: 'patch the collector to suppress one action, keeping the cadence and the build digest',
-    note: 'The declared limit, run as an attack so that it is a measured result rather than a sentence in a document. The heartbeats continue at their interval, the build digest is the published one, the chain recomputes, and the suppressed action is simply absent — a correct-looking, complete-looking record. A self-reported digest is not remote attestation: the patched process controls what it reports. Coverage proves the heartbeat was continuous and reports a digest; it proves nothing about whether the process emitting that digest was the artifact the digest names.',
+    name: 'patch the collector to suppress one action; it reports the published build digest, which is a string it chooses',
+    note: 'The declared limit, run as an attack so that it is a measured result rather than a sentence in a document. Nothing here is forged and nothing is preserved: the build digest is a constructor argument, so a patched collector reports the published digest by passing the same string an honest one passes. The heartbeats continue at their interval, the chain recomputes, and the suppressed action is simply absent — a correct-looking, complete-looking record. A self-reported digest is not remote attestation. Coverage proves the heartbeat was continuous and reports a digest; it proves nothing about whether the process emitting that digest was the artifact the digest names.',
     async apply() {
       // NOTHING TO APPLY, and that is the finding.
       //
