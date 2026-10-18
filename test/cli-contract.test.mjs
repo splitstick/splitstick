@@ -18,7 +18,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdtempSync, writeFileSync, readFileSync, rmSync, existsSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, readFileSync, rmSync, existsSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -32,6 +32,7 @@ import { parseEnvelope, addCountersignature } from '@splitstick/core/envelope';
 
 const REPO = dirname(dirname(fileURLToPath(import.meta.url)));
 const README = join(REPO, 'README.md');
+const PACKAGES = join(REPO, 'packages');
 const BIN = join(REPO, 'node_modules', '.bin');
 const ORIGIN = 'splitstick.dev/host-1';
 
@@ -259,5 +260,44 @@ test('FR-49: the documented library snippet is the real API', async () => {
     assert.equal(r.code, 0, `the documented snippet does not run:\n${r.err}`);
   } finally {
     rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+/**
+ * FR-49's other half: a package name the README gets wrong.
+ *
+ * The contract test above runs the documented COMMANDS, which is where a
+ * renamed flag shows up. It cannot see a mistyped package — `npm install
+ * @splitstick/colllect-oma` and `import … from '@splitstick/core/stores'` are
+ * both a 404 for a reader and both invisible to a test that executes the
+ * verifier. The install block is deliberately outside the section that test
+ * reads, because running a network install in a fixture would prove nothing
+ * and take a minute, so nothing covered it at all.
+ *
+ * Every `@splitstick/...` specifier on the page therefore has to name a real
+ * package, and every subpath has to be one the package's exports map actually
+ * resolves. Checked against the manifests, which is what npm will publish.
+ */
+test('FR-49: every @splitstick specifier in the README names a package that exists', () => {
+  const md = readFileSync(README, 'utf8');
+  const names = new Set(readdirSync(PACKAGES)
+    .filter(d => existsSync(join(PACKAGES, d, 'package.json')))
+    .map(d => String(JSON.parse(readFileSync(join(PACKAGES, d, 'package.json'), 'utf8')).name)));
+  assert.ok(names.size > 0, 'no package manifests were read, so nothing was checked');
+
+  const cited = [...md.matchAll(/@splitstick\/[a-z0-9-]+(?:\/[a-z0-9-]+)?/g)].map(m => m[0]);
+  assert.ok(cited.length > 0, 'the README cites no package at all, which FR-49 cannot be right about');
+
+  for (const spec of new Set(cited)) {
+    const [, pkg, sub] = /^(@splitstick\/[a-z0-9-]+)(?:\/(.+))?$/.exec(spec) ?? [];
+    assert.ok(names.has(String(pkg)), `README cites ${spec}, and no package is named ${pkg}`);
+    if (sub === undefined) continue;
+    const man = JSON.parse(readFileSync(
+      join(PACKAGES, String(pkg).replace('@splitstick/', ''), 'package.json'), 'utf8'));
+    const exports = man.exports ?? {};
+    const resolved = exports[`./${sub}`] ?? (exports['./*'] ?? '').replace('*', sub);
+    assert.ok(resolved !== '', `README imports ${spec}, which the exports map does not resolve`);
+    assert.ok(existsSync(join(PACKAGES, String(pkg).replace('@splitstick/', ''), resolved)),
+      `README imports ${spec}, which resolves to ${resolved} and that file is absent`);
   }
 });

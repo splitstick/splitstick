@@ -1,4 +1,4 @@
-![Splitstick — a tamper-evident record of what AI agents actually did, including the actions that aren't there.](brand/social.png)
+<img src="brand/social.png" width="620" alt="Splitstick — a tamper-evident record of what AI agents actually did, including the actions that aren't there.">
 
 # Splitstick
 
@@ -68,6 +68,24 @@ system, and no vendor can assert it on your behalf. See [Not legal advice](#not-
 | [`packages/`](packages/) | Shipped code, 11 packages: [`core`](packages/core) (record, canonical encoding, leaf, chain, tree, signer, store), [`collect-oma`](packages/collect-oma) (OMA journal and approval store), [`verify`](packages/verify) (the verifier and its CLI), [`mcp-proxy`](packages/mcp-proxy) (capture at the MCP seam), [`witnesses`](packages/witnesses) (the witness-set builder), and one package per witness type — [`witness-tlog`](packages/witness-tlog) (transparency-dev/witness), [`witness-tsa`](packages/witness-tsa) (RFC 3161), [`witness-ots`](packages/witness-ots), [`witness-rekor`](packages/witness-rekor), [`witness-self`](packages/witness-self) (the operator-hosted stateful witness), plus [`signer-aws-kms`](packages/signer-aws-kms) |
 | [`spec/vectors/`](spec/vectors/) | Conformance vectors — [RFC 8785](spec/vectors/jcs.json), [RFC 6962](spec/vectors/merkle.json), [C2SP note key ids](spec/vectors/note.json) |
 | [`bench/`](bench/) | The performance budgets, measured and committed, with [committed results](bench/results/) the release notes cite by field |
+
+## Install
+
+```bash
+npm install @splitstick/core @splitstick/collect-oma                               # record
+npm install @splitstick/verify                                                     # verify, coverage, disclose
+npm install @splitstick/witnesses @splitstick/witness-tsa @splitstick/witness-ots  # anchor
+```
+
+These are the published specifiers, and so are the imports in the next section. `npm run
+smoke` packs every tarball on each release, installs them into a temporary project with no
+workspace and no link back to this repository, and exercises 52 entry points and all four
+executables — so what a consumer resolves is what is tested, rather than what the workspace
+happens to resolve.
+
+The registry copies appear when the release workflow runs. Until `v0.9.0` is tagged, work
+from a clone: `npm install` at the root, then the npm scripts at the end of the next
+section.
 
 ## Getting started
 
