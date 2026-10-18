@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 640" width="1280" height="640">
+  <!--
+    GitHub's social preview, 1280x640. It is shown as a card in Slack, on
+    LinkedIn and in search results, often at a third of this size, so there are
+    three lines of text and nothing else: the name, what it is, and the one
+    sentence that distinguishes it.
+
+    Content stays inside a 1120x520 safe area because the crop varies by
+    platform.
+  -->
+  <rect width="1280" height="640" fill="#0d1117"/>
+
+  <!-- the mark, at 186px, same geometry as brand/mark.svg -->
+  <g transform="translate(103,230) scale(2.9)" fill="#e6edf3">
+    <rect x="23" y="6"  width="9" height="13"/><rect x="33" y="6"  width="9" height="13"/>
+    <rect x="23" y="23" width="9" height="13"/><rect x="33" y="23" width="9" height="13"/>
+    <rect x="23" y="40" width="9" height="18"/><rect x="33" y="40" width="9" height="18"/>
+  </g>
+
+  <g font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif">
+    <text x="290" y="252" fill="#e6edf3" font-size="88" font-weight="700"
+          letter-spacing="-2">Splitstick</text>
+    <text x="290" y="310" fill="#7d8590" font-size="31" font-weight="400">
+      A tamper-evident record of what AI agents actually did.
+    </text>
+    <text x="290" y="386" fill="#58a6ff" font-size="31" font-weight="600">
+      Including the actions that aren&#8217;t there.
+    </text>
+    <text x="290" y="452" fill="#6e7681" font-size="24" font-weight="400">
+      Chained · signed · independently countersigned · verifiable offline
+    </text>
+  </g>
+</svg>

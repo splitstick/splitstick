@@ -39,7 +39,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { GUARDS, TREE_GUARDS, violates } from '../tools/scope-guards.mjs';
-import { sentences } from '../tools/claim-text.mjs';
+import { claimSurfaces, NEGATION, sentences, svgText } from '../tools/claim-text.mjs';
+import { readdirSync } from 'node:fs';
+import { join } from 'node:path';
+
+const ROOT = new URL('..', import.meta.url).pathname;
 
 /**
  * One case per guard: text that must fire, and honest text that must not.
@@ -422,4 +426,51 @@ test('M7: the splitter keeps a table row whole and a wrapped sentence whole', ()
   const bullets = '- Splitstick produces records whose integrity can be certified.\n'
     + '- The presumption attaches only to a qualified authority.';
   assert.equal(sentences(bullets).length, 2, 'two list items were merged into one');
+});
+
+test('M8: the brand assets are a claim surface, and the guards reach them', () => {
+  // The argument for this test is the argument for the surface list itself: a
+  // sentence set in 88px on a social card is met by more readers than any
+  // document in the repository, and a guard that reads only markdown passes
+  // while the overclaim sits where somebody will actually meet it.
+  //
+  // So this breaks it on purpose. An overclaim written into an SVG `<text>`
+  // must fire a guard — if this stops holding, the brand assets have silently
+  // left the audit.
+  const card = '<svg xmlns="http://www.w3.org/2000/svg">\n'
+    + '  <!-- SCOPE-02: never call it a tamper-proof log. -->\n'
+    + '  <title>Splitstick</title>\n'
+    + '  <text x="10" y="20" fill="#fff">Your audit log is permanent and unchangeable.</text>\n'
+    + '</svg>\n';
+
+  const prose = svgText(card);
+  const fired = sentences(prose).flatMap(s => GUARDS.filter(g => violates(g, s)).map(g => g.id));
+  assert.ok(fired.length > 0, 'an overclaim set in a brand asset fired no guard');
+
+  // The authoring comment names the forbidden phrase in order to forbid it.
+  // Reading it as a claim is the mistake `tools/code-text.mjs` exists for, and
+  // it would make the asset impossible to document.
+  assert.doesNotMatch(prose, /tamper-proof/i, 'an authoring comment was read as prose');
+  // Markup is not prose.
+  assert.doesNotMatch(prose, /<|fill=|xmlns/, 'markup survived into the audited text');
+  // What a reader sees does survive, including the title.
+  assert.match(prose, /Splitstick/);
+
+  // The text a screen-reader user is given is a claim surface too.
+  assert.match(
+    svgText('<svg aria-label="An unbeaten tamper-proof ledger"><title>x</title></svg>'),
+    /unbeaten/,
+    'aria-label was not read',
+  );
+
+  // An entity is not a negation until it is decoded: `aren&#8217;t` reached the
+  // guards as a sentence with nothing denied in it.
+  assert.match(svgText('<svg><text>These aren&#8217;t guarantees.</text></svg>'), /aren’t/);
+  assert.ok(NEGATION.test('these aren’t guarantees'), 'a typographic contraction read as no denial');
+
+  // And the wiring, not just the helper: the shipped assets are on the list.
+  const labels = claimSurfaces(ROOT).map(s => s.label);
+  for (const name of readdirSync(join(ROOT, 'brand')).filter(n => n.endsWith('.svg'))) {
+    assert.ok(labels.includes(`brand/${name}`), `brand/${name} is not an audited surface`);
+  }
 });
