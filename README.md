@@ -181,12 +181,38 @@ cannot exist without a promise.
 
 Two tamper suites run on every change. The first alters a genuine OMA journal and asks
 OMA's own `verifyRun()`; the second builds a real Splitstick store from that same journal
-and asks `splitstick verify`.
+and asks `splitstick verify`. Same journal, same alterations, two verifiers — which makes
+the comparison a measurement instead of a sales argument.
 
-This is their output. Each letter is one way of altering the evidence — `D` is truncating
-the tail, `G2` is the patched collector — and each `gate` is the bar one attack class has to
-clear before the milestone that owns it can close. [`redteam/`](redteam/) defines every one
-of them in code, and prints this table itself.
+| The alteration | OMA's `verifyRun()` | Here, from files alone | Here, with a witness |
+|---|---|---|---|
+| Edit the tool result — EUR 2,000,000 to EUR 25 | passes | `LEAF_MISMATCH` | detected |
+| Naive edit of a model-visible block | **caught** | `LEAF_MISMATCH` | detected |
+| Consistent edit, content hash recomputed | passes | `TREE_MISMATCH` | detected |
+| …and re-sign the checkpoint over the rewrite | — | undetected | `WITNESS_MISMATCH` |
+| Truncate the tail | passes | `SIZE_REGRESSED` | detected |
+| …and delete the checkpoints that contradict it | — | undetected | `TRUNCATED_BELOW_DISCLOSED` |
+| Duplicate a sequence number | **caught** | `SEQ_BROKEN` | detected |
+| Erase the tool call entirely | passes | `SEQ_BROKEN`, `CHAIN_BROKEN` | detected |
+| …and renumber both counters, repair, re-sign | — | undetected | `WITNESS_MISMATCH` |
+
+Four of the six pass OMA's verifier unchanged. In the form OMA fails on, all four are
+detected here from the files alone — no witness, no network, no account.
+
+The rows beginning "…and" are the thorough version of the attack above them: the one an
+operator who had read our design documents would actually run. Each of those is undetected
+from files alone and needs a countersignature from somebody else. That is the argument for
+a witness, stated as a result instead of asserted.
+
+None of this is a defect in OMA. Its journal is a run record and its verifier checks that
+the run is internally consistent, which is what it says it does: the project documents
+where it stops in a section called "What it does not prove", and that section is why this
+one exists.
+
+This is the second suite's output. Each letter is one way of altering the evidence — `D` is
+truncating the tail, `G2` is the patched collector — and each `gate` is the bar one attack
+class has to clear before the milestone that owns it can close. [`redteam/`](redteam/)
+defines every one of them in code, and prints this table itself.
 
 ```
 13 of 17 tampers are detected from files alone.
@@ -214,6 +240,27 @@ needs new cryptography. A notary you supply to yourself is not a notary.
 | | Attack | Why it stands |
 |---|---|---|
 | G2 | Patch the collector so that one action is never recorded. It goes on reporting the published build digest, which is a string it chooses | Nothing is forged and nothing has to be kept in place. The build digest is a value handed to the collector when it starts, so a patched one reports the published digest by passing the same string an honest one passes. The heartbeats continue, the chain recomputes, and the action is simply absent. Coverage proves the heartbeat was continuous; it proves nothing about whether the process emitting that digest was the artifact the digest names. |
+
+**Does G2 put this back where OMA is?** It is the right question and the answer is no,
+because the two are different in when the operator has to decide — though the end state can
+look identical, with no record of the transfer anywhere.
+
+OMA's four failures are after the fact. The action was recorded, the run finished, the
+operator saw how it went, and only then did they edit or remove it. No code changes, no
+preparation, no commitment in advance. Every one of those four is detected here.
+
+G2 is at capture time. For the action to be missing from the record, the patched collector
+has to have been running when the action happened — which means building it, deploying it
+and committing to the deception before knowing whether it would be needed. An operator who
+wants to erase something after the fact is back in the row above: that is the erase-and-
+renumber attack, and a countersignature contradicts it.
+
+So what changes is the cost. An opportunistic edit, taken after a bad outcome, with nothing
+staked in advance, becomes a premeditated compromise of the build that has to be in place
+beforehand. That is a real narrowing and it is not a fix, which is why the verifier says so
+on every run without being asked, and why the suite runs the attack rather than describing
+it. The structural answer is a receipt the counterparty signs — the operator cannot suppress
+what they do not hold — and that is 2.0 work, not a claim this release makes.
 
 That limit is written into the requirements in three places, and remote attestation is
 ruled out as the fix: it would move the trust rather than remove it, onto a chip vendor and
