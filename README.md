@@ -5,9 +5,11 @@
 A tamper-evident record of what AI agents actually did: chained, signed, independently
 countersigned, and verifiable offline by anyone holding the bytes and a public key.
 
-> **Status: 0.9.0.** All nine milestones are built and all seven attack-class gates are
-> closed against our own verifier. The 1.0 requirement backlog is complete — 193 of 193 —
-> and the release gate would pass a `v1.0.0` tag.
+> **Status: 0.9.0 — a public technical preview.** All nine milestones are built and all
+> seven attack-class categories are implemented and exercised against our own verifier,
+> with **one attack deliberately left unclosed: G2**, which no mechanism in this release
+> detects and which the suite reports as `NOT CLOSED` on every run. The 1.0 requirement
+> backlog is complete — 193 of 193 — and the release gate would pass a `v1.0.0` tag.
 >
 > It is 0.9.0 anyway, because every requirement has evidence behind it and none of that
 > evidence has yet met an operator who did not write it. The things a `1.0.0` would imply
@@ -16,6 +18,12 @@ countersigned, and verifiable offline by anyone holding the bytes and a public k
 > qualified timestamp, no witness operated by somebody else, performance figures from one
 > laptop. The verifier says the same in its own output, including a `trusting` list naming
 > every assumption it could not discharge.
+>
+> What a preview means in practice: the packages install from their own tarballs
+> into a project with no workspace (`npm run smoke` proves it on every release),
+> and nobody outside this project has yet operated it. If you are the first, the
+> things most likely to bite are a witness configuration this author never tried
+> and an onboarding step that only works because of something in this repository.
 
 ## Why this exists
 
@@ -135,6 +143,7 @@ npm run test:unit # the unit and conformance suites
 npm run typecheck # JSDoc types over plain ESM, no build step
 npm run bench     # the NFR-01 and NFR-02 budgets
 npm run backlog   # revalidate requirements, regenerate the matrix and plan
+npm run smoke     # pack the tarballs, install them into a clean project, run every bin
 ```
 
 Node 20 or later. No build step: plain `.mjs` with JSDoc types checked by `tsc --checkJs`.

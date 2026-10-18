@@ -33,7 +33,8 @@
     "bench:verify:quick": "node bench/verify.mjs --events 5000 --repeat 1",
     "conformance": "node tools/conformance.mjs",
     "mcp-proxy": "node packages/mcp-proxy/src/bin.mjs",
-    "claims": "node tools/lint-scope.mjs && node tools/lint-figures.mjs && node tools/lint-assurance.mjs && node tools/lint-bounty.mjs && node tools/lint-docs.mjs"
+    "claims": "node tools/lint-scope.mjs && node tools/lint-figures.mjs && node tools/lint-assurance.mjs && node tools/lint-bounty.mjs && node tools/lint-docs.mjs",
+    "smoke": "node tools/smoke-install.mjs dist"
   },
   "dependencies": {
     "@open-multi-agent/core": "1.21.1",
