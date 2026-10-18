@@ -140,13 +140,57 @@ function validateTsaAuth(id, auth) {
       `witness ${id}: auth.env looks like a credential rather than a variable name. It must be the `
       + 'NAME of an environment variable holding the secret.');
   }
-  if (auth.scheme === 'header' && (typeof auth.header !== 'string' || auth.header === '')) {
-    throw new WitnessConfigError(`witness ${id}: auth.scheme "header" needs auth.header`);
+  if (auth.scheme === 'header') {
+    if (typeof auth.header !== 'string' || auth.header === '') {
+      throw new WitnessConfigError(`witness ${id}: auth.scheme "header" needs auth.header`);
+    }
+    if (/[^A-Za-z0-9-]/.test(auth.header)) {
+      throw new WitnessConfigError(
+        `witness ${id}: auth.header ${JSON.stringify(auth.header)} is not a valid header token. A `
+        + 'newline in a header name is request splitting.');
+    }
+    // Checked HERE as well as in the adapter. The adapter is the last line and
+    // must refuse regardless of how it was constructed, but an operator should
+    // learn about a bad config when the witness set is built -- not on the
+    // first checkpoint, after the request has already been malformed once.
+    const RESERVED = ['content-type', 'accept', 'authorization', 'host', 'content-length'];
+    if (RESERVED.includes(auth.header.toLowerCase())) {
+      throw new WitnessConfigError(
+        `witness ${id}: auth.header may not be ${JSON.stringify(auth.header)}. The auth headers are `
+        + 'applied over the request\'s own, so this one would replace part of the RFC 3161 request '
+        + 'with the credential — the submission would stop being a timestamp query and the secret '
+        + `would go into a header the TSA logs. Reserved: ${RESERVED.join(', ')}. For `
+        + 'authorization use scheme bearer or basic.');
+    }
   }
   return {
     scheme: auth.scheme, env: auth.env,
     ...(auth.header ? { header: auth.header } : {}),
   };
+}
+
+/**
+ * A credential may not be configured against a cleartext endpoint — LEG-13.
+ *
+ * The adapter refuses this at construction too, and that is the line that
+ * actually protects the secret. This exists so the refusal names the WITNESS
+ * and arrives while the operator is reading their config, rather than as an
+ * adapter error from inside the anchoring loop.
+ *
+ * @param {string} id @param {string|undefined} url
+ */
+function refuseCleartextCredential(id, url) {
+  if (typeof url !== 'string') return;
+  let host = null;
+  try { host = new URL(url).hostname.replace(/^\[|\]$/g, ''); } catch { host = null; }
+  const loopback = host === 'localhost' || host === '127.0.0.1' || host === '::1';
+  if (!url.startsWith('https://') && !loopback) {
+    throw new WitnessConfigError(
+      `witness ${id} is configured with a credential and a plain-HTTP endpoint (${url}). A bearer `
+      + 'token or basic credential on the wire in the clear is readable by anything on the path, '
+      + 'and basic auth is base64 — an encoding, not encryption. Use https://, or a loopback '
+      + 'address for a local test server.');
+  }
 }
 
 /** The types this builder knows. An unknown type is refused, never ignored. */
@@ -211,7 +255,8 @@ export function witnessesFromConfig(config, opts = {}) {
           // malformed should fail when the witness set is built, not minutes
           // later on a checkpoint, and not silently as an anonymous request
           // that the TSA then rejects.
-          ...(w.auth ? { auth: validateTsaAuth(w.id, w.auth) } : {}),
+          ...(w.auth ? (refuseCleartextCredential(w.id, w.url),
+            { auth: validateTsaAuth(w.id, w.auth) }) : {}),
           ...(opts.fetchImpl ? { fetchImpl: opts.fetchImpl } : {}),
         })));
         break;

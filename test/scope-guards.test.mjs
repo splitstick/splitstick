@@ -46,6 +46,28 @@ import { sentences } from '../tools/claim-text.mjs';
  * Keyed by the guard's id exactly as the guard declares it.
  */
 const CASES = {
+  'LEG-13, LEG-20': {
+    // LEG-13 closed on the integration SURFACE and the live anchor moved to
+    // LEG-20 in the commercial release. Nobody here has bought a qualified TSA
+    // account, so a complete 1.0 requirement count must not read as one having
+    // been demonstrated. These are the sentences that would make the split
+    // dishonest rather than merely a scope decision.
+    fires: [
+      'Splitstick delivers eIDAS qualified timestamping out of the box.',
+      'All 193 requirements complete, qualified timestamping demonstrated.',
+      'We have anchored against a qualified trust service in production.',
+      'Qualified timestamps: achieved, with the Art. 41 presumption attaching.',
+    ],
+    passes: [
+      'If you need the Art. 41 presumption, configure a qualified timestamp authority in your '
+        + 'own witness set.',
+      'No live qualified timestamp has been obtained by this project; that half is LEG-20.',
+      'A qualified TSA can be configured by the operator, including the credential a commercial '
+        + 'one requires.',
+      'Where a batch is anchored to a qualified timestamp authority, the eIDAS Art. 41 '
+        + 'presumption attaches.',
+    ],
+  },
   'SCOPE-02, SEC-16': {
     fires: [
       'Splitstick gives you a tamper-proof record of every agent action.',
@@ -181,6 +203,14 @@ const CASES = {
  * fitted to them. All twenty were missed by the first version of this audit.
  */
 const REALISTIC = [
+  // A complete 1.0 requirement count must not read as a live qualified anchor.
+  // LEG-13 closed on the integration surface; nobody here has bought an
+  // account. These are the sentences that would make the split dishonest.
+  ['LEG-13, LEG-20', 'Splitstick delivers eIDAS qualified timestamping out of the box.'],
+  ['LEG-13, LEG-20', 'All 193 requirements complete, qualified timestamping demonstrated.'],
+  ['LEG-13, LEG-20', 'We have anchored against a qualified trust service in production.'],
+  ['LEG-13, LEG-20', 'Qualified timestamps: achieved, with the Art. 41 presumption attaching.'],
+  ['LEG-13, LEG-20', 'Splitstick provides qualified timestamping for regulated workloads.'],
   ['SCOPE-02, SEC-16', 'Your agent logs become permanent and unchangeable.'],
   ['SCOPE-02, SEC-16', 'Nobody can rewrite your audit history — not even you.'],
   ['SCOPE-02, SEC-16', 'Splitstick makes your agent records forgery-resistant and final.'],
@@ -247,6 +277,29 @@ test('M7: the tree guards catch a feature in the shape it would arrive in', () =
  * finding was not a missing pattern, it was the exemption mechanism, and that
  * is the kind of thing that comes back.
  */
+/**
+ * The honest forms of the same subject, which must pass. A guard that fired on
+ * the release note it exists to protect would be removed within a week.
+ */
+const QUALIFIED_OK = [
+  'If you need the Art. 41 presumption, configure a qualified timestamp authority in your own '
+    + 'witness set.',
+  'No live qualified timestamp has been obtained by this project; that half is LEG-20.',
+  'A qualified TSA can be configured by the operator, including the credential a commercial one '
+    + 'requires.',
+  'Where a batch is anchored to a qualified timestamp authority, the eIDAS Art. 41 presumption '
+    + 'attaches.',
+  'Splitstick is not a qualified trust service provider and never claims the presumption through '
+    + 'a witness it operates.',
+];
+
+test('LEG-13: the honest phrasings of qualified status do not fire', () => {
+  for (const text of QUALIFIED_OK) {
+    const hits = GUARDS.filter(g => violates(g, text));
+    assert.deepEqual(hits.map(g => g.id), [], `fired on: ${text}`);
+  }
+});
+
 const EVASIONS = [
   'Splitstick is not slow, and your logs are permanent and unchangeable.',
   'No setup required: be audit-ready for the EU AI Act in an afternoon.',

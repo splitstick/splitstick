@@ -22,6 +22,13 @@ expect of a product in this category are consequences of it:
 - **No accreditation.** The eIDAS Art. 41 presumption attaches to qualified providers; we are not
   one. If you need it, configure a qualified timestamp authority in your own witness set — the
   architecture is pluggable precisely so you can, and you get the presumption without us.
+- **No live qualified timestamp has been obtained by this project.** LEG-13 is closed on the
+  integration SURFACE: an operator can configure a qualified TSA, including the credential a
+  commercial one requires, and the verifier reports the presumption from the operator's
+  declaration. Nobody here has bought an account and anchored against one. That half is LEG-20,
+  in the commercial release. So a complete 1.0 requirement count is **not** evidence that
+  qualified timestamping has been demonstrated in a live deployment — the first operator to
+  configure a real qualified TSA will be the first to exercise it end to end.
 - **No certification mark.** The conformance suite is open and implementations report their own
   passing runs. There is no badge to grant and no mechanism to enforce one.
 - **Recognition, not cash.** A novel tamper class earns attribution, credit in the suite and a

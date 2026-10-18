@@ -23,12 +23,26 @@
  */
 
 import { timeStampRequest, verifyTimeStampToken, parseTimeStampToken } from '@splitstick/core/rfc3161';
-import { readOnly, children, readInteger, TAG } from '@splitstick/core/der';
+import { readOnly, children, readInteger, readOid, TAG } from '@splitstick/core/der';
 
 export class TsaError extends Error {
   /** @param {string} m */
   constructor(m) { super(m); this.name = 'TsaError'; }
 }
+
+/**
+ * Header names a custom auth header may not take.
+ *
+ * The auth headers are spread last over the request's own, so a custom header
+ * named `content-type` replaced the RFC 3161 content type with the credential
+ * -- the request stopped being a timestamp query, and the secret went into a
+ * header the TSA logs. `authorization` is reserved too: an operator reaching
+ * for it wants the bearer or basic scheme, and two mechanisms writing one
+ * header is a silent precedence question nobody should have to reason about.
+ */
+const RESERVED_HEADERS = new Set([
+  'content-type', 'accept', 'authorization', 'host', 'content-length',
+]);
 
 const CONTENT_TYPE_REQ = 'application/timestamp-query';
 const CONTENT_TYPE_RES = 'application/timestamp-reply';
@@ -72,8 +86,82 @@ const STATUS = Object.freeze({
  * mismatch travels with the proof and a reader is told rather than left to
  * assume.
  */
-const QC_COMPLIANCE = Buffer.from([0x04, 0x00, 0x8e, 0x46, 0x01, 0x01]);
-const QC_QTST = Buffer.from([0x04, 0x00, 0x8e, 0x46, 0x01, 0x06, 0x03]);
+const OID_QC_STATEMENTS = '1.3.6.1.5.5.7.1.3';
+const OID_QC_COMPLIANCE = '0.4.0.1862.1.1';
+const OID_QC_TYPE = '0.4.0.1862.1.6';
+const OID_QC_TYPE_QTST = '0.4.0.1862.1.6.3';
+
+/**
+ * The statement OIDs in a certificate's QCStatements extension, parsed
+ * STRUCTURALLY — RFC 3739 §3.2.6, ETSI EN 319 412-5.
+ *
+ * The first version of this searched the certificate's raw DER for the OID
+ * byte sequences. A review was right that this establishes only that the bytes
+ * occur SOMEWHERE in the encoding: a serial number, a subject string or an
+ * unrelated extension could contain them, and the result was being reported in
+ * a field about qualified status. Finding a needle in a certificate is not the
+ * same as the certificate making a statement.
+ *
+ * So the extension is located by OID among the extensions, its OCTET STRING is
+ * parsed as `QCStatements ::= SEQUENCE OF QCStatement`, and the statementId of
+ * each is read. The qcType statement (0.4.0.1862.1.6) carries its own SEQUENCE
+ * OF OID, so `esi4-qtstStatement-1` (…1.6.3) is read from inside it rather
+ * than matched as a loose string.
+ *
+ * Returns null when the certificate cannot be walked — unknown, which is not
+ * the same as absent, and the caller reports it as unknown.
+ *
+ * @param {Buffer} der the signer certificate
+ * @returns {{ compliance: boolean, qtst: boolean }|null}
+ */
+export function qcStatements(der) {
+  try {
+    const cert = readOnly(der, TAG.SEQUENCE);
+    const tbs = children(cert.value)[0];
+    if (!tbs || tbs.tag !== TAG.SEQUENCE) return null;
+    // Extensions are [3] EXPLICIT, the last optional field of TBSCertificate.
+    const extsHolder = children(tbs.value).find(c => c.tag === 0xa3);
+    if (!extsHolder) return { compliance: false, qtst: false };
+    const exts = children(extsHolder.value)[0];
+    if (!exts || exts.tag !== TAG.SEQUENCE) return null;
+
+    for (const ext of children(exts.value)) {
+      if (ext.tag !== TAG.SEQUENCE) continue;
+      const parts = children(ext.value);
+      const idTlv = parts[0];
+      if (!idTlv || idTlv.tag !== TAG.OID || readOid(idTlv.value) !== OID_QC_STATEMENTS) continue;
+      // `critical` is optional, so extnValue is the last OCTET STRING.
+      const extnValue = parts.filter(x => x.tag === TAG.OCTET_STRING).at(-1);
+      if (!extnValue) return null;
+
+      const statements = readOnly(extnValue.value, TAG.SEQUENCE);
+      let compliance = false;
+      let qtst = false;
+      for (const st of children(statements.value)) {
+        if (st.tag !== TAG.SEQUENCE) continue;
+        const inner = children(st.value);
+        const sid = inner[0];
+        if (!sid || sid.tag !== TAG.OID) continue;
+        const oid = readOid(sid.value);
+        if (oid === OID_QC_COMPLIANCE) compliance = true;
+        if (oid === OID_QC_TYPE) {
+          // statementInfo for qcType is SEQUENCE OF OBJECT IDENTIFIER.
+          const info = inner[1];
+          if (info && info.tag === TAG.SEQUENCE) {
+            for (const t of children(info.value)) {
+              if (t.tag === TAG.OID && readOid(t.value) === OID_QC_TYPE_QTST) qtst = true;
+            }
+          }
+        }
+      }
+      return { compliance, qtst };
+    }
+    // No QCStatements extension at all: a definite absence, not an unknown.
+    return { compliance: false, qtst: false };
+  } catch {
+    return null;
+  }
+}
 
 /**
  * The credential a commercial TSA needs, resolved from the ENVIRONMENT.
@@ -139,6 +227,18 @@ function authHeaders(auth, id) {
         throw new TsaError(
           `${id}'s auth header name ${JSON.stringify(auth.header)} is not a valid header token`);
       }
+      if (RESERVED_HEADERS.has(auth.header.toLowerCase())) {
+        // The auth headers are spread LAST, so a custom header named
+        // content-type replaced the RFC 3161 content type with the credential:
+        // the request stopped being a timestamp query at all, and the secret
+        // went into a header the TSA logs. Rejected rather than reordered,
+        // because an operator who asked for a header named `authorization`
+        // wants the bearer or basic scheme and should be told so.
+        throw new TsaError(
+          `${id}'s auth header may not be ${JSON.stringify(auth.header)}: it is part of the RFC `
+          + `3161 request or is the authorization header. Reserved: `
+          + `${[...RESERVED_HEADERS].join(', ')}. For authorization use scheme bearer or basic.`);
+      }
       return { [auth.header.toLowerCase()]: value };
     }
     default:
@@ -171,6 +271,31 @@ export function tsaWitness({
   if (typeof id !== 'string' || !id) throw new TsaError('a witness needs an id');
   if (typeof url !== 'string' || !/^https?:\/\//.test(url)) {
     throw new TsaError(`${JSON.stringify(url)} is not an http(s) TSA endpoint`);
+  }
+  // A CREDENTIAL MAY NOT TRAVEL OVER CLEARTEXT.
+  //
+  // An anonymous TSA request carries nothing worth protecting -- a version, an
+  // algorithm identifier and 32 bytes of hash -- so plain HTTP has always been
+  // allowed for it. A credential is different in kind, and basic auth in
+  // particular is base64, which is an encoding and not encryption. An operator
+  // mistyping http:// for a commercial endpoint would have put a bearer token
+  // on the wire in the clear, and this adapter would have sent it.
+  //
+  // Refused at CONSTRUCTION, before any network call, so a misconfiguration
+  // cannot leak once and then be fixed. Loopback is the one exception, for a
+  // local test server, and it is narrow by hostname rather than by a substring
+  // match on the URL -- "http://127.0.0.1.evil.example/" must not qualify.
+  if (auth) {
+    let host = null;
+    try { host = new URL(url).hostname.replace(/^\[|\]$/g, ''); } catch { host = null; }
+    const loopback = host === 'localhost' || host === '127.0.0.1' || host === '::1';
+    if (!url.startsWith('https://') && !loopback) {
+      throw new TsaError(
+        `${id} is configured with a credential and a plain-HTTP endpoint (${url}). Refused before `
+        + 'any request: a bearer token or basic credential on the wire in the clear is readable by '
+        + 'anything on the path, and basic auth is base64, which is an encoding and not '
+        + 'encryption. Use https://, or a loopback address for a local test server.');
+    }
   }
   const doFetch = fetchImpl ?? globalThis.fetch;
 
@@ -214,6 +339,12 @@ export function tsaWitness({
       try {
         res = await doFetch(url, {
           method: 'POST',
+          // A REDIRECT MUST NOT CARRY THE CREDENTIAL ONWARD. fetch strips
+          // `authorization` across origins but not a custom header, so an
+          // endpoint that redirects could collect an API key. With a credential
+          // present a redirect is an error the operator should see and fix in
+          // the URL, not something to follow quietly.
+          ...(auth ? { redirect: /** @type {const} */ ('error') } : {}),
           headers: {
             'content-type': CONTENT_TYPE_REQ,
             accept: CONTENT_TYPE_RES,
@@ -248,18 +379,27 @@ export function tsaWitness({
       // of qualified statements is unremarkable and noting it would be noise.
       let qualifiedStatements;
       if (qualified) {
+        /** @type {{ compliance: boolean, qtst: boolean }|null} */
+        let found = null;
         try {
-          const cert = Buffer.from(parseTimeStampToken(token).signerCertificate.raw);
-          qualifiedStatements = {
-            qc_compliance: cert.includes(QC_COMPLIANCE),
-            qc_qtst: cert.includes(QC_QTST),
-          };
+          found = qcStatements(Buffer.from(parseTimeStampToken(token).signerCertificate.raw));
         } catch {
-          // The token already parsed once above; if it does not parse here the
-          // absence is reported as unknown rather than as false, because false
-          // would assert something about a certificate nobody could read.
-          qualifiedStatements = { qc_compliance: null, qc_qtst: null };
+          found = null;
         }
+        // null is UNKNOWN, not false: a certificate this adapter could not walk
+        // has not been shown to lack the statements.
+        qualifiedStatements = {
+          qc_compliance: found === null ? null : found.compliance,
+          qc_qtst: found === null ? null : found.qtst,
+          // Named so the field cannot be read as a verification of qualified
+          // STATUS. It is what the certificate asserts about itself, parsed
+          // structurally; qualified status lives on an EU Trusted List, which
+          // NFR-05 forbids this code from consulting.
+          basis: found === null
+            ? 'the signer certificate could not be parsed for QCStatements'
+            : 'QCStatements parsed from the signer certificate (RFC 3739 3.2.6); '
+              + 'self-asserted, NOT checked against an EU Trusted List',
+        };
         if (qualifiedStatements.qc_qtst === false) {
           // Loud, and not fatal. See QC_QTST's comment: the operator's
           // declaration about a legal status is not overruled by this
