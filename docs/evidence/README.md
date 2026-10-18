@@ -96,6 +96,8 @@ permanently.
 
 **Not legal advice.** eIDAS is named above only to say which engineering
 property is relevant to it and where that stops — specifically, that nothing in
-this evidence establishes the Article 41 presumption. Nothing here is legal
+this evidence establishes the Article 41 presumption, which attaches only
+through a **qualified** trust service and never through a witness this project
+operates (LEG-12). Nothing here is legal
 advice, no conclusion about your obligations is offered, and nothing here
 certifies anything about your deployment. Consult your counsel.
