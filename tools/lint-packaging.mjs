@@ -106,6 +106,51 @@ for (const dir of names) {
   }
 }
 
+
+/**
+ * Every workspace package carries ONE version, and every @splitstick dependency
+ * pin names it.
+ *
+ * Found while preparing 0.9.0, which nothing here would have caught. Ten
+ * packages pin `@splitstick/core` and `witnesses` pins five siblings, all at
+ * an exact version. Bumping `version` without bumping the pins publishes a set
+ * whose members ask the registry for a version that is not being published --
+ * every `npm install` fails at resolution, and the suite passes throughout
+ * because a workspace resolves its siblings by link and never consults a pin.
+ *
+ * The same family as the two defects this file was written for: findable by
+ * reading the manifests against each other, not by running anything.
+ */
+const versions = new Map([...manifests].map(([dir, m]) => [m.name, { dir, version: m.version }]));
+const distinct = new Set([...versions.values()].map(v => v.version));
+if (distinct.size > 1) {
+  findings.push(
+    `the workspace packages carry ${distinct.size} different versions (${[...distinct].sort().join(', ')}). `
+    + 'They are published together from one tag, so one tag would name a version that some of '
+    + 'them do not carry — which the release gate refuses, and rightly.');
+}
+for (const [dir, m] of manifests) {
+  for (const section of ['dependencies', 'peerDependencies']) {
+    for (const [dep, range] of Object.entries(/** @type {any} */ (m)[section] ?? {})) {
+      if (!dep.startsWith('@splitstick/')) continue;
+      const target = versions.get(dep);
+      if (!target) continue;                 // not a workspace package; nothing to match
+      if (typeof range !== 'string') continue;
+      // An exact pin must be the version actually being published. A range
+      // (^, ~, *, workspace:) is the publisher's deliberate choice and is left
+      // alone -- this checks a pin that has silently gone stale, which is the
+      // failure a version bump produces.
+      if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(range)) continue;
+      if (range !== target.version) {
+        findings.push(
+          `packages/${dir} pins ${dep} at ${range} in ${section}, and ${dep} is ${target.version}. `
+          + 'A pin that names a version nobody publishes fails at install for everybody, while '
+          + 'resolving here because the workspace link is present.');
+      }
+    }
+  }
+}
+
 if (findings.length > 0) {
   console.error('\nPACKAGING LINT FAILED\n');
   for (const f of findings) console.error(`  - ${f}\n`);

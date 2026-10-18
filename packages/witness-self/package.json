@@ -1,6 +1,6 @@
 {
   "name": "@splitstick/witness-self",
-  "version": "0.1.0",
+  "version": "0.9.0",
   "type": "module",
   "license": "Apache-2.0",
   "description": "Operator-hosted stateful witness: enrolment, consistency-proof sequence enforcement, retained roots, signed tree heads.",
@@ -20,6 +20,6 @@
     "node": ">=20"
   },
   "dependencies": {
-    "@splitstick/core": "0.1.0"
+    "@splitstick/core": "0.9.0"
   }
 }

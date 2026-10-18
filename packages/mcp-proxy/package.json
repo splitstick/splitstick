@@ -1,6 +1,6 @@
 {
   "name": "@splitstick/mcp-proxy",
-  "version": "0.1.0",
+  "version": "0.9.0",
   "type": "module",
   "license": "Apache-2.0",
   "description": "Splitstick collector for MCP: stdio and HTTP interception (FR-03, FR-04).",
@@ -20,7 +20,7 @@
     "node": ">=20"
   },
   "dependencies": {
-    "@splitstick/core": "0.1.0"
+    "@splitstick/core": "0.9.0"
   },
   "bin": {
     "splitstick-mcp-proxy": "./src/bin.mjs"

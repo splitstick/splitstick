@@ -1,6 +1,6 @@
 {
   "name": "@splitstick/verify",
-  "version": "0.1.0",
+  "version": "0.9.0",
   "type": "module",
   "license": "Apache-2.0",
   "description": "Splitstick verifier: offline verification of a chain and its countersignatures.",
@@ -20,7 +20,7 @@
     "node": ">=20"
   },
   "dependencies": {
-    "@splitstick/core": "0.1.0"
+    "@splitstick/core": "0.9.0"
   },
   "bin": {
     "splitstick-verify": "./src/cli.mjs",
