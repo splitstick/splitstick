@@ -1,6 +1,11 @@
 {
   "name": "@splitstick/witness-self",
   "version": "0.9.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/splitstick/splitstick.git",
+    "directory": "packages/witness-self"
+  },
   "type": "module",
   "license": "Apache-2.0",
   "description": "Operator-hosted stateful witness: enrolment, consistency-proof sequence enforcement, retained roots, signed tree heads.",

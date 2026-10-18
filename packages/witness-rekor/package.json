@@ -1,6 +1,11 @@
 {
   "name": "@splitstick/witness-rekor",
   "version": "0.9.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/splitstick/splitstick.git",
+    "directory": "packages/witness-rekor"
+  },
   "type": "module",
   "license": "Apache-2.0",
   "description": "Rekor transparency-log witness adapter. Opt-in: a 10-second cadence against a public instance is not acceptable use.",

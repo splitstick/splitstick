@@ -1,6 +1,11 @@
 {
   "name": "@splitstick/witnesses",
   "version": "0.9.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/splitstick/splitstick.git",
+    "directory": "packages/witnesses"
+  },
   "type": "module",
   "license": "Apache-2.0",
   "description": "Builds the configured witness set from a Splitstick config. The shipped default is a TSA plus an OpenTimestamps roll-up.",

@@ -1,6 +1,11 @@
 {
   "name": "@splitstick/signer-aws-kms",
   "version": "0.9.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/splitstick/splitstick.git",
+    "directory": "packages/signer-aws-kms"
+  },
   "type": "module",
   "license": "Apache-2.0",
   "description": "AWS KMS signer for Splitstick: non-exportable Ed25519 custody behind the core signer seam.",
