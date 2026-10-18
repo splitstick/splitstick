@@ -66,7 +66,7 @@ system, and no vendor can assert it on your behalf. See [Not legal advice](#not-
 | [`requirements/`](requirements/) | [Backlog](requirements/MATRIX.md), [delivery plan](requirements/PLAN.md) and [design traceability](requirements/DESIGN.md) — gated by attack class. Counts live in the generated matrices, never in prose. |
 | [`packages/`](packages/) | Shipped code, 11 packages: [`core`](packages/core) (record, canonical encoding, leaf, chain, tree, signer, store), [`collect-oma`](packages/collect-oma) (OMA journal and approval store), [`verify`](packages/verify) (the verifier and its CLI), [`mcp-proxy`](packages/mcp-proxy) (capture at the MCP seam), [`witnesses`](packages/witnesses) (the witness-set builder), and one package per witness type — [`witness-tlog`](packages/witness-tlog) (transparency-dev/witness), [`witness-tsa`](packages/witness-tsa) (RFC 3161), [`witness-ots`](packages/witness-ots), [`witness-rekor`](packages/witness-rekor), [`witness-self`](packages/witness-self) (the operator-hosted stateful witness), plus [`signer-aws-kms`](packages/signer-aws-kms) |
 | [`spec/vectors/`](spec/vectors/) | Conformance vectors — [RFC 8785](spec/vectors/jcs.json), [RFC 6962](spec/vectors/merkle.json), [C2SP note key ids](spec/vectors/note.json) |
-| [`bench/`](bench/) | The performance budgets, measured rather than asserted, with [committed results](bench/results/) the release notes cite by field |
+| [`bench/`](bench/) | The performance budgets, measured and committed, with [committed results](bench/results/) the release notes cite by field |
 
 ## Getting started
 
@@ -171,8 +171,8 @@ and `NFR-01`: every sentence in the docs that makes a promise is traceable to a 
 requirement, which is traceable to a test. [`requirements/MATRIX.md`](requirements/MATRIX.md)
 resolves all of them. This page is written so you never need to look one up.
 
-The backlog is data. `requirements/*.json` is the source of truth; `MATRIX.md`
-and `PLAN.md` are generated. The validator rejects any requirement missing a release-notes
+The backlog is data. `requirements/*.json` is the source of truth; `MATRIX.md` and
+`PLAN.md` are generated. The validator rejects any requirement missing a release-notes
 section behind it, and any release-1.0 requirement missing a milestone — a requirement
 cannot exist without a promise.
 
@@ -219,9 +219,9 @@ ruled out as the fix: it would move the trust rather than remove it, onto a chip
 a build pipeline, and this project will not ask you to trust something it cannot show you.
 Running G2 as an attack turns the limit into a measured result instead of a paragraph — and
 it is why the verifier's `trusting` list says, unconditionally, that you are trusting the
-operator for the **completeness** of what was captured. No witness discharges
-that: a witness attests to the sequence and time of what it was *shown*, never to an action
-the collector never observed.
+operator for the **completeness** of what was captured. No witness discharges that: a
+witness attests to the sequence and time of what it was *shown*, never to an action the
+collector never observed.
 
 This is also why a clean 1.0 store verifies **INCONCLUSIVE** rather than `ok`. Four of the
 verifier's ten checks cannot be answered without a countersignature, and `ok` means every
@@ -243,21 +243,21 @@ percentile without attribution invites widening the budget instead of finding th
 Every figure below is committed as a result file the release notes cite by field, and a
 claims guard refuses any published number that differs from the measured one.
 
-- **Append overhead — met.** 1e6 events × 3 repeats: p95 **0.76 ms** and p99
-  **2.61 ms** against budgets of 1 ms and 3 ms, taken on the **worst repeat** and
-  never the median, because an auditor runs it once. The p99 stretch target of 1 ms is
-  missed, which the requirement states is a pass. Where the time goes, attributed: an
-  open-descriptor write has a p99 of 0.04 ms while creating one file is p99 2.30 ms, so the
-  append path creates none — measuring this rewrote the storage layout three times. GC is
-  measured directly, with the recorder verified against a deliberate allocation storm in
-  the same run. Three host conditions are disclosed with the figure and the result
-  reports `unconditional: false`: this is a laptop, and it says so.
+- **Append overhead — met.** 1e6 events × 3 repeats: p95 **0.76 ms** and p99 **2.61 ms**
+  against budgets of 1 ms and 3 ms, taken on the **worst repeat** and never the median,
+  because an auditor runs it once. The p99 stretch target of 1 ms is missed, which the
+  requirement states is a pass. Where the time goes, attributed: an open-descriptor write
+  has a p99 of 0.04 ms while creating one file is p99 2.30 ms, so the append path creates
+  none — measuring this rewrote the storage layout three times. GC is measured directly,
+  with the recorder verified against a deliberate allocation storm in the same run. Three
+  host conditions are disclosed with the figure and the result reports
+  `unconditional: false`: this is a laptop, and it says so.
 - **Added agent run latency — met against a real provider.** 24 interleaved pairs
   through OMA's real orchestrator to a real model, 96 live calls: added latency is at most
   **0.29%** of the measured 2,725 ms run, against a 2% budget. The denominator is measured;
-  an earlier version modelled it at 400 ms per call, and that assumption is
-  why the requirement was reverted once. The figure is the interval's **upper bound**; the
-  point estimate sits below this host's noise floor and would read as a speedup.
+  an earlier version modelled it at 400 ms per call, and that assumption is why the
+  requirement was reverted once. The figure is the interval's **upper bound**; the point
+  estimate sits below this host's noise floor and would read as a speedup.
 - **Offline verification — met.** 100,000 events verified in **14.2 s** worst-run
   against a 30 s budget. The budget was revised from 2 s against a measurement: 1.2 s of it
   is the floor reading the journals imposes and JCS canonicalisation is ~1.9 s more, so the
@@ -276,8 +276,8 @@ this, and it is the part to read if you are evaluating.
 - **Qualified timestamping: configured, never run.** An operator can configure a qualified
   TSA, credential included, and the verifier reports the eIDAS presumption from their
   declaration about it — never from anything this project operates. Nobody here has bought
-  an account and anchored against one.
-  A complete requirement count says nothing about a live deployment.
+  an account and anchored against one. A complete requirement count says nothing about a
+  live deployment.
 - **Every witness in the evidence is one we run.** The practice statement is anchored
   against a real transparency-dev/witness instance — an independent *implementation*,
   operated by us. That buys mechanism parity and a cosignature our own witness code never
@@ -296,9 +296,9 @@ no certification mark, and findings earn recognition instead of cash. The
 The software is unaffected. Everything in this release is buildable and runnable at zero
 cost. The shipped default anchors to a free RFC 3161 timestamp authority for time plus an
 OpenTimestamps roll-up on a slow interval — **not** to a public transparency log. A
-transparency log such as Rekor stays opt-in on purpose: a 10-second anchoring cadence against a
-public good is not acceptable use, and choosing a witness without reading its terms is how a
-project becomes a bad citizen of somebody else's infrastructure.
+transparency log such as Rekor stays opt-in on purpose: a 10-second anchoring cadence
+against a public good is not acceptable use, and choosing a witness without reading its
+terms is how a project becomes a bad citizen of somebody else's infrastructure.
 
 ## Credit
 
@@ -329,11 +329,12 @@ work actually contributes, is in [NOTICE](NOTICE); the short version:
 
 **Not legal advice.** eIDAS is named above only to say where an engineering property stops:
 the Article 41 presumption attaches through a **qualified** trust service and never through a
-witness this project operates, and nothing in this release establishes it. Statutes are cited here, in
-[Why this exists](#why-this-exists) and in [the threat model](docs/threat-model.md) for
-orientation — to say which engineering property is relevant to which regime, and where it
-ends. Nothing here is legal advice, no conclusion about your obligations is offered, and
-nothing certifies anything about your deployment. Consult your counsel.
+witness this project operates, and nothing in this release establishes it. Statutes are
+cited here, in [Why this exists](#why-this-exists) and in
+[the threat model](docs/threat-model.md) for orientation — to say which engineering
+property is relevant to which regime, and where it ends. Nothing here is legal advice, no
+conclusion about your obligations is offered, and nothing certifies anything about your
+deployment. Consult your counsel.
 
 ## Licence
 
