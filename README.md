@@ -1,3 +1,5 @@
+![Splitstick — a tamper-evident record of what AI agents actually did, including the actions that aren't there.](brand/social.png)
+
 # Splitstick
 
 **Agent actions you can prove — including the ones that aren't there.**
@@ -5,25 +7,18 @@
 A tamper-evident record of what AI agents actually did: chained, signed, independently
 countersigned, and verifiable offline by anyone holding the bytes and a public key.
 
-> **Status: 0.9.0 — a public technical preview.** All nine milestones are built and all
-> seven attack-class categories are implemented and exercised against our own verifier,
-> with **one attack deliberately left unclosed: G2**, which no mechanism in this release
-> detects and which the suite reports as `NOT CLOSED` on every run. The 1.0 requirement
-> backlog is complete — 193 of 193 — and the release gate would pass a `v1.0.0` tag.
+> **Status: 0.9.0 — open for technical review.**
 >
-> It is 0.9.0 anyway, because every requirement has evidence behind it and none of that
-> evidence has yet met an operator who did not write it. The things a `1.0.0` would imply
-> and this release has not earned are listed in
-> [the 0.9.0 notes](docs/splitstick-0.9.0-release-notes.md), which lead with them: no live
-> qualified timestamp, no witness operated by somebody else, performance figures from one
-> laptop. The verifier says the same in its own output, including a `trusting` list naming
-> every assumption it could not discharge.
+> The 1.0 backlog is complete, 193 of 193, and the release gate would pass a `v1.0.0`
+> tag. It ships as 0.9.0 because so far the only person who has read the evidence is the
+> one who produced it. The design, the verifier, the threat model and the attack suite are
+> what this release is putting up for review.
 >
-> What a preview means in practice: the packages install from their own tarballs
-> into a project with no workspace (`npm run smoke` proves it on every release),
-> and nobody outside this project has yet operated it. If you are the first, the
-> things most likely to bite are a witness configuration this author never tried
-> and an onboarding step that only works because of something in this repository.
+> Two things to know before you start. One attack is deliberately left open — **G2**, which
+> the suite reports as `NOT CLOSED` on every run. And nobody outside this project has
+> operated any of it yet, so the likely rough edges are a witness configuration this author
+> never tried and an onboarding step that works by accident of this repository.
+> [The 0.9.0 notes](docs/splitstick-0.9.0-release-notes.md) open with the rest.
 
 ## Why this exists
 
@@ -31,7 +26,7 @@ Agent runtimes ship run journals and verifiers. They catch corrupted logs, mis-s
 resumes and buggy context rewrites — real problems. What they cannot catch is the operator,
 who holds the only key and writes the only copy.
 
-We measured that rather than asserting it. Against a genuine run record from a widely used
+We measured that instead of asserting it. Against a genuine run record from a widely used
 runtime, with one EUR 2,000,000 transfer in it, most of our alterations passed the runtime's
 own verifier — including changing the amount to EUR 25 and deleting the transfer entirely.
 
@@ -39,12 +34,29 @@ own verifier — including changing the amount to EUR 25 and deleting the transf
 each milestone flips an attack class from `undetected` to `detected` against *our* verifier,
 and the suite exits non-zero whenever an observation changes in either direction.
 
+### There is a date on it
+
+The EU AI Act requires a high-risk AI system to allow the automatic recording of events over
+its lifetime — Article 12, record-keeping. The Digital Omnibus on AI, Regulation (EU)
+2026/1744, in force since 27 July 2026, moved that duty to **2 December 2027** for the
+standalone high-risk systems in Annex III, and to 2 August 2028 for AI built into products
+already regulated under Annex I — a little over a year from this 0.9.0 release.
+
+The kind of record Article 12 asks for is tamper-evident: altering it afterwards leaves a
+trace somebody else can find. That is a property of how a record is made and held, which
+makes it an engineering problem, and engineering problems with dates on them are worth
+starting early.
+
+Splitstick produces records of that kind. Whether you conform is a separate question and
+this project has no part in answering it — conformity is assessed by a body, against a
+system, and no vendor can assert it on your behalf. See [Not legal advice](#not-legal-advice).
+
 ## Map
 
 | Path | What |
 |---|---|
 | [`redteam/`](redteam/) | The tamper suite. Reproducible, runs offline, no API key. |
-| [`docs/`](docs/) | [0.9.0 release notes](docs/splitstick-0.9.0-release-notes.md) — **start here**, it leads with what is not established · [1.0 notes](docs/splitstick-1.0-release-notes.md) — the full claim set and the figures table · [threat model](docs/threat-model.md) · [self-hosted witness](docs/self-hosted-witness.md) — OPS-03, the deployment guide · [witness outages](docs/witness-outages.md) · [restore drill](docs/witness-restore-drill.md) · [evidence](docs/evidence/) — committed results a claim can be checked against |
+| [`docs/`](docs/) | [0.9.0 release notes](docs/splitstick-0.9.0-release-notes.md) — **start here**, it opens with the limits · [1.0 notes](docs/splitstick-1.0-release-notes.md) — the full claim set and the figures table · [threat model](docs/threat-model.md) · [self-hosted witness](docs/self-hosted-witness.md) — OPS-03, the deployment guide · [witness outages](docs/witness-outages.md) · [restore drill](docs/witness-restore-drill.md) · [evidence](docs/evidence/) — committed results a claim can be checked against |
 | [`design/`](design/) | One spec per design element — [index and traceability](requirements/DESIGN.md) |
 | [`requirements/`](requirements/) | [Backlog](requirements/MATRIX.md), [delivery plan](requirements/PLAN.md) and [design traceability](requirements/DESIGN.md) — gated by attack class. Counts live in the generated matrices, never in prose. |
 | [`packages/`](packages/) | Shipped code, 11 packages: [`core`](packages/core) (record, canonical encoding, leaf, chain, tree, signer, store), [`collect-oma`](packages/collect-oma) (OMA journal and approval store), [`verify`](packages/verify) (the verifier and its CLI), [`mcp-proxy`](packages/mcp-proxy) (capture at the MCP seam), [`witnesses`](packages/witnesses) (the witness-set builder), and one package per witness type — [`witness-tlog`](packages/witness-tlog) (transparency-dev/witness), [`witness-tsa`](packages/witness-tsa) (RFC 3161), [`witness-ots`](packages/witness-ots), [`witness-rekor`](packages/witness-rekor), [`witness-self`](packages/witness-self) (the operator-hosted stateful witness), plus [`signer-aws-kms`](packages/signer-aws-kms) |
@@ -55,7 +67,7 @@ and the suite exits non-zero whenever an observation changes in either direction
 
 Five entry points. Everything below is executed verbatim by the CLI contract test
 (`test/cli-contract.test.mjs`), so a flag that is renamed, dropped or invented here is a
-failing test rather than a manual that lies.
+failing test instead of a manual that lies.
 
 **Record.** `collect-oma` is a library, not a command: it is the journal and approval-store
 backend you hand to `@open-multi-agent/core` (tested against 1.21.x). Every action the agent
@@ -78,8 +90,8 @@ const collector = new Collector({
 const journal = new SplitstickRunJournal({ collector });
 ```
 
-For an agent you do not control the source of, sit in front of its MCP server instead and
-record the tool calls as they cross the wire:
+For a third-party agent, sit in front of its MCP server instead and record the tool calls
+as they cross the wire:
 
 ```bash
 splitstick-mcp-proxy --upstream "node ./my-mcp-server.mjs" --out ./evidence
@@ -102,12 +114,12 @@ because a coverage number without one is a claim about nothing.
 splitstick-coverage ./evidence --from 2026-10-01 --to 2026-10-31 --collector host-1 --policy ./policy.json
 ```
 
-**Disclose.** One event, and nothing else — not the run, not the neighbouring records. The
+**Disclose.** One event, and nothing around it: not the run, not the neighbouring records. The
 pack carries the inclusion proof and the signed root, so the recipient learns that this
 event is in the tree without learning what else is. This needs a checkpoint some witness
 has countersigned: an inclusion proof against a root only you signed establishes that you
-are consistent with your own arithmetic, so FR-33 refuses to build the pack rather than
-hand it over with a caveat somebody has to notice.
+are consistent with your own arithmetic, so FR-33 refuses to build the pack at all,
+instead of handing it over with a caveat somebody has to notice.
 
 ```bash
 splitstick-disclose ./evidence --event 3 --collector host-1 --out ./disclosure.json
@@ -119,7 +131,7 @@ The recipient verifies it with no store, no network and no credential:
 splitstick-disclose --verify ./disclosure.json --key "$SPLITSTICK_KEY" --policy ./policy.json
 ```
 
-Working from a clone rather than an install, each command is also an npm script:
+Working from a clone, each command is also an npm script:
 `npm run verify -- ./evidence --collector host-1`, and likewise `coverage`, `disclose` and
 `mcp-proxy`.
 
@@ -149,10 +161,10 @@ npm run smoke     # pack the tarballs, install them into a clean project, run ev
 Node 20 or later. No build step: plain `.mjs` with JSDoc types checked by `tsc --checkJs`.
 One runtime dependency in `core` (`yaml`, pinned exactly) and none in the verifier.
 
-The backlog is data, not prose. `requirements/*.json` is the source of truth; `MATRIX.md`
-and `PLAN.md` are generated. The validator rejects any requirement without a release-notes
-section behind it and any release-1.0 requirement not assigned to a milestone — a
-requirement cannot exist without a promise.
+The backlog is data. `requirements/*.json` is the source of truth; `MATRIX.md`
+and `PLAN.md` are generated. The validator rejects any requirement missing a release-notes
+section behind it, and any release-1.0 requirement missing a milestone — a requirement
+cannot exist without a promise.
 
 ## What is closed, and what still stands
 
@@ -181,15 +193,15 @@ file-only reader misses — re-signing rewritten history, truncating the tail, e
 record and renumbering — are closed by a second party and by nothing else. None of them
 needs new cryptography. A notary you supply to yourself is not a notary.
 
-**One attack is not closed by anything in this release, and is in the suite on purpose:**
+**One attack stands, and it is in the suite on purpose:**
 
 | | Attack | Why it stands |
 |---|---|---|
 | G2 | Patch the collector to suppress one action, keeping the cadence and the build digest | The heartbeats continue, the digest is the published one, the chain recomputes, and the action is simply absent. A self-reported digest is not remote attestation: the patched process controls what it reports. Coverage proves the heartbeat was continuous; it proves nothing about whether the process emitting that digest was the artifact the digest names. |
 
 SEC-11, FR-25 and DOC-10 state that limit, and SCOPE-12 rejects remote attestation as the
-fix. G2 is run as an attack so the limit is a measured result rather than a sentence in a
-document — and it is why the verifier's `trusting` list says, unconditionally, that you are
+fix. G2 runs as an attack, which turns the limit into a measured result instead of a paragraph —
+and it is why the verifier's `trusting` list says, unconditionally, that you are
 trusting the operator for the **completeness** of what was captured. No witness discharges
 that: a witness attests to the sequence and time of what it was *shown*, never to an action
 the collector never observed.
@@ -212,21 +224,21 @@ trusting    the cryptographic primitives (SHA-256, Ed25519)
 `npm run bench` prints the budgets with the filesystem's own numbers beside them, because a
 percentile without attribution invites widening the budget instead of finding the cause.
 Every figure below is committed as a result file the release notes cite by field, and a
-claims guard refuses a published number that is not the measured one.
+claims guard refuses any published number that differs from the measured one.
 
 - **NFR-01, append overhead — met.** 1e6 events × 3 repeats: p95 **0.76 ms** and p99
-  **2.61 ms** against budgets of 1 ms and 3 ms, taken on the **worst repeat** rather than
-  the median, because an auditor runs it once. The p99 stretch target of 1 ms is not met,
-  which the requirement states is a pass. Attribution rather than correlation: an
+  **2.61 ms** against budgets of 1 ms and 3 ms, taken on the **worst repeat** and
+  never the median, because an auditor runs it once. The p99 stretch target of 1 ms is not met,
+  which the requirement states is a pass. Where the time goes, attributed: an
   open-descriptor write has a p99 of 0.04 ms while creating one file is p99 2.30 ms, so the
   append path creates none — measuring this rewrote the storage layout three times. GC is
-  measured, not inferred, with the recorder verified against a deliberate allocation storm
-  in the same run. Three host conditions are disclosed with the figure and the result
+  measured directly, with the recorder verified against a deliberate allocation storm in
+  the same run. Three host conditions are disclosed with the figure and the result
   reports `unconditional: false`: this is a laptop, and it says so.
 - **NFR-02, added agent run latency — met against a real provider.** 24 interleaved pairs
   through OMA's real orchestrator to a real model, 96 live calls: added latency is at most
-  **0.29%** of the measured 2,725 ms run, against a 2% budget. The denominator is measured,
-  not assumed — an earlier version modelled it at 400 ms per call, and that assumption is
+  **0.29%** of the measured 2,725 ms run, against a 2% budget. The denominator is measured;
+  an earlier version modelled it at 400 ms per call, and that assumption is
   why the requirement was reverted once. The figure is the interval's **upper bound**; the
   point estimate sits below this host's noise floor and would read as a speedup.
 - **NFR-04, offline verification — met.** 100,000 events verified in **14.2 s** worst-run
@@ -235,24 +247,24 @@ claims guard refuses a published number that is not the measured one.
   original figure was unreachable. Verification is offline and one-shot, and the revision is
   recorded in the requirement with the number that prompted it.
 
-Two of those three budgets were revised off the back of measurement rather than reported as
-missed, and both revisions carry the figure that forced them. A third thing was retracted
-outright: a claim that overhead grows with run duration, which a better instrument showed
-was noise.
+Measurement revised two of those three budgets instead of reporting them as missed, and
+both revisions carry the figure that forced them. A third claim was retracted outright —
+that overhead grows with run duration — once a better instrument showed it was noise.
 
-## What is not proven
+## Where the evidence stops
 
 [`docs/splitstick-0.9.0-release-notes.md`](docs/splitstick-0.9.0-release-notes.md) leads with
-this, and it is the part to read if you are evaluating rather than browsing.
+this, and it is the part to read if you are evaluating.
 
-- **No live qualified timestamp.** An operator can configure a qualified TSA, credential
-  included, and the verifier reports the eIDAS presumption from their declaration about it.
-  Nobody here has bought an account and anchored against one. A complete requirement count
-  is not evidence that qualified timestamping has been demonstrated in a live deployment.
-- **No witness this project does not operate.** The practice statement is anchored against a
-  real transparency-dev/witness instance — an independent *implementation*, which we run.
-  That is mechanism parity and a cosignature our own witness code did not produce; it is not
-  independent custody.
+- **Qualified timestamping: configured, never run.** An operator can configure a qualified
+  TSA, credential included, and the verifier reports the eIDAS presumption from their
+  declaration about it — never from anything this project operates. Nobody here has bought
+  an account and anchored against one.
+  A complete requirement count says nothing about a live deployment.
+- **Every witness in the evidence is one we run.** The practice statement is anchored
+  against a real transparency-dev/witness instance — an independent *implementation*,
+  operated by us. That buys mechanism parity and a cosignature our own witness code never
+  produced. Independent custody is a different thing, and this release lacks it.
 - **Interoperability against one other implementation.** The tlog adapter talks to
   transparency-dev's Go witness, and that cost four defects to establish. It is one external
   reading of one document, not a conformance programme.
@@ -260,9 +272,9 @@ this, and it is the part to read if you are evaluating rather than browsing.
 
 ## Resourcing
 
-Unfunded: one person's time, no budget. No hosted witness, no accreditation, no certification
-mark, and recognition rather than cash for findings — all stated in the
-[release notes](docs/splitstick-1.0-release-notes.md) rather than left to be inferred.
+Unfunded: one person's time and no budget. There is no hosted witness, no accreditation and
+no certification mark, and findings earn recognition instead of cash. The
+[release notes](docs/splitstick-1.0-release-notes.md) say all of this outright.
 
 The software is unaffected. Everything in this release is buildable and runnable at zero
 cost. The shipped default anchors to a free RFC 3161 timestamp authority for time plus an
@@ -278,10 +290,10 @@ work actually contributes, is in [NOTICE](NOTICE); the short version:
 
 - **[open-multi-agent](https://github.com/open-multi-agent/open-multi-agent)** built the run-journal
   primitive and then documented exactly where it stopped, in a section titled "What it does not
-  prove." Projects that oversell do not write that section.
+  prove." Projects that oversell skip that section.
 - **[C2SP](https://c2sp.org)** designed the signed-note, `tlog-checkpoint` and `tlog-witness`
-  formats this project adopts rather than reinvents — which is what lets somebody else implement
-  a witness without asking us anything.
+  formats this project adopts wholesale — which is what lets somebody else implement a witness
+  without asking us anything.
 - **[Sigstore](https://www.sigstore.dev)** and **[Rekor](https://github.com/sigstore/rekor)**
   demonstrated that public, independently-witnessed append-only logs are operable at scale, and
   run the infrastructure the opt-in Rekor adapter submits to.
@@ -300,11 +312,11 @@ work actually contributes, is in [NOTICE](NOTICE); the short version:
 
 **Not legal advice.** eIDAS is named above only to say where an engineering property stops:
 the Article 41 presumption attaches through a **qualified** trust service and never through a
-witness this project operates, and nothing in this release establishes it. Statutes are cited
-here and in [the threat model](docs/threat-model.md) for orientation — to say which
-engineering property is relevant to which regime, and where it ends. Nothing here is legal
-advice, no conclusion about your obligations is offered, and nothing certifies anything about
-your deployment. Consult your counsel.
+witness this project operates, and nothing in this release establishes it. Statutes are cited here, in
+[Why this exists](#why-this-exists) and in [the threat model](docs/threat-model.md) for
+orientation — to say which engineering property is relevant to which regime, and where it
+ends. Nothing here is legal advice, no conclusion about your obligations is offered, and
+nothing certifies anything about your deployment. Consult your counsel.
 
 ## Licence
 
