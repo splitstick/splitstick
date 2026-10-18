@@ -243,3 +243,65 @@ test("the tlog discipline describes the signed timestamp and refuses the qualifi
   assert.match(prose, /never written down as the witness/,
     'our submission clock must never stand in for the witness clock');
 });
+
+// ── LEG-13: the auth block is validated where the witness set is built ──────
+
+test('LEG-13: a well-formed auth block reaches the TSA adapter', async () => {
+  const { witnessesFromConfig } = await import('../src/index.mjs');
+  const [a] = witnessesFromConfig({
+    witnesses: [{
+      id: 'qtsa', type: 'rfc3161', url: 'https://qts.example/tsr', qualified: true,
+      auth: { scheme: 'bearer', env: 'QTSA_TOKEN' },
+    }],
+  });
+  assert.equal(a?.id, 'qtsa');
+  assert.deepEqual(a?.establishes, ['time']);
+});
+
+/**
+ * Validated at BUILD time, not at submission. A malformed auth block should
+ * fail when the witness set is constructed — not minutes later on a real
+ * checkpoint, and never as an anonymous request the TSA then rejects.
+ */
+test('LEG-13: a malformed auth block is refused when the set is built', async () => {
+  const { witnessesFromConfig, WitnessConfigError } = await import('../src/index.mjs');
+  const cases = [
+    [{ scheme: 'magic', env: 'Q' }, /is not one of bearer, basic, header/],
+    [{ scheme: 'bearer' }, /must be the NAME of an environment variable/],
+    [{ scheme: 'bearer', env: 'lower_case' }, /must be the NAME of an environment variable/],
+    [{ scheme: 'header', env: 'Q_TOKEN' }, /needs auth\.header/],
+    ['QTSA_TOKEN', /auth must be an object/],
+  ];
+  for (const [auth, re] of cases) {
+    assert.throws(() => witnessesFromConfig({
+      witnesses: [{ id: 'q', type: 'rfc3161', url: 'https://q.example/t', auth: /** @type {any} */ (auth) }],
+    }), (/** @type {any} */ e) => e instanceof WitnessConfigError && /** @type {RegExp} */ (re).test(e.message),
+    JSON.stringify(auth));
+  }
+});
+
+/**
+ * The commonest way to get this wrong is to paste the secret in where the
+ * variable NAME belongs. A witness config file gets committed.
+ */
+test('LEG-13: a pasted secret in auth.env is refused as a credential, not accepted as a name', async () => {
+  const { witnessesFromConfig, WitnessConfigError } = await import('../src/index.mjs');
+  for (const pasted of ['sk-live-abcdefghijklmnop', 'Bearer abcdefghijklmnop', 'A'.repeat(80)]) {
+    assert.throws(() => witnessesFromConfig({
+      witnesses: [{
+        id: 'q', type: 'rfc3161', url: 'https://q.example/t',
+        auth: { scheme: 'bearer', env: pasted },
+      }],
+    }), (/** @type {any} */ e) => e instanceof WitnessConfigError
+      && /(looks like a credential|NAME of an environment variable)/.test(e.message), pasted);
+  }
+});
+
+test('LEG-13: auth is accepted in config for rfc3161 and refused on types that cannot use it', async () => {
+  const { WITNESS_KEYS } = await import('@splitstick/core/config');
+  assert.ok(WITNESS_KEYS.rfc3161.includes('auth'));
+  for (const t of ['opentimestamps', 'rekor', 'tlog-witness', 'splitstick']) {
+    assert.ok(!(/** @type {any} */ (WITNESS_KEYS)[t] ?? []).includes('auth'),
+      `${t} must not silently accept an auth block it cannot use`);
+  }
+});

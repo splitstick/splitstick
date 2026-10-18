@@ -55,7 +55,11 @@ export const WITNESS_KEYS = Object.freeze({
    *  under eIDAS (LEG-13). It is a declaration and never a verification: the
    *  EU trusted list is not reachable from here, and NFR-05 says it never will
    *  be. What it changes is what the report is allowed to say. */
-  rfc3161: Object.freeze(['qualified']),
+  /** `auth` is LEG-13's integration surface: how to authenticate to a
+   *  commercial qualified service. It names an environment variable and never
+   *  holds the secret — `{ scheme, env, header? }`. A secret in a witness
+   *  config file gets committed. */
+  rfc3161: Object.freeze(['qualified', 'auth']),
   opentimestamps: Object.freeze(['calendars']),
   rekor: Object.freeze(['self_hosted']),
   'tlog-witness': Object.freeze([]),

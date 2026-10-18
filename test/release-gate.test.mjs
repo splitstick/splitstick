@@ -324,15 +324,24 @@ test('the real repository backlog is read in full, FR-15 included', async () => 
       if (x?.id) all.push(x);
     }
   }
-  const open10 = all
-    .filter(x => String(x.release) === '1.0' && x.status !== 'done')
-    .map(x => x.id);
-  assert.ok(open10.length > 0, 'this check needs at least one open 1.0 requirement to be meaningful');
-  for (const id of open10) {
-    assert.match(r.out, new RegExp(`OPEN\\s+${id}\\b`),
-      `${id} is open in the resolved backlog and the gate did not report it`);
+  // EVERY release, not just 1.0. The original form filtered to 1.0 and then
+  // asserted the set was non-empty "to be meaningful" -- which was right, and
+  // it fired the moment 1.0 reached 193/193. A test that only works while
+  // something is unfinished stops testing exactly when the gate matters most.
+  const open = all.filter(x => x.status !== 'done');
+  assert.ok(open.length > 0,
+    'this check needs at least one open requirement somewhere to be meaningful');
+  for (const x of open) {
+    assert.match(r.out, new RegExp(`OPEN\\s+${x.id}\\b`),
+      `${x.id} is open in release ${x.release} and the gate did not report it`);
   }
-  assert.match(r.out, /1\.0: \d+\/\d+ done/);
+  // And a release with nothing open must still be counted, not omitted: a
+  // release that vanishes from the report reads as a release with no
+  // requirements, which is how 142/147 looked authoritative.
+  for (const rel of new Set(all.map(x => String(x.release)))) {
+    assert.match(r.out, new RegExp(`${rel.replace('.', '\\.')}: \\d+/\\d+ done`),
+      `release ${rel} is absent from the report`);
+  }
 });
 
 /**

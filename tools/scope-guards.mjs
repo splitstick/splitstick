@@ -71,6 +71,23 @@ import { NEGATION, clauseAt } from './claim-text.mjs';
 /** @type {Guard[]} */
 export const GUARDS = [
   {
+    id: 'LEG-13, LEG-20',
+    what: 'a qualified anchor is CONFIGURABLE, never demonstrated',
+    // LEG-13 closed on the integration surface and the live anchor moved to
+    // LEG-20 in the commercial release. A review of that split asked for one
+    // thing in return: a complete 1.0 requirement count must not be presented
+    // as evidence that qualified timestamping has been achieved in a live
+    // deployment. Nobody here has bought an account.
+    //
+    // The sentence a marketer would write is "Splitstick delivers eIDAS
+    // qualified timestamping" or "qualified timestamping: demonstrated", so
+    // the regex is written against those rather than derived from the code.
+    forbids: /\bqualified\b[^.]{0,50}\b(?:demonstrated|achieved|obtained|proven|in production|live anchor|anchored against)\b|\b(?:demonstrated|achieved|obtained|proven)\b[^.]{0,50}\bqualified (?:timestamp\w*|trust service|TSA)\b|\b(?:deliver|provide|offer)s?\b[^.]{0,30}\bqualified (?:timestamp\w*|trust service)\b/i,
+    // Saying it is configurable, or saying plainly that it has NOT been done,
+    // is the whole point of the requirement and of the release note.
+    allows: /\b(?:configur\w+|pluggable|can be|your own|operator(?:'s)?|surface|not|no |never|nobody|LEG-20|commercial)\b/i,
+  },
+  {
     id: 'SCOPE-02, SEC-16',
     what: 'never tamper-proof; tamper-evident with attribution',
     // `immutable` is restricted to the PRODUCT-LEVEL noun. "An immutable
