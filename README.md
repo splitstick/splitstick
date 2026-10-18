@@ -1,4 +1,4 @@
-<img src="brand/social.png" width="620" alt="Splitstick — a tamper-evident record of what AI agents actually did, including the actions that aren't there.">
+<img src="brand/social.png" width="720" alt="Splitstick — a tamper-evident record of what AI agents actually did, including the actions that aren't there.">
 
 # Splitstick
 
