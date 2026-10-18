@@ -1,3 +1,6 @@
+// Copyright 2026 prathish-ks
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * @splitstick/collect-oma — FR-01, FR-02, INT-04, INT-07.
  *

@@ -125,14 +125,58 @@ jobs:
       # npm's own provenance attestation, which is what shows on the package
       # page. publishConfig.provenance is set in each workspace manifest, so the
       # flag here is belt and braces rather than the only thing asking for it.
+      # A CONSUMER INSTALL, before anything irreversible.
+      #
+      # Every check above this runs inside the monorepo, where a workspace link
+      # resolves what a user's install would have to fetch. That is how
+      # `@splitstick/witnesses` once imported a package it did not declare, and
+      # how the only published bin printed nothing when installed. Packing the
+      # tarballs and installing them into a project with no workspace is the
+      # only step that exercises what a first-time user actually gets.
+      - name: Install the packed tarballs into a clean project
+        run: node tools/smoke-install.mjs dist
+
+      # THE RELEASE IS CREATED AS A DRAFT BEFORE npm publish, and the artifacts
+      # are attached to it before npm publish, because `npm publish` is the one
+      # irreversible step in this workflow.
+      #
+      # The previous order published to npm and THEN called `gh release upload`
+      # against a release nothing had created — GitHub does not create a Release
+      # when a tag is pushed. The upload would have failed with the packages
+      # already public and unretractable, leaving no checksums, no SBOM and no
+      # tarballs attached to anything.
+      - name: Create or reuse a draft GitHub Release
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
+            echo "release ${GITHUB_REF_NAME} already exists; reusing it"
+          else
+            gh release create "${GITHUB_REF_NAME}" \
+              --draft --title "${GITHUB_REF_NAME}" \
+              --notes "Artifacts and checksums are attached. See docs/ for the release notes."
+          fi
+
+      - name: Attach artifacts to the draft release
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${GITHUB_REF_NAME}" dist/*.tgz dist/sbom.cyclonedx.json dist/SHA256SUMS --clobber
+
       - name: Publish to npm with provenance
         if: github.event_name == 'push' || inputs.dry_run == false
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: npm publish --workspaces --provenance --access public
 
-      - name: Attach artifacts to the release
+      # Last, so a release stops being a draft only once the packages it
+      # describes are actually on the registry. A draft left behind by a failed
+      # run is visible to maintainers and invisible to everybody else, which is
+      # the right way round for a half-finished release.
+      - name: Publish the GitHub Release
         if: github.event_name == 'push'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "${GITHUB_REF_NAME}" dist/*.tgz dist/sbom.cyclonedx.json dist/SHA256SUMS --clobber
+        run: gh release edit "${GITHUB_REF_NAME}" --draft=false

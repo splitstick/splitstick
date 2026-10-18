@@ -1,3 +1,6 @@
+// Copyright 2026 prathish-ks
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * The content store — DES-13, FR-35, FR-36, FR-55, PRIV-02, PRIV-03.
  *

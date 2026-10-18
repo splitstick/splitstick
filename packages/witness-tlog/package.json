@@ -1,12 +1,27 @@
 {
   "name": "@splitstick/witness-tlog",
-  "version": "0.1.0",
+  "version": "0.9.0",
   "type": "module",
   "license": "Apache-2.0",
   "description": "transparency-dev/witness adapter, over the C2SP tlog-witness HTTP protocol.",
-  "publishConfig": { "access": "public", "provenance": true },
-  "exports": { ".": "./src/index.mjs", "./*": "./src/*.mjs" },
-  "files": ["src", "README.md"],
-  "engines": { "node": ">=20" },
-  "dependencies": { "@splitstick/core": "0.1.0" }
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "exports": {
+    ".": "./src/index.mjs",
+    "./*": "./src/*.mjs"
+  },
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@splitstick/core": "0.9.0"
+  }
 }

@@ -1,3 +1,6 @@
+// Copyright 2026 prathish-ks
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * The failure-code vocabulary, frozen in code — the M3a follow-up from M1's
  * retrospective (docs/m1-follow-ups.md).

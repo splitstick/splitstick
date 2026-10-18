@@ -1,6 +1,6 @@
 {
   "name": "@splitstick/signer-aws-kms",
-  "version": "0.1.0",
+  "version": "0.9.0",
   "type": "module",
   "license": "Apache-2.0",
   "description": "AWS KMS signer for Splitstick: non-exportable Ed25519 custody behind the core signer seam.",
@@ -13,13 +13,15 @@
   },
   "files": [
     "src",
-    "README.md"
+    "README.md",
+    "LICENSE",
+    "NOTICE"
   ],
   "engines": {
     "node": ">=20"
   },
   "dependencies": {
-    "@splitstick/core": "0.1.0"
+    "@splitstick/core": "0.9.0"
   },
   "peerDependencies": {
     "@aws-sdk/client-kms": "^3"

@@ -1,3 +1,6 @@
+// Copyright 2026 prathish-ks
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * The witness list, as data — FR-47, GOV-05, GOV-08, GOV-09.
  *

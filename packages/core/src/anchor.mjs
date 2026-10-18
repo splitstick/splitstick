@@ -1,3 +1,6 @@
+// Copyright 2026 prathish-ks
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * Submitting checkpoints to witnesses — FR-13, FR-19, FR-20, FR-21, FR-22,
  * SCOPE-15, SCOPE-16, DES-08, DES-15.

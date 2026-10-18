@@ -1,3 +1,6 @@
+// Copyright 2026 prathish-ks
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * The operator's side of the witness protocol, and the check that makes a
  * witness's own misbehaviour visible — FR-50.

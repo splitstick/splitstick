@@ -17,7 +17,20 @@ import { readdirSync, readFileSync, statSync, existsSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
 /** Directories no claim lives in. */
-const SKIP = new Set(['node_modules', '.git', 'out', 'coverage', 'dist']);
+/**
+ * Directories no claim can live in: dependencies, history, and BUILD OUTPUT.
+ *
+ * Exported because lint-scope had its own copy of this list and the two
+ * drifted — its copy omitted `dist`, so after `npm pack` the claims audit read
+ * the generated SBOM and failed on a dependency name containing "sso". CI only
+ * passed because `npm run lint` happens to run before the SBOM step, which
+ * made a load-bearing ordering invisible. One list, imported.
+ *
+ * A generated artefact is not a surface: nobody reads a tarball manifest as a
+ * promise, and a guard that fails on one is noise that teaches people to
+ * ignore it.
+ */
+export const SKIP = new Set(['node_modules', '.git', 'out', 'coverage', 'dist']);
 
 /**
  * Anything that turns a sentence into a denial.

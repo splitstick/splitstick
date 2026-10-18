@@ -1,3 +1,6 @@
+// Copyright 2026 prathish-ks
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * What remains after erasure, and a scan that proves it — PRIV-05, PRIV-03,
  * FR-36, DES-13.

@@ -8,3 +8,8 @@ requirements/backlog.resolved.json
 # A real-provider API key for bench/run-latency.mjs --provider anthropic.
 # Never committed; the harness also refuses to put it in a result.
 bench/.env.local
+
+# Release artifacts: built by `npm pack`, published to the registry and
+# attached to a GitHub Release. Never committed — a tarball in history is a
+# megabyte of build output that nothing reads.
+dist/

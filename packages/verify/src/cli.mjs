@@ -1,4 +1,7 @@
 #!/usr/bin/env node
+// Copyright 2026 prathish-ks
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * splitstick verify — the command-line surface of FR-29.
  *

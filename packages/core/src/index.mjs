@@ -1,3 +1,6 @@
+// Copyright 2026 prathish-ks
+// SPDX-License-Identifier: Apache-2.0
+
 /** @splitstick/core — the public surface. Subpaths are also importable. */
 export * from './findings.mjs';
 export * from './jcs.mjs';

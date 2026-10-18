@@ -1,6 +1,6 @@
 {
   "name": "@splitstick/core",
-  "version": "0.1.0",
+  "version": "0.9.0",
   "type": "module",
   "license": "Apache-2.0",
   "description": "Splitstick core: record schema, canonical encoding, leaf, chain, tree, signer and store.",
@@ -14,7 +14,9 @@
   },
   "files": [
     "src",
-    "README.md"
+    "README.md",
+    "LICENSE",
+    "NOTICE"
   ],
   "engines": {
     "node": ">=20"

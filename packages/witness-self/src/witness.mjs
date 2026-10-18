@@ -1,3 +1,6 @@
+// Copyright 2026 prathish-ks
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * The operator-hosted stateful witness — FR-17, FR-42, FR-43, FR-44, FR-50, FR-51.
  *

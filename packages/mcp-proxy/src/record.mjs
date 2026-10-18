@@ -1,3 +1,6 @@
+// Copyright 2026 prathish-ks
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * Turning a pairing observation into a record — FR-03, FR-04, DES-14.
  *

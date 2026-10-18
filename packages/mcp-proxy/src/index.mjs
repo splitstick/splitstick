@@ -1,3 +1,6 @@
+// Copyright 2026 prathish-ks
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * Splitstick's MCP collector — FR-03, FR-04, NFR-11, INT-05.
  *
