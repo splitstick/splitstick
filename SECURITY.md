@@ -3,7 +3,7 @@
 ## Reporting
 
 Open a [GitHub security advisory](https://github.com/splitstick/splitstick/security/advisories/new)
-on this repository. If that is not available to you, email **security@splitstick.dev** with
+on this repository. If that is not available to you, email **sriyapaka@gmail.com** with
 `SPLITSTICK` in the subject.
 
 Receipt is acknowledged within five working days, with the received-at timestamp that fixes
