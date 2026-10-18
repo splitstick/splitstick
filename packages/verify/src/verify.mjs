@@ -1398,7 +1398,8 @@ function credit(credited, issuer, classes) {
  * @param {string} noteBlob
  * @param {import('@splitstick/core/envelope').Countersignature} cs
  * @param {{ id: string, public_key?: string, algorithm?: number,
- *           key_history?: { keys?: { public_key?: string }[], note?: string } }} spec
+ *           key_history?: { keys?: { public_key?: string, algorithm?: number }[],
+ *                           note?: string, note_algorithm?: number } }} spec
  * @returns {Promise<'ok'|'bad'|'no-key'|{ via: string }|{ detail: string }>}
  */
 async function checkNoteLine(noteBlob, cs, spec) {
@@ -1465,8 +1466,8 @@ async function checkNoteLine(noteBlob, cs, spec) {
   if (spec.key_history) {
     const h = await validateKeyHistory(cs.issuer, spec.key_history);
     if (!h.ok) return { detail: h.detail };
-    for (const [i, pub] of h.keys.entries()) {
-      if (!await matches(pub)) continue;
+    for (const [i, k] of h.keys.entries()) {
+      if (!await matches(k.publicKey, k.algorithm)) continue;
       return {
         via: i === h.keys.length - 1
           ? `the current key (key ${i + 1} of ${h.keys.length} in the signed history)`
@@ -1505,11 +1506,12 @@ async function checkNoteLine(noteBlob, cs, spec) {
  * after signing and the note would still check out.
  *
  * @param {string} issuer
- * @param {{ keys?: { public_key?: string }[], note?: string }} history
+ * @param {{ keys?: { public_key?: string, algorithm?: number }[], note?: string,
+ *           note_algorithm?: number }} history
  * One shape rather than a discriminated union: TypeScript does not preserve a
  * boolean literal discriminant written in JSDoc, so `if (!h.ok)` narrows
  * nothing. `detail` is empty on success — the same lesson as trustpath.mjs.
- * @returns {Promise<{ ok: boolean, keys: Buffer[], detail: string }>}
+ * @returns {Promise<{ ok: boolean, keys: { publicKey: Buffer, algorithm: number }[], detail: string }>}
  */
 async function validateKeyHistory(issuer, history) {
   const keys = Array.isArray(history.keys) ? history.keys : [];
@@ -1521,17 +1523,49 @@ async function validateKeyHistory(issuer, history) {
         + 'list cannot say which keys a witness held',
     };
   }
-  /** @type {Buffer[]} */
+  // EACH ENTRY CARRIES ITS OWN ALGORITHM, because a witness can legitimately
+  // use two: a tlog witness cosigns checkpoints with cosignature/v1
+  // (algorithm 4) while publishing its key history as an ordinary signed note
+  // (algorithm 1). A single policy-level algorithm applied to everything would
+  // force the history note to be read as a cosignature, which it is not.
+  //
+  // The algorithm comes from the entry — a vkey carries the byte, or
+  // `algorithm` states it — and never from the signature being checked. A bare
+  // 32-byte key still means algorithm 1, which is what every key history
+  // written before cosignature/v1 meant by it.
+  //
+  // Without this, a cosignature/v1 witness verified from a direct vkey and
+  // FAILED from a signed key history naming the same key bytes: the key id
+  // hashes the algorithm, so algorithm 1 and 4 give different ids for one key.
+  // A reader using FR-51 rotation lost the ability to verify a witness a reader
+  // without it could verify.
+  /** @type {{ publicKey: Buffer, algorithm: number }[]} */
   const raw = [];
   for (const k of keys) {
     if (typeof k?.public_key !== 'string') {
       return { ok: false, keys: [], detail: `${issuer}'s key history has an entry with no public_key` };
     }
-    const b = Buffer.from(k.public_key, 'base64');
-    if (b.length !== 32) {
-      return { ok: false, keys: [], detail: `${issuer}'s key history has an entry that is not a 32-byte key` };
+    let publicKey;
+    let algorithm = typeof k.algorithm === 'number' ? k.algorithm : undefined;
+    if (/^[^+]+\+[0-9a-f]{8}\+/.test(k.public_key)) {
+      try {
+        const v = parseVkey(k.public_key);
+        publicKey = v.publicKey;
+        algorithm = algorithm ?? v.algorithm;
+      } catch (e) {
+        return {
+          ok: false, keys: [],
+          detail: `${issuer}'s key history has an entry that looks like a vkey and does not parse: ${
+            e instanceof Error ? e.message : String(e)}`,
+        };
+      }
+    } else {
+      publicKey = Buffer.from(k.public_key, 'base64');
+      if (publicKey.length !== 32) {
+        return { ok: false, keys: [], detail: `${issuer}'s key history has an entry that is not a 32-byte key` };
+      }
     }
-    raw.push(b);
+    raw.push({ publicKey, algorithm: algorithm ?? ALG_ED25519 });
   }
 
   /** @type {ReturnType<typeof parseNote>} */
@@ -1561,10 +1595,17 @@ async function validateKeyHistory(issuer, history) {
   if (!sig) {
     return { ok: false, keys: [], detail: `${issuer}'s key history note carries no signature for ${issuer}` };
   }
-  for (const pub of raw) {
-    if (!sig.keyId.equals(noteKeyId(issuer, pub))) continue;
+  // The HISTORY NOTE's own signature, which is a different algorithm question
+  // from how those keys cosign checkpoints. Declared by the history
+  // (`note_algorithm`) and defaulting to a plain note signature, which is what
+  // a published key history actually is. Not inferred from the signature.
+  const noteAlgorithm = typeof history.note_algorithm === 'number'
+    ? history.note_algorithm : ALG_ED25519;
+  for (const { publicKey: pub } of raw) {
+    if (!sig.keyId.equals(noteKeyId(issuer, pub, noteAlgorithm))) continue;
     if (await verifyNoteSignature(note.text, sig, {
-      name: issuer, publicKey: pub, keyId: noteKeyId(issuer, pub),
+      name: issuer, publicKey: pub, algorithm: noteAlgorithm,
+      keyId: noteKeyId(issuer, pub, noteAlgorithm),
     })) {
       return { ok: true, keys: raw, detail: '' };
     }

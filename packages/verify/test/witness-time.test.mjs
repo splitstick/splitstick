@@ -126,7 +126,8 @@ test('FR-39: a malformed receipt time is absent, not parsed into something', asy
  * witness cosignature came back `bad`. That is the worse place for it to fail:
  * the operator saw the proof attached and an auditor saw it as invalid.
  *
- * @param {{ received_at?: string, signedTs?: number, issuer?: string }} [o]
+ * @param {{ received_at?: string, signedTs?: number, issuer?: string,
+ *           signWith?: import('@splitstick/core/signer').Signer }} [o]
  */
 async function cosigned(o = {}) {
   const { ALG_ED25519_COSIG_V1, cosignatureV1Message } = await import('@splitstick/core/note');
@@ -140,7 +141,7 @@ async function cosigned(o = {}) {
   c.action(tx());
   const cp = await c.checkpoint();
 
-  const wkey = await generateDevSigner(issuer);
+  const wkey = o.signWith ?? await generateDevSigner(issuer);
   const text = parseNote(cp.note).text;
   const signedTs = o.signedTs ?? Math.floor(Date.parse('2026-10-11T14:30:00.000Z') / 1000);
   const sig = await wkey.sign(Buffer.from(cosignatureV1Message(signedTs, text), 'utf8'));
@@ -161,7 +162,7 @@ async function cosigned(o = {}) {
   store.close();
   const { formatVkey: fv } = await import('@splitstick/core/note');
   return {
-    root, signedTs,
+    root, signedTs, wkey, issuer,
     vkey: formatVkey(ORIGIN, signer.publicKey),
     // The policy names the key as a VKEY, which carries the algorithm byte.
     policy: {
@@ -291,4 +292,132 @@ test('a configured, VERIFIED witness does not discharge the completeness assumpt
   assert.ok(line, JSON.stringify(r.trusting));
   assert.doesNotMatch(String(line), /until a witness is configured/);
   assert.match(String(line), /No witness discharges this/);
+});
+
+// ── PR #19 review, P1: key rotation and cosignature/v1 ─────────────────────
+
+/**
+ * A signed key history (FR-51) whose entries declare their algorithm.
+ *
+ * `validateKeyHistory` returned bare 32-byte keys and the caller checked them
+ * with the DEFAULT algorithm, so a cosignature/v1 witness verified from a
+ * direct vkey and FAILED from a key history naming the same key bytes -- the
+ * key id hashes the algorithm, so one key has different ids under 1 and 4. A
+ * reader using rotation lost the ability to verify a witness that a reader
+ * without rotation could verify.
+ *
+ * @param {string} issuer
+ * @param {{ publicKey: Buffer }[]} keys oldest first
+ * @param {import('@splitstick/core/signer').Signer} noteSigner signs the history
+ * @param {{ declare?: 'vkey'|'algorithm'|'bare' }} [o]
+ */
+async function keyHistory(issuer, keys, noteSigner, o = {}) {
+  const { formatVkey: fv, checkpointText, ALG_ED25519_COSIG_V1 } =
+    await import('@splitstick/core/note');
+  const { createHash } = await import('node:crypto');
+  const declare = o.declare ?? 'vkey';
+  const entries = keys.map(k => declare === 'vkey'
+    ? { public_key: fv(issuer, k.publicKey, ALG_ED25519_COSIG_V1) }
+    : declare === 'algorithm'
+      ? { public_key: k.publicKey.toString('base64'), algorithm: ALG_ED25519_COSIG_V1 }
+      : { public_key: k.publicKey.toString('base64') });
+  // The history commits to exactly what it presents, algorithms included.
+  const digest = createHash('sha256').update(JSON.stringify(entries)).digest();
+  const text = checkpointText({ origin: issuer, tree_size: entries.length, root: digest });
+  return { keys: entries, note: encodeNote(text, [await signNote(text, noteSigner)]) };
+}
+
+test('P1: a cosignature/v1 verifies against a signed key history (current key)', async () => {
+  const w = await cosigned();
+  const history = await keyHistory(w.issuer,
+    [{ publicKey: (await generateDevSigner(w.issuer)).publicKey }, { publicKey: w.wkey.publicKey }],
+    w.wkey);
+  const r = await verifyStore(w.root, {
+    collector: 'host-1', vkey: w.vkey,
+    policy: { quorum: 1, witnesses: [{ id: w.issuer, establishes: ['sequence', 'time'], key_history: history }] },
+  });
+  const entry = r.witnesses.find(x => x.id === w.issuer);
+  assert.equal(entry?.verdict, 'ok', JSON.stringify(entry));
+  assert.match(String(entry?.detail), /the current key/);
+});
+
+/**
+ * The case the review asked for explicitly. Rotation is not an amnesty for
+ * anything signed before it, so a cosignature made with a RETIRED key must
+ * still verify — and must be reported as retired rather than as current.
+ */
+test('P1: a cosignature/v1 made with a RETIRED key verifies and says so', async () => {
+  const retired = await generateDevSigner('tlog.example');
+  const current = await generateDevSigner('tlog.example');
+  // The checkpoint was cosigned by the key that has since been retired.
+  const w = await cosigned({ signWith: retired });
+  const history = await keyHistory(w.issuer,
+    [{ publicKey: retired.publicKey }, { publicKey: current.publicKey }], current);
+  const r = await verifyStore(w.root, {
+    collector: 'host-1', vkey: w.vkey,
+    policy: { quorum: 1, witnesses: [{ id: w.issuer, establishes: ['sequence', 'time'], key_history: history }] },
+  });
+  const entry = r.witnesses.find(x => x.id === w.issuer);
+  assert.equal(entry?.verdict, 'ok', JSON.stringify(entry));
+  assert.match(String(entry?.detail), /RETIRED key/);
+  assert.match(String(entry?.detail), /rotation is not an amnesty/);
+});
+
+test('P1: an explicit per-entry algorithm works as well as a vkey', async () => {
+  const w = await cosigned();
+  const history = await keyHistory(w.issuer, [{ publicKey: w.wkey.publicKey }], w.wkey,
+    { declare: 'algorithm' });
+  const r = await verifyStore(w.root, {
+    collector: 'host-1', vkey: w.vkey,
+    policy: { quorum: 1, witnesses: [{ id: w.issuer, establishes: ['sequence', 'time'], key_history: history }] },
+  });
+  assert.equal(r.witnesses.find(x => x.id === w.issuer)?.verdict, 'ok');
+});
+
+/**
+ * And a history that declares NOTHING still means algorithm 1. The algorithm
+ * comes from the policy, never from the signature that arrived: silently
+ * upgrading a bare key history to accept a timestamped cosignature would be an
+ * upgrade the reader never agreed to.
+ */
+test('P1: a bare key history is still algorithm 1, and does not silently upgrade', async () => {
+  const w = await cosigned();
+  const history = await keyHistory(w.issuer, [{ publicKey: w.wkey.publicKey }], w.wkey,
+    { declare: 'bare' });
+  const r = await verifyStore(w.root, {
+    collector: 'host-1', vkey: w.vkey,
+    policy: { quorum: 1, witnesses: [{ id: w.issuer, establishes: ['sequence', 'time'], key_history: history }] },
+  });
+  assert.notEqual(r.witnesses.find(x => x.id === w.issuer)?.verdict, 'ok');
+});
+
+/**
+ * The history NOTE's own signature is a separate algorithm question from how
+ * those keys cosign checkpoints: a tlog witness cosigns with cosignature/v1
+ * while publishing its key history as an ordinary signed note. A single
+ * policy-level algorithm applied to both would force the history note to be
+ * read as a cosignature, which it is not.
+ */
+test('P1: the history note is a plain note even when its keys cosign with v1', async () => {
+  const w = await cosigned();
+  const history = await keyHistory(w.issuer, [{ publicKey: w.wkey.publicKey }], w.wkey);
+  // Signed as a plain note (signNote), while the entries declare algorithm 4.
+  const r = await verifyStore(w.root, {
+    collector: 'host-1', vkey: w.vkey,
+    policy: { quorum: 1, witnesses: [{ id: w.issuer, establishes: ['sequence', 'time'], key_history: history }] },
+  });
+  assert.equal(r.witnesses.find(x => x.id === w.issuer)?.verdict, 'ok',
+    'the two algorithms must be allowed to differ');
+});
+
+test('P1: a vkey entry that does not parse is reported, not skipped', async () => {
+  const w = await cosigned();
+  const r = await verifyStore(w.root, {
+    collector: 'host-1', vkey: w.vkey,
+    policy: { quorum: 1, witnesses: [{ id: w.issuer, key_history: {
+      keys: [{ public_key: 'tlog.example+deadbeef+notbase64!!' }], note: 'x',
+    } }] },
+  });
+  assert.match(String(r.witnesses.find(x => x.id === w.issuer)?.detail),
+    /looks like a vkey and does not parse|does not parse/);
 });
