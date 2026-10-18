@@ -28,6 +28,7 @@
 
 import { readdirSync, readFileSync, existsSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
+import { execFileSync } from 'node:child_process';
 
 const ROOT = new URL('..', import.meta.url).pathname;
 const PKGS = join(ROOT, 'packages');
@@ -169,6 +170,67 @@ for (const [dir, m] of manifests) {
  * Copies in a monorepo drift, which is the reason this check exists rather
  * than a comment telling somebody to remember.
  */
+/**
+ * Provenance needs a repository, and the REGISTRY is where that is enforced.
+ *
+ * Every manifest sets `publishConfig.provenance: true`, and none of them
+ * declared `repository`. Nothing here caught it and nothing could have:
+ * `npm pack` is happy, `npm run smoke` installs the tarballs and resolves
+ * every entry point, and even provenance GENERATION succeeds — the statement
+ * is signed and published to the public transparency log. npm rejects the
+ * upload afterwards:
+ *
+ *   422 Unprocessable Entity — Error verifying sigstore provenance bundle:
+ *   package.json: "repository.url" is "", expected to match
+ *   "https://github.com/splitstick/splitstick" from provenance
+ *
+ * That is a check which can only fail on the one command this project cannot
+ * rehearse, after a tag is pushed, having already written an attestation to a
+ * log that cannot be edited. So it is asserted here instead, against the git
+ * remote rather than a constant, because a hardcoded URL in a guard about URL
+ * agreement is the drift the guard is for.
+ */
+const remote = (() => {
+  try {
+    const url = execFileSync('git', ['remote', 'get-url', 'origin'], { encoding: 'utf8' }).trim();
+    // Both forms npm normalises to the same https: ssh and https, .git or not.
+    const m = /github\.com[:/]([^/]+)\/(.+?)(?:\.git)?$/.exec(url);
+    return m === null ? null : `https://github.com/${m[1]}/${m[2]}`;
+  } catch {
+    return null;
+  }
+})();
+if (remote === null) {
+  findings.push('the git remote could not be read, so the repository fields were not checked '
+    + 'against anything. Refused rather than passed: npm validates them at publish time and a '
+    + 'guard that skipped would be silence where the registry is not.');
+}
+for (const dir of names) {
+  const m = /** @type {any} */ (manifests.get(dir));
+  if (m.publishConfig?.provenance !== true) continue;
+  const declared = typeof m.repository === 'string' ? m.repository : m.repository?.url;
+  if (typeof declared !== 'string' || declared === '') {
+    findings.push(
+      `packages/${dir} publishes with provenance and declares no "repository". npm signs the `
+      + 'provenance statement, publishes it to the transparency log, and THEN rejects the '
+      + 'upload with 422 — so the cost of this is a tag already pushed and an attestation '
+      + 'already public for a version that does not exist.');
+    continue;
+  }
+  const normalised = declared.replace(/^git\+/, '').replace(/\.git$/, '');
+  if (remote !== null && normalised !== remote) {
+    findings.push(
+      `packages/${dir} declares repository.url ${declared}, which normalises to ${normalised}, `
+      + `and origin is ${remote}. npm compares these and refuses the publish when they differ.`);
+  }
+  if (m.repository?.directory !== undefined && m.repository.directory !== `packages/${dir}`) {
+    findings.push(
+      `packages/${dir} declares repository.directory ${m.repository.directory}, which is not `
+      + 'where it lives. The npm page links source from this, so a wrong one sends a reader to '
+      + 'another package.');
+  }
+}
+
 const rootLicence = readFileSync(join(ROOT, 'LICENSE'), 'utf8');
 const rootNotice = readFileSync(join(ROOT, 'NOTICE'), 'utf8');
 for (const dir of names) {

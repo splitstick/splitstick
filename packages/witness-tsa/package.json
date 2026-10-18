@@ -1,6 +1,11 @@
 {
   "name": "@splitstick/witness-tsa",
   "version": "0.9.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/splitstick/splitstick.git",
+    "directory": "packages/witness-tsa"
+  },
   "type": "module",
   "license": "Apache-2.0",
   "description": "RFC 3161 timestamp-authority witness adapter: submits a note digest, returns a TimeStampToken.",

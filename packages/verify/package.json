@@ -1,6 +1,11 @@
 {
   "name": "@splitstick/verify",
   "version": "0.9.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/splitstick/splitstick.git",
+    "directory": "packages/verify"
+  },
   "type": "module",
   "license": "Apache-2.0",
   "description": "Splitstick verifier: offline verification of a chain and its countersignatures.",

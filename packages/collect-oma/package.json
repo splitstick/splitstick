@@ -1,6 +1,11 @@
 {
   "name": "@splitstick/collect-oma",
   "version": "0.9.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/splitstick/splitstick.git",
+    "directory": "packages/collect-oma"
+  },
   "type": "module",
   "license": "Apache-2.0",
   "description": "Splitstick collector for @open-multi-agent/core: journal and approval-store backends.",

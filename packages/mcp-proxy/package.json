@@ -1,6 +1,11 @@
 {
   "name": "@splitstick/mcp-proxy",
   "version": "0.9.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/splitstick/splitstick.git",
+    "directory": "packages/mcp-proxy"
+  },
   "type": "module",
   "license": "Apache-2.0",
   "description": "Splitstick collector for MCP: stdio and HTTP interception (FR-03, FR-04).",

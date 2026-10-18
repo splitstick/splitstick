@@ -1,6 +1,11 @@
 {
   "name": "@splitstick/core",
   "version": "0.9.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/splitstick/splitstick.git",
+    "directory": "packages/core"
+  },
   "type": "module",
   "license": "Apache-2.0",
   "description": "Splitstick core: record schema, canonical encoding, leaf, chain, tree, signer and store.",

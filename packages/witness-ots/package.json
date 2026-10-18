@@ -1,6 +1,11 @@
 {
   "name": "@splitstick/witness-ots",
   "version": "0.9.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/splitstick/splitstick.git",
+    "directory": "packages/witness-ots"
+  },
   "type": "module",
   "license": "Apache-2.0",
   "description": "OpenTimestamps witness adapter: the hard anchor tier no company can withdraw.",

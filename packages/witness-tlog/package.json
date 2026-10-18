@@ -1,6 +1,11 @@
 {
   "name": "@splitstick/witness-tlog",
   "version": "0.9.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/splitstick/splitstick.git",
+    "directory": "packages/witness-tlog"
+  },
   "type": "module",
   "license": "Apache-2.0",
   "description": "transparency-dev/witness adapter, over the C2SP tlog-witness HTTP protocol.",
