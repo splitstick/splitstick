@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img"
+     aria-label="Splitstick: a tally stick split lengthwise, its notches meeting across the split">
+  <title>Splitstick</title>
+  <!--
+    A split tally stick. One stick is notched across its width to record a
+    debt, then split lengthwise and a half given to each party. Neither can add
+    or alter a notch, because the alteration shows the moment the halves are
+    laid together.
+
+    That is the architecture rather than a metaphor for it: the operator holds
+    the record, a witness holds the countersignature, and tampering shows as a
+    mismatch between them. docs/name-search.md records the name as "the
+    mechanism in one word".
+
+    Three drafts, and what each got wrong, because the mark has one job and it
+    is easy to miss:
+
+      Eight even blocks with equal gaps read as a SPREADSHEET. When the split
+      and the notches are the same weight the eye sees a grid.
+
+      Notches cut only into the outer edges read as two BRACKETS, because
+      nothing crosses the split and the halves never look like one stick.
+
+      Rounded corners read as six separate PILLS. A cleaved stick is a cut
+      object; the cuts are square.
+
+    So: a narrow upright stick, a hairline split, and notches that cross both
+    halves and therefore align by construction — which is the claim the whole
+    project makes. The last segment is longer than the others so the rhythm is
+    a tally and not a repeat.
+
+    `currentColor` throughout, so one file serves a light page, a dark page and
+    a monochrome favicon without a second asset to keep in step.
+  -->
+  <g fill="currentColor">
+    <rect x="23" y="6"  width="9" height="13"/><rect x="33" y="6"  width="9" height="13"/>
+    <rect x="23" y="23" width="9" height="13"/><rect x="33" y="23" width="9" height="13"/>
+    <rect x="23" y="40" width="9" height="18"/><rect x="33" y="40" width="9" height="18"/>
+  </g>
+</svg>

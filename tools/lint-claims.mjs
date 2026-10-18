@@ -21,6 +21,7 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { code } from './code-text.mjs';
+import { paragraphs, svgText } from './claim-text.mjs';
 import { presumptionFindings } from './leg12.mjs';
 
 const ROOT = new URL('..', import.meta.url).pathname;
@@ -67,6 +68,20 @@ function markdown(dir) {
   return out;
 }
 
+/**
+ * The brand assets, derived rather than listed — a new card is exactly where a
+ * new claim appears.
+ * @returns {string[]}
+ */
+function brandAssets() {
+  const dir = join(ROOT, 'brand');
+  try {
+    return readdirSync(dir).filter(n => n.endsWith('.svg')).map(n => `brand/${n}`);
+  } catch {
+    return [];
+  }
+}
+
 /** @type {{ file: string, line: number, text: string }[]} */
 const findings = [];
 
@@ -85,6 +100,19 @@ for (const file of markdown(ROOT)) {
       });
     }
     line += para.split('\n').length + 1;
+  }
+}
+
+// SEC-17 over the brand assets too: a forward-secrecy claim is likelier on a
+// card than in a design document, and it has less room for its precondition —
+// which is the argument for the requirement, not an exemption from it.
+for (const rel of brandAssets()) {
+  for (const para of paragraphs(svgText(readFileSync(join(ROOT, rel), 'utf8')))) {
+    const mentions = CLAIMS.test(para);
+    const claims = mentions && !REFUSAL.test(para) && !CITATION.test(para);
+    if (claims && !PRECONDITION.test(para)) {
+      findings.push({ file: rel, line: 1, text: para.replace(/\s+/g, ' ').slice(0, 110) });
+    }
   }
 }
 
@@ -133,9 +161,16 @@ for (const file of markdown(ROOT)) {
   }
 }
 // The witness list is data an operator reads to choose, so it is a claim
-// surface too — and it is JSON, not markdown.
+// surface too — and it is JSON, not markdown. The brand assets are the same
+// argument at a louder volume: "qualified" or "legally presumed" set in 88px
+// on the social card reaches a reader who never opens a document.
 for (const rel of ['spec/witnesses.json']) {
   for (const f of presumptionFindings(readFileSync(join(ROOT, rel), 'utf8'))) {
+    presumption.push({ file: rel, rule: f.rule, text: f.text });
+  }
+}
+for (const rel of brandAssets()) {
+  for (const f of presumptionFindings(svgText(readFileSync(join(ROOT, rel), 'utf8')))) {
     presumption.push({ file: rel, rule: f.rule, text: f.text });
   }
 }

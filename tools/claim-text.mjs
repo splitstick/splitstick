@@ -41,9 +41,21 @@ export const SKIP = new Set(['node_modules', '.git', 'out', 'coverage', 'dist'])
  *
  * Deliberately no `does not` / `is not` / `are not`: `\bnot\b` already covers
  * them, and listing them again would look like the set does more than it does.
+ *
+ * The contraction has no leading `\b` and admits BOTH apostrophes, and the
+ * first of those was a bug for as long as this pattern has existed: `\bn't\b`
+ * requires a word boundary BEFORE the `n`, which inside `aren't` is preceded
+ * by `e` — so the alternative could never fire on the contraction it was
+ * written for. The typographic `’` is the other half: it is what a design tool
+ * and a copy editor produce, so `don’t` arrived as a sentence with nothing
+ * denied in it either.
+ *
+ * Both failures are in the SAFE direction — a guard fires on an honest denial
+ * rather than passing a claim — which is why neither was noticed. A guard that
+ * cries on correct prose is still a guard somebody deletes.
  */
 export const NEGATION =
-  /\bnot\b|\bn't\b|\bnever\b|\bno\b|\bnone\b|\bnothing\b|\bnobody\b|\bneither\b|\bnor\b|\bcannot\b|\bcan't\b|\bwithout\b|\bunless\b|\bonly (?:when|if|via|through|by)\b|\bexcept\b|\brather than\b|\bfails? to\b|\brefus\w+\b/i;
+  /\bnot\b|n['’]t\b|\bnever\b|\bno\b|\bnone\b|\bnothing\b|\bnobody\b|\bneither\b|\bnor\b|\bcannot\b|\bcan't\b|\bwithout\b|\bunless\b|\bonly (?:when|if|via|through|by)\b|\bexcept\b|\brather than\b|\bfails? to\b|\brefus\w+\b/i;
 
 /**
  * Sentences, roughly, plus the separators this repository's prose uses to join
@@ -131,6 +143,54 @@ export function markdown(root) {
 }
 
 /**
+ * The words in an SVG, as prose.
+ *
+ * A brand asset is the loudest claim surface this project has: the social card
+ * is what a reader meets on LinkedIn or in Slack, usually INSTEAD of the
+ * README rather than alongside it. Leaving it out is exactly the failure the
+ * surface list below is written against.
+ *
+ * Markup is not prose, so tags and attributes are dropped and only the text a
+ * reader sees survives — plus `aria-label`, which is the text a screen-reader
+ * user is given and carries a claim just as well. Authoring comments are
+ * stripped for the reason `tools/code-text.mjs` exists: a comment explaining
+ * why a sentence was chosen must not be read as a second sentence.
+ *
+ * Each text element becomes its own paragraph, because that is how it is laid
+ * out and how it is read — a negation on line four does not reach line one.
+ * @param {string} raw
+ * @returns {string}
+ */
+export function svgText(raw) {
+  const body = raw.replace(/<!--[\s\S]*?-->/g, '');
+  /** @type {string[]} */
+  const units = [];
+  for (const m of body.matchAll(/<(text|title|desc)\b[^>]*>([\s\S]*?)<\/\1>/g)) units.push(m[2]);
+  for (const m of body.matchAll(/\baria-label="([^"]*)"/g)) units.push(m[1]);
+  return units
+    .map(u => entities(u.replace(/<[^>]*>/g, ' ')).replace(/\s+/g, ' ').trim())
+    .filter(u => u !== '')
+    .join('\n\n');
+}
+
+/**
+ * The entity forms an SVG uses for punctuation a guard has to read.
+ *
+ * `aren&#8217;t` is not a word with a negation in it until this runs.
+ * @param {string} text
+ * @returns {string}
+ */
+function entities(text) {
+  const named = /** @type {Record<string, string>} */ ({
+    amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ',
+  });
+  return text
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, h) => String.fromCodePoint(parseInt(h, 16)))
+    .replace(/&#(\d+);/g, (_, d) => String.fromCodePoint(Number(d)))
+    .replace(/&([a-zA-Z]+);/g, (m, n) => (n.toLowerCase() in named ? named[n.toLowerCase()] : m));
+}
+
+/**
  * Every surface a reader could take a claim from, as `{ label, text }`.
  *
  * Markdown is the obvious one. The others are not, and leaving them out is how
@@ -141,6 +201,8 @@ export function markdown(root) {
  *   the verifier's output  the strings a reader is shown about their own
  *                          evidence, which is the most load-bearing prose in
  *                          the project
+ *   brand/*.svg            the social card and the mark — a sentence set in
+ *                          88px type, met by more readers than any document
  *
  * The verifier's strings are taken from the SOURCE of the reporting modules
  * rather than by running it, because a claim in a branch no fixture reaches is
@@ -169,6 +231,14 @@ export function claimSurfaces(root) {
     for (const name of readdirSync(spec)) {
       if (!name.endsWith('.json')) continue;
       out.push({ label: `spec/${name}`, text: readFileSync(join(spec, name), 'utf8') });
+    }
+  }
+
+  const brand = join(root, 'brand');
+  if (existsSync(brand)) {
+    for (const name of readdirSync(brand)) {
+      if (!name.endsWith('.svg')) continue;
+      out.push({ label: `brand/${name}`, text: svgText(readFileSync(join(brand, name), 'utf8')) });
     }
   }
 
